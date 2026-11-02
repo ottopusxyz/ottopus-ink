@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Badge, Button, Callout } from '@/components/ui'
 import { CloseIcon } from '@/components/shell/icons'
 import { AGENTS, LATER_AGENTS } from '@/lib/agents'
+import { stepIndex } from '@/lib/roving'
 
 const TABS = [
   { id: 'general', label: 'General' },
@@ -247,10 +248,29 @@ function Segmented({
   onChange: (value: string) => void
   options: readonly (readonly [string, string])[]
 }) {
+  // A radio group is one tab stop: Tab reaches the chosen option and the arrow
+  // keys move the choice, as the role promises a screen reader.
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const next = stepIndex(event.key, index, options.length)
+    const option = next === null ? undefined : options[next]
+    if (next === null || !option) return
+    event.preventDefault()
+    onChange(option[0])
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus()
+  }
+
   return (
     <div className="ink-segmented" role="radiogroup" aria-label={label}>
-      {options.map(([id, text]) => (
-        <button key={id} type="button" role="radio" aria-checked={value === id} onClick={() => onChange(id)}>
+      {options.map(([id, text], index) => (
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          aria-checked={value === id}
+          tabIndex={value === id ? 0 : -1}
+          onClick={() => onChange(id)}
+          onKeyDown={(event) => onKeyDown(event, index)}
+        >
           {text}
         </button>
       ))}

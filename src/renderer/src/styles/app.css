@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@import "./tokens.css";
+@import "./dialog.css";
+@import "./water.css";
+@import "./sea-life.css";
+@import "./otto.css";
+@import "./sea.css";
+@import "./shell.css";
+
+/* Divergences from the design project live here, never in the ported files, so
+   re-syncing tokens.css cannot silently drop them. The first two blocks are
+   carried over from the Ottopus web app's globals.css. */
+
+/* tokens.css defines the water and bubble colours under [data-theme="dark"]
+   but not under prefers-color-scheme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ot-water-1: #111B30;
+    --ot-water-2: #141F39;
+    --ot-water-3: #182643;
+    --ot-caustic: rgba(91, 155, 255, 0.07);
+    --ot-bubble: rgba(158, 194, 255, 0.28);
+  }
+}
+
+/* Otto's underside shade: a step darker than the body, moving with the theme. */
+:root { --ot-coral-shade: #E06A47; }
+[data-theme="dark"] { --ot-coral-shade: #E0714F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ot-coral-shade: #E0714F; }
+}
+
+/* Tailwind cannot infer font-[var(--x)] as a family, so map the three. Colours
+   are deliberately not mapped: components use var(--ot-*) directly, so the
+   token name is the one vocabulary. */
+@theme inline {
+  --font-display: var(--ot-font-display);
+  --font-ui: var(--ot-font-ui);
+  --font-mono: var(--ot-font-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ot-page);
+  color: var(--ot-text);
+  font-family: var(--ot-font-ui);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  /* A desktop app, not a page: text is selectable where it matters (addresses,
+     amounts) and opted back in there, not everywhere. */
+  user-select: none;
+  overflow: hidden;
+}
+
+.selectable {
+  user-select: text;
+}
+
+/* Visible focus is a security affordance: people tab through a review before
+   signing, and an invisible focus ring means signing the wrong button. */
+:focus-visible {
+  outline: 2px solid var(--ot-plan);
+  outline-offset: 2px;
+  border-radius: var(--ot-radius-sm);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

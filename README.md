@@ -1,0 +1,55 @@
+# Ottopus Ink
+
+A desktop universal wallet whose brain is the coding agent you already have installed (Claude Code, Codex or OpenCode). The agent proposes plans; you review and sign them in the app. Cross-chain value moves through NEAR Intents.
+
+> Work in progress for the NEAR hackathon. Nothing here holds keys yet.
+
+## Rules that never change
+
+1. **No agent wallet.** The agent can read and propose. It has no tool that signs, approves or touches keys.
+2. **The review window shows decoded bytes, not the agent's words.** The signer re-checks the plan hash before it signs.
+3. **Keys stay on the device.** No Ottopus server, no custody.
+4. **Each dependent step gets its own review** once its exact bytes are known.
+5. **Chats started by the app are locked to Ottopus Ink tools,** with no shell, file or web access.
+
+## Run it
+
+Requires Node 22.12+ (CI uses 24) on Linux or macOS.
+
+```bash
+npm ci
+npm start        # dev mode with hot reload
+npm test
+npm run lint
+npm run typecheck
+npm run build    # production bundle in out/
+```
+
+npm 11 runs only approved install scripts. Electron's (which downloads its binary) is approved in `package.json` under `allowScripts`.
+
+## Layout
+
+| Path | Process | Trusted |
+|---|---|---|
+| `src/main` | Electron main: windows, IPC, agent drivers, plan engine | Yes |
+| `src/preload` | The only bridge the renderer gets (`window.ink`) | Yes |
+| `src/renderer` | React UI. Display only: no Node, sandboxed, strict CSP | No |
+| `src/signer` | Separate utility process; the only place keys will live | Yes |
+| `src/shared` | Types and pure helpers used by more than one process | n/a |
+
+The renderer may import only from `src/shared` and its own files; a lint rule enforces it.
+
+## Prior work
+
+Ported from [ottopusxyz/ottopus](https://github.com/ottopusxyz/ottopus) (MIT, built for BNB Hack):
+
+- the design tokens and water, sea-life and Otto styles in `src/renderer/src/styles` (`tokens.css`, `dialog.css`, `water.css`, `sea-life.css`, `otto.css`)
+- the UI primitives in `src/renderer/src/components/ui`
+- Otto and his badge in `src/renderer/src/components/brand`
+- the bubbles, sea life and stillness in `src/renderer/src/components/motion` (everything there except `sea.tsx`)
+
+Everything else here is new.
+
+## Licence
+
+MIT

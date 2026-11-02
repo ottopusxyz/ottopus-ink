@@ -1,0 +1,26 @@
+/* Ink's water. water.css and sea-life.css are copied verbatim from the Ottopus
+   web app; what follows is the part that lived in its landing stylesheet,
+   plus the gradient the desktop panels stand in. */
+
+/* Light from the surface, brighter than the caustic tint. In the dark it is
+   moonlight, not a lamp. */
+:root { --ot-land-light: rgba(255, 255, 255, 0.5); }
+[data-theme="dark"] { --ot-land-light: rgba(158, 194, 255, 0.09); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ot-land-light: rgba(158, 194, 255, 0.09); }
+}
+.ot-land-shaft {
+  background: linear-gradient(180deg, var(--ot-land-light) 0%, transparent 72%);
+}
+
+/* A panel's water: the surface colour at the top, so text there sits on
+   something calm, deepening to the review page's blue at the floor. */
+.ink-sea {
+  background: linear-gradient(
+    180deg,
+    var(--ot-surface) 0%,
+    var(--ot-water-1) 36%,
+    var(--ot-water-2) 68%,
+    color-mix(in srgb, var(--ot-plan) 14%, var(--ot-water-3)) 100%
+  );
+}

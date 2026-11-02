@@ -1,4 +1,4 @@
-import type { Ref } from 'react'
+import type { ReactNode, Ref } from 'react'
 import { Otto } from '@/components/brand/otto'
 import { Composer } from '@/components/chat/composer'
 import { Sea } from '@/components/motion/sea'
@@ -21,13 +21,23 @@ export interface HomeViewProps {
   onOpenChat: (id: string) => void
   onPortfolio: () => void
   composerRef?: Ref<HTMLTextAreaElement>
+  agentPicker: ReactNode
 }
 
 /**
  * The home screen is a composer. Balances and accounts have their own page;
  * here they are one quiet card under the starting points.
  */
-export function HomeView({ draft, onDraft, onSubmit, live, onOpenChat, onPortfolio, composerRef }: HomeViewProps) {
+export function HomeView({
+  draft,
+  onDraft,
+  onSubmit,
+  live,
+  onOpenChat,
+  onPortfolio,
+  composerRef,
+  agentPicker,
+}: HomeViewProps) {
   const running = live[0]
 
   return (
@@ -47,6 +57,7 @@ export function HomeView({ draft, onDraft, onSubmit, live, onOpenChat, onPortfol
             onChange={onDraft}
             onSubmit={onSubmit}
             textareaRef={composerRef}
+            agentPicker={agentPicker}
             placeholder="Tell your agent what to do: swap, send, bridge or stake."
           />
 

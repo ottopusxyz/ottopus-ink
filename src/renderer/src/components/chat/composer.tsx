@@ -1,4 +1,4 @@
-import { useId, type Ref } from 'react'
+import { useId, type ReactNode, type Ref } from 'react'
 import { cn } from '@/lib/cn'
 import { ArrowUpIcon, ChevronDownIcon, PlugIcon, PlusIcon } from '@/components/shell/icons'
 
@@ -9,17 +9,25 @@ export interface ComposerProps {
   placeholder: string
   compact?: boolean
   textareaRef?: Ref<HTMLTextAreaElement>
+  /** The agent picker, shown in the full composer's toolbar. */
+  agentPicker?: ReactNode
 }
 
 /**
  * Where a person tells their agent what to do. Enter sends and Shift+Enter
  * breaks the line.
  *
- * The agent, model and skills pickers are drawn but not wired: they fill in
- * once agent detection (issue #4) knows what is installed, so for now they
- * say so rather than show an agent that may not be there.
+ * The Skills picker is drawn but off until the skills bundle (issue #11).
  */
-export function Composer({ value, onChange, onSubmit, placeholder, compact = false, textareaRef }: ComposerProps) {
+export function Composer({
+  value,
+  onChange,
+  onSubmit,
+  placeholder,
+  compact = false,
+  textareaRef,
+  agentPicker,
+}: ComposerProps) {
   const id = useId()
   const empty = value.trim().length === 0
 
@@ -53,15 +61,7 @@ export function Composer({ value, onChange, onSubmit, placeholder, compact = fal
         </button>
         {compact ? null : (
           <>
-            <button
-              type="button"
-              className="ink-picker ml-1"
-              disabled
-              title="Ink lists the agents it finds on this computer once detection is in"
-            >
-              Choose an agent
-              <ChevronDownIcon size={12} />
-            </button>
+            <span className="ml-1">{agentPicker}</span>
             <button type="button" className="ink-picker" disabled>
               Skills
               <ChevronDownIcon size={12} />

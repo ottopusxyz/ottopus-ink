@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Callout } from '@/components/ui'
 import { PANE_LIFE, Sea } from '@/components/motion/sea'
 import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
@@ -10,6 +10,7 @@ export interface ChatViewProps {
   draft: string
   onDraft: (value: string) => void
   onSubmit: () => void
+  agentPicker: ReactNode
 }
 
 /**
@@ -20,7 +21,7 @@ export interface ChatViewProps {
  * Nothing answers yet. The agent drivers (issues #5 to #7) and the chat
  * stream (#10) fill the conversation in; this lays out where they land.
  */
-export function ChatView({ chat, draft, onDraft, onSubmit }: ChatViewProps) {
+export function ChatView({ chat, draft, onDraft, onSubmit, agentPicker }: ChatViewProps) {
   const end = useRef<HTMLDivElement>(null)
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' })
@@ -30,10 +31,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit }: ChatViewProps) {
     <>
       <main className="ink-panel flex flex-col" id="main" aria-label={chat.title}>
         <div className="ink-chat-toolbar">
-          <button type="button" className="ink-picker" disabled>
-            Choose an agent
-            <ChevronDownIcon size={12} />
-          </button>
+          {agentPicker}
           <span className="flex-1" />
           <button type="button" className="ink-picker" disabled>
             Skills
@@ -58,7 +56,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit }: ChatViewProps) {
             ),
           )}
           <Callout severity="info" title="No agent is connected yet">
-            Ink will hand this to Claude Code, Codex or OpenCode once it can find and drive them. Nothing was sent.
+            Ink can find your agents but can't drive them yet; that comes with the chat drivers. Nothing was sent.
           </Callout>
           <div ref={end} />
         </div>

@@ -37,8 +37,12 @@ describe('isAppUrl', () => {
     expect(isAppUrl('https://evil.example/', dev)).toBe(false)
   })
 
-  it('matches only file URLs in production', () => {
-    expect(isAppUrl('file:///opt/ink/resources/app/out/renderer/index.html', undefined)).toBe(true)
-    expect(isAppUrl('https://evil.example/', undefined)).toBe(false)
+  it('matches only the bundled index.html in production', () => {
+    const entry = 'file:///opt/ink/resources/app/out/renderer/index.html'
+    expect(isAppUrl(entry, entry)).toBe(true)
+    expect(isAppUrl(`${entry}#/chat`, entry)).toBe(true)
+    expect(isAppUrl('file:///home/me/Downloads/dropped.html', entry)).toBe(false)
+    expect(isAppUrl('file:///opt/ink/resources/app/out/renderer/other.html', entry)).toBe(false)
+    expect(isAppUrl('https://evil.example/', entry)).toBe(false)
   })
 })

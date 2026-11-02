@@ -1,10 +1,14 @@
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
 import { IPC, type AppInfo } from '../shared/ipc'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
 
 const devServerUrl = process.env.ELECTRON_RENDERER_URL
+const rendererIndex = join(import.meta.dirname, '../renderer/index.html')
+/** The page the window loads; navigations and IPC are checked against it. */
+const appEntry = devServerUrl ?? pathToFileURL(rendererIndex).href
 const signer = new SignerHost(join(import.meta.dirname, 'signer.js'))
 
 app.enableSandbox()
@@ -35,20 +39,20 @@ function createMainWindow(): BrowserWindow {
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (event, url) => {
-    if (!isAppUrl(url, devServerUrl)) event.preventDefault()
+    if (!isAppUrl(url, appEntry)) event.preventDefault()
   })
 
   if (devServerUrl) {
     void win.loadURL(devServerUrl)
   } else {
-    void win.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+    void win.loadFile(rendererIndex)
   }
   return win
 }
 
 function registerIpc(): void {
   ipcMain.handle(IPC.appInfo, (event): AppInfo => {
-    if (!isAppUrl(event.senderFrame?.url ?? '', devServerUrl)) {
+    if (!isAppUrl(event.senderFrame?.url ?? '', appEntry)) {
       throw new Error('IPC from an unexpected frame')
     }
     return {

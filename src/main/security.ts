@@ -32,14 +32,17 @@ export function isSafeExternalUrl(raw: string): boolean {
 }
 
 /**
- * Whether a navigation stays inside the app. In dev the renderer is served by
- * Vite, in production from a file: URL inside the app bundle.
+ * Whether a URL is the app's own page. In dev the renderer is served by Vite,
+ * so any page on that origin. In production it is one file, the bundled
+ * index.html: any other file: URL is not the app, or a file dropped on the
+ * window would load with the preload bridge and pass the IPC frame check.
  */
-export function isAppUrl(raw: string, devServerUrl: string | undefined): boolean {
+export function isAppUrl(raw: string, appEntry: string): boolean {
   try {
     const url = new URL(raw)
-    if (devServerUrl) return url.origin === new URL(devServerUrl).origin
-    return url.protocol === 'file:'
+    const entry = new URL(appEntry)
+    if (entry.protocol === 'file:') return url.protocol === 'file:' && url.pathname === entry.pathname
+    return url.origin === entry.origin
   } catch {
     return false
   }

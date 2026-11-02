@@ -34,6 +34,21 @@ export function chatTitle(text: string, max = TITLE_MAX): string {
   return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`
 }
 
+/** Unsent text by chat id, plus HOME_DRAFT for the home composer. */
+export type Drafts = Readonly<Record<string, string>>
+
+/** The home composer's key in Drafts. Chat ids are UUIDs, so it cannot clash. */
+export const HOME_DRAFT = 'home'
+
+/** Drafts with one key set, or removed when the text is empty. */
+export function withDraft(drafts: Drafts, key: string, text: string): Drafts {
+  if (text) return { ...drafts, [key]: text }
+  if (!(key in drafts)) return drafts
+  const rest = { ...drafts }
+  delete rest[key]
+  return rest
+}
+
 /** Chats whose title holds every word of the query, in any order and case. */
 export function filterChats<T extends Pick<Chat, 'title'>>(chats: readonly T[], query: string): T[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)

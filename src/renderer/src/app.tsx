@@ -7,7 +7,7 @@ import { SettingsDialog } from '@/components/settings/settings-dialog'
 import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
-import { chatTitle, type Chat } from '@/lib/chats'
+import { chatTitle, HOME_DRAFT, withDraft, type Chat, type Drafts } from '@/lib/chats'
 
 const mac = navigator.userAgent.includes('Mac')
 
@@ -17,7 +17,12 @@ export function App() {
   const [view, setView] = useState<View>({ kind: 'home' })
   // Chats live in memory until the chat store arrives with the drivers.
   const [chats, setChats] = useState<Chat[]>([])
-  const [draft, setDraft] = useState('')
+  // Unsent text for each chat and one for home, so moving between them, or
+  // pressing New chat, loses nothing.
+  const [drafts, setDrafts] = useState<Drafts>({})
+  const draftKey = view.kind === 'chat' ? view.chatId : HOME_DRAFT
+  const draft = drafts[draftKey] ?? ''
+  const setDraft = (text: string) => setDrafts((all) => withDraft(all, draftKey, text))
   const [settingsOpen, setSettingsOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -38,7 +43,6 @@ export function App() {
 
   const newChat = useCallback(() => {
     setView({ kind: 'home' })
-    setDraft('')
     requestAnimationFrame(() => composerRef.current?.focus())
   }, [])
 
@@ -71,10 +75,7 @@ export function App() {
     setDraft('')
   }
 
-  const openChat = (chatId: string) => {
-    setView({ kind: 'chat', chatId })
-    setDraft('')
-  }
+  const openChat = (chatId: string) => setView({ kind: 'chat', chatId })
 
   const current = view.kind === 'chat' ? chats.find((chat) => chat.id === view.chatId) : undefined
 

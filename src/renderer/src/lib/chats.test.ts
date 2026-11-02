@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chatTitle, filterChats } from './chats'
+import { chatTitle, filterChats, HOME_DRAFT, withDraft } from './chats'
 
 describe('chatTitle', () => {
   it('uses the first non-empty line with whitespace collapsed', () => {
@@ -32,5 +32,21 @@ describe('filterChats', () => {
     expect(filterChats(chats, 'usdc SEND').map((c) => c.title)).toEqual(['Send 20 USDC to mom.near'])
     expect(filterChats(chats, 'usdc')).toHaveLength(2)
     expect(filterChats(chats, 'bitcoin')).toHaveLength(0)
+  })
+})
+
+describe('withDraft', () => {
+  it('keeps a draft per key', () => {
+    const drafts = withDraft(withDraft({}, HOME_DRAFT, 'Stake 10 NEAR'), 'chat-a', 'and then')
+    expect(drafts).toEqual({ [HOME_DRAFT]: 'Stake 10 NEAR', 'chat-a': 'and then' })
+  })
+
+  it('removes a key when its text is cleared', () => {
+    expect(withDraft({ 'chat-a': 'x', 'chat-b': 'y' }, 'chat-a', '')).toEqual({ 'chat-b': 'y' })
+  })
+
+  it('returns the same object when clearing a key that is not there', () => {
+    const drafts = { 'chat-a': 'x' }
+    expect(withDraft(drafts, 'chat-b', '')).toBe(drafts)
   })
 })

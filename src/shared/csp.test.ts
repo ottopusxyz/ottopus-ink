@@ -25,4 +25,8 @@ describe('contentSecurityPolicy', () => {
       expect(csp).toContain("form-action 'none'")
     }
   })
+
+  it('leaves out directives a meta policy ignores', () => {
+    expect(contentSecurityPolicy({ dev: false })).not.toContain('frame-ancestors')
+  })
 })

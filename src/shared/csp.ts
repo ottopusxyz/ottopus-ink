@@ -8,6 +8,9 @@
  *
  * style-src keeps 'unsafe-inline' in both modes because React style attributes
  * need it; scripts never get it in production.
+ *
+ * No frame-ancestors: browsers ignore it in a <meta> policy, which is how this
+ * one is delivered.
  */
 export function contentSecurityPolicy({ dev }: { dev: boolean }): string {
   const devServer = 'http://localhost:* ws://localhost:*'
@@ -21,7 +24,6 @@ export function contentSecurityPolicy({ dev }: { dev: boolean }): string {
     'object-src': "'none'",
     'base-uri': "'none'",
     'form-action': "'none'",
-    'frame-ancestors': "'none'",
   }
   return Object.entries(directives)
     .map(([name, value]) => `${name} ${value}`)

@@ -28,10 +28,13 @@ export class SignerHost {
       stdio: 'inherit',
     })
     this.child = child
+    // A process that was stopped and replaced can still report in late. Only
+    // the current child may change the state.
     child.on('message', (message: SignerResponse) => {
-      if (message.type === 'pong') this.status = 'ready'
+      if (this.child === child && message.type === 'pong') this.status = 'ready'
     })
     child.on('exit', () => {
+      if (this.child !== child) return
       this.child = null
       this.status = 'stopped'
     })

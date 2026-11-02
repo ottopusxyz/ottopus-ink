@@ -335,3 +335,35 @@
   text-transform: uppercase;
   color: var(--ot-text-3);
 }
+
+/* --- Chat --- */
+
+.ink-chat-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--ot-border);
+}
+
+.ink-bubble {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--ot-coral-soft);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.ink-plan-pane {
+  position: relative;
+  width: 326px;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--ot-border);
+  border-radius: 18px;
+}

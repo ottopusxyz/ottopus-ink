@@ -30,6 +30,7 @@ export function App() {
   const [agents, setAgents] = useState<AgentStatus[] | null>(null)
   const [agentPick, setAgentPick] = useState<AgentId | null>(null)
   const selectedAgent = agents ? chooseAgent(agents, agentPick) : null
+  const [checkingAgents, setCheckingAgents] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -91,6 +92,14 @@ export function App() {
 
   const openChat = (chatId: string) => setView({ kind: 'chat', chatId })
 
+  const checkAgentsAgain = () => {
+    setCheckingAgents(true)
+    window.ink
+      .detectAgents({ refresh: true })
+      .then(setAgents, (error: unknown) => console.error('Could not detect agents', error))
+      .finally(() => setCheckingAgents(false))
+  }
+
   const agentPicker = <AgentPicker agents={agents} selected={selectedAgent} onSelect={setAgentPick} />
 
   const current = view.kind === 'chat' ? chats.find((chat) => chat.id === view.chatId) : undefined
@@ -129,7 +138,14 @@ export function App() {
           agentPicker={agentPicker}
         />
       )}
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        agents={agents}
+        selectedAgent={selectedAgent}
+        checking={checkingAgents}
+        onCheckAgain={checkAgentsAgain}
+      />
     </AppShell>
   )
 }

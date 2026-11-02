@@ -3,10 +3,12 @@ import type { WebPreferences } from 'electron'
 /**
  * The web preferences every app window uses. The renderer is treated as
  * untrusted display code: no Node, sandboxed, isolated from the preload.
+ * DevTools are for development only.
  */
-export function secureWebPreferences(preload: string): WebPreferences {
+export function secureWebPreferences(preload: string, { devTools }: { devTools: boolean }): WebPreferences {
   return {
     preload,
+    devTools,
     contextIsolation: true,
     sandbox: true,
     nodeIntegration: false,

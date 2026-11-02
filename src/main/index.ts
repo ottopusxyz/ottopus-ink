@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron'
 import { IPC, type AppInfo } from '../shared/ipc'
+import { appMenuTemplate } from './menu'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
 
@@ -28,7 +29,9 @@ function createMainWindow(): BrowserWindow {
     title: 'Ottopus Ink',
     backgroundColor: '#F7F2EA',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs')),
+    webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs'), {
+      devTools: Boolean(devServerUrl),
+    }),
   })
 
   win.once('ready-to-show', () => win.show())
@@ -84,6 +87,9 @@ void app.whenReady().then(() => {
   // ask for. Features that need one are granted from main, not by the page.
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
   session.defaultSession.setPermissionCheckHandler(() => false)
+
+  // Dev keeps Electron's default menu, with Reload and DevTools.
+  if (!devServerUrl) Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate(process.platform)))
 
   registerIpc()
   signer.start()

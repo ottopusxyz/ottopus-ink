@@ -3,8 +3,9 @@ import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 
 describe('secureWebPreferences', () => {
   it('isolates and sandboxes the renderer', () => {
-    const prefs = secureWebPreferences('/app/preload.cjs')
+    const prefs = secureWebPreferences('/app/preload.cjs', { devTools: false })
     expect(prefs).toMatchObject({
+      devTools: false,
       preload: '/app/preload.cjs',
       contextIsolation: true,
       sandbox: true,

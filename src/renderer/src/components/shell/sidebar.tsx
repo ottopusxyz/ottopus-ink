@@ -1,5 +1,5 @@
 import { useMemo, useState, type Ref } from 'react'
-import type { AppInfo } from '../../../../shared/ipc'
+import type { SignerStatus } from '../../../../shared/ipc'
 import { Badge } from '@/components/ui'
 import { filterChats, type Chat } from '@/lib/chats'
 import {
@@ -22,7 +22,8 @@ const PAGE_ICONS: Record<PageId, typeof WalletIcon> = {
 export interface SidebarProps {
   view: View
   chats: readonly Chat[]
-  info: AppInfo | null
+  version: string | undefined
+  signer: SignerStatus | null
   mac: boolean
   searchRef: Ref<HTMLInputElement>
   onNewChat: () => void
@@ -39,7 +40,8 @@ export interface SidebarProps {
 export function Sidebar({
   view,
   chats,
-  info,
+  version,
+  signer,
   mac,
   searchRef,
   onNewChat,
@@ -122,7 +124,7 @@ export function Sidebar({
         <kbd className="ink-kbd">{shortcutLabel('settings', mac)}</kbd>
       </button>
 
-      <SignerStatus info={info} />
+      <SignerIndicator status={signer} version={version} />
     </nav>
   )
 }
@@ -140,8 +142,7 @@ function ChatStatusMark({ chat }: { chat: Chat }) {
  * then it reports the one thing that is real: the signer process is up and
  * isolated from this window.
  */
-function SignerStatus({ info }: { info: AppInfo | null }) {
-  const status = info?.signer
+function SignerIndicator({ status, version }: { status: SignerStatus | null; version: string | undefined }) {
   const copy =
     status === 'ready' ? 'Signer isolated' : status === 'stopped' ? 'Signer stopped' : 'Signer starting'
   const colour =
@@ -152,7 +153,7 @@ function SignerStatus({ info }: { info: AppInfo | null }) {
         <ShieldIcon />
       </span>
       <span className="flex-1">{copy}</span>
-      <span className="font-mono text-[11px] text-[var(--ot-text-3)]">v{info?.version ?? '…'}</span>
+      <span className="font-mono text-[11px] text-[var(--ot-text-3)]">v{version ?? '…'}</span>
     </div>
   )
 }

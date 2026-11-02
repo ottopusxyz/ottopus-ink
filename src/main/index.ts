@@ -10,7 +10,11 @@ const devServerUrl = process.env.ELECTRON_RENDERER_URL
 const rendererIndex = join(import.meta.dirname, '../renderer/index.html')
 /** The page the window loads; navigations and IPC are checked against it. */
 const appEntry = devServerUrl ?? pathToFileURL(rendererIndex).href
-const signer = new SignerHost(join(import.meta.dirname, 'signer.js'))
+const signer = new SignerHost(join(import.meta.dirname, 'signer.js'), (status) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send(IPC.signerStatus, status)
+  }
+})
 
 app.enableSandbox()
 

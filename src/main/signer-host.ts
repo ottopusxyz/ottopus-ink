@@ -11,15 +11,25 @@ export class SignerHost {
   private status: SignerStatus = 'stopped'
   private nextId = 1
 
-  constructor(private readonly entry: string) {}
+  /** onStatus hears every change, so the window is told rather than asking. */
+  constructor(
+    private readonly entry: string,
+    private readonly onStatus: (status: SignerStatus) => void,
+  ) {}
 
   getStatus(): SignerStatus {
     return this.status
   }
 
+  private setStatus(status: SignerStatus): void {
+    if (status === this.status) return
+    this.status = status
+    this.onStatus(status)
+  }
+
   start(): void {
     if (this.child) return
-    this.status = 'starting'
+    this.setStatus('starting')
     const child = utilityProcess.fork(this.entry, [], {
       serviceName: 'Ottopus Ink Signer',
       // The signer gets a clean environment: nothing the user's shell or an
@@ -31,12 +41,12 @@ export class SignerHost {
     // A process that was stopped and replaced can still report in late. Only
     // the current child may change the state.
     child.on('message', (message: SignerResponse) => {
-      if (this.child === child && message.type === 'pong') this.status = 'ready'
+      if (this.child === child && message.type === 'pong') this.setStatus('ready')
     })
     child.on('exit', () => {
       if (this.child !== child) return
       this.child = null
-      this.status = 'stopped'
+      this.setStatus('stopped')
     })
     const ping: SignerRequest = { type: 'ping', id: this.nextId++ }
     child.postMessage(ping)
@@ -45,6 +55,6 @@ export class SignerHost {
   stop(): void {
     this.child?.kill()
     this.child = null
-    this.status = 'stopped'
+    this.setStatus('stopped')
   }
 }

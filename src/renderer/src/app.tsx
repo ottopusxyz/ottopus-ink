@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppInfo } from '../../shared/ipc'
+import type { AppInfo, SignerStatus } from '../../shared/ipc'
 import { ChatView } from '@/components/chat/chat-view'
 import { HomeView } from '@/components/home/home-view'
 import { PageView } from '@/components/pages/page-view'
@@ -13,6 +13,7 @@ const mac = navigator.userAgent.includes('Mac')
 
 export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null)
+  const [signer, setSigner] = useState<SignerStatus | null>(null)
   const [view, setView] = useState<View>({ kind: 'home' })
   // Chats live in memory until the chat store arrives with the drivers.
   const [chats, setChats] = useState<Chat[]>([])
@@ -22,19 +23,17 @@ export function App() {
   const composerRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    let cancelled = false
-    // The signer reports ready shortly after launch; poll briefly so the status
-    // settles without a push channel for one value.
-    const load = () =>
-      window.ink.appInfo().then((next) => {
-        if (cancelled) return
+    // Subscribe before asking, so a change between the two is not missed. A
+    // pushed status wins over the one in the snapshot.
+    const unsubscribe = window.ink.onSignerStatus(setSigner)
+    window.ink.appInfo().then(
+      (next) => {
         setInfo(next)
-        if (next.signer === 'starting') setTimeout(load, 250)
-      })
-    void load()
-    return () => {
-      cancelled = true
-    }
+        setSigner((current) => current ?? next.signer)
+      },
+      (error: unknown) => console.error('Could not read app info', error),
+    )
+    return unsubscribe
   }, [])
 
   const newChat = useCallback(() => {
@@ -86,7 +85,8 @@ export function App() {
         <Sidebar
           view={view}
           chats={chats}
-          info={info}
+          version={info?.version}
+          signer={signer}
           mac={mac}
           searchRef={searchRef}
           onNewChat={newChat}

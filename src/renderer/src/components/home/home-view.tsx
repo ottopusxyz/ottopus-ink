@@ -47,7 +47,7 @@ export function HomeView({ draft, onDraft, onSubmit, live, onOpenChat, onPortfol
             onChange={onDraft}
             onSubmit={onSubmit}
             textareaRef={composerRef}
-            placeholder="Tell your agent what to do: swap, send, bridge or stake. Type @ for accounts and # for skills."
+            placeholder="Tell your agent what to do: swap, send, bridge or stake."
           />
 
           <div className="flex flex-wrap gap-2">

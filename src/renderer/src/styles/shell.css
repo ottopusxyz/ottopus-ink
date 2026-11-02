@@ -367,3 +367,110 @@
   border: 1px solid var(--ot-border);
   border-radius: 18px;
 }
+
+/* --- Settings --- */
+
+.ink-settings {
+  width: min(900px, calc(100vw - 48px));
+  height: min(640px, calc(100vh - 48px));
+  max-width: none;
+  max-height: none;
+  /* Tailwind's reset zeroes the margin a modal dialog centres itself with. */
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--ot-border);
+  border-radius: 18px;
+  background: var(--ot-surface);
+  color: var(--ot-text);
+  box-shadow: 0 2px 6px rgba(22, 33, 62, 0.08), 0 24px 64px rgba(22, 33, 62, 0.22);
+}
+.ink-settings::backdrop {
+  background: rgba(22, 33, 62, 0.34);
+}
+.ink-settings[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.ink-settings-nav {
+  width: 200px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 10px;
+}
+.ink-settings-nav button {
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ot-text-2);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.ink-settings-nav button:hover {
+  background: var(--ot-surface-3);
+}
+.ink-settings-nav button[aria-current="page"] {
+  background: var(--ot-surface-3);
+  color: var(--ot-text);
+  font-weight: 600;
+}
+
+.ink-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 0;
+  border-top: 1px solid var(--ot-border);
+}
+.ink-setting h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ink-setting p {
+  margin: 4px 0 0;
+  color: var(--ot-text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.ink-segmented {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--ot-surface-3);
+}
+.ink-segmented button {
+  height: 34px;
+  min-width: 96px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ot-text-2);
+  font: 600 13px var(--ot-font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ink-segmented button[aria-checked="true"] {
+  background: var(--ot-text);
+  color: var(--ot-surface);
+}
+
+.ink-agent-mark {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font: 700 10px var(--ot-font-ui);
+}

@@ -33,7 +33,6 @@ export const AGENT_SPECS: readonly AgentSpec[] = [
       '--setting-sources',
       '--plugin-dir',
       '--tools',
-      '--permission-prompt-tool',
     ],
     auth: { args: ['auth', 'status', '--json'], parse: parseClaudeAuth },
   },

@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "./tokens.css";
 @import "./dialog.css";
+@import "./water.css";
+@import "./sea-life.css";
 @import "./otto.css";
 
 /* Divergences from the design project live here, never in the ported files, so

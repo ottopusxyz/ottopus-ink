@@ -1,0 +1,142 @@
+import type { ButtonHTMLAttributes } from 'react'
+import { cn } from '@/lib/cn'
+
+type Variant = 'primary' | 'secondary' | 'ghost' | 'destructive' | 'danger-outline' | 'link'
+type Size = 'sm' | 'md' | 'lg'
+
+/**
+ * Pill is the default and what an action looks like. Block is the design's
+ * stacked-choice treatment — full width, text left, small radius — used where a
+ * dialog offers a list of ways to proceed rather than one thing to do.
+ */
+type Shape = 'pill' | 'block'
+
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: Variant
+  size?: Size
+  shape?: Shape
+  /**
+   * Fills its container, text still centred. The design's mobile action
+   * treatment — distinct from shape="block", which is a choice in a list and
+   * reads left. An action says what it does in the middle of itself.
+   */
+  fullWidth?: boolean
+}
+
+/**
+ * Text on a solid fill always goes through --ot-on-state; white fails AA on the
+ * green, amber and blue fills.
+ *
+ * The two destructive treatments are not interchangeable. Solid is for the
+ * committed act — revoking a grant, unlinking a wallet — where destruction is
+ * the point of the button. Outline is for rejecting beside an approve, where
+ * red-on-red would compete with the primary action for the eye.
+ *
+ * Solid destructive uses --ot-block-surface rather than --ot-block-solid: the
+ * fill is light in both modes so navy passes AA on it, which white on the
+ * darker red does not in every context.
+ */
+const VARIANTS: Record<Variant, string> = {
+  primary:
+    'border border-[var(--ot-coral)] bg-[var(--ot-coral)] text-[var(--ot-on-state)] hover:bg-[var(--ot-coral-hover)] hover:border-[var(--ot-coral-hover)]',
+  secondary:
+    'border border-[var(--ot-border-strong)] bg-[var(--ot-card)] text-[var(--ot-text)] hover:bg-[var(--ot-surface-2)]',
+  ghost:
+    'border border-transparent bg-transparent text-[var(--ot-text-2)] hover:bg-[var(--ot-surface-2)] hover:text-[var(--ot-text)]',
+  destructive:
+    'border border-[var(--ot-block-surface)] bg-[var(--ot-block-surface)] text-[var(--ot-on-state)] hover:brightness-95',
+  'danger-outline':
+    'border border-[var(--ot-block-solid)] bg-transparent text-[var(--ot-block-text)] hover:bg-[var(--ot-block-bg)]',
+  // "Text action": underlined with a hairline rule, no pill. Distinct from
+  // ghost, which is a quiet button rather than a link.
+  link: 'border-none bg-transparent text-[var(--ot-text)] underline underline-offset-[3px] decoration-[var(--ot-border-strong)] hover:decoration-[var(--ot-text)]',
+}
+
+/** Sizes are the design system's three, not invented. */
+const SIZES: Record<Size, string> = {
+  sm: 'px-3.5 py-[7px] text-[13px]',
+  md: 'px-[18px] py-[10px] text-[14px]',
+  lg: 'px-5 py-[13px] text-[15px]',
+}
+
+/**
+ * A finger is not a pointer. Below sm every pill grows to 44px tall whatever
+ * its size says — sm renders at 29px, which is a comfortable click and a miss
+ * with a thumb. The type size and the horizontal padding are untouched, so a
+ * small button still reads as the small one; it just has somewhere to be hit.
+ *
+ * Not applied to block, which is already 44px of stacked choice, or to link,
+ * which is a run of text and would grow a hole around itself.
+ */
+const TOUCH = 'max-sm:min-h-11'
+
+/** The link variant sits tight to its text rather than carrying pill padding. */
+const LINK_SIZES: Record<Size, string> = {
+  sm: 'px-1 py-[7px] text-[13px]',
+  md: 'px-1 py-[7px] text-[14px]',
+  lg: 'px-1 py-[7px] text-[15px]',
+}
+
+/**
+ * Disabled goes neutral rather than transparent. Fading a coral button leaves a
+ * washed coral that still reads as the primary action; the design system drops
+ * it to a plain surface so it reads as unavailable instead of merely faint.
+ */
+const DISABLED =
+  'disabled:cursor-not-allowed disabled:border-[var(--ot-border)] disabled:bg-[var(--ot-surface-2)] disabled:text-[var(--ot-text-4)] disabled:hover:bg-[var(--ot-surface-2)] disabled:hover:brightness-100'
+
+/**
+ * The button's own classes, for the cases where the element has to be an anchor
+ * rather than a button — a call to action that navigates. A <button> nested in
+ * an <a> is invalid, and an <a> with role="button" loses the browser's own link
+ * behaviour, so the honest fix is to let a link borrow the styling.
+ */
+export function buttonClasses({
+  variant = 'secondary',
+  size = 'md',
+  shape = 'pill',
+  fullWidth = false,
+  className,
+}: {
+  variant?: Variant
+  size?: Size
+  shape?: Shape
+  fullWidth?: boolean
+  className?: string
+} = {}): string {
+  const isLink = variant === 'link'
+  const block = shape === 'block'
+  return cn(
+    'inline-flex items-center gap-2 whitespace-nowrap',
+    block ? 'w-full justify-start px-4 py-3 text-left' : 'justify-center text-center',
+    fullWidth && !block && 'w-full',
+    isLink ? 'rounded-none' : block ? 'rounded-[10px]' : 'rounded-[var(--ot-radius-pill)]',
+    'font-ui font-medium leading-none cursor-pointer',
+    'transition-colors duration-[var(--ot-dur-fast)] ease-[var(--ot-ease-out)]',
+    VARIANTS[variant],
+    // Block carries its own padding; the size scale only sets the type size.
+    isLink ? LINK_SIZES[size] : block ? '' : cn(SIZES[size], TOUCH),
+    block && 'text-[14px] font-semibold',
+    !isLink && DISABLED,
+    isLink && 'disabled:cursor-not-allowed disabled:text-[var(--ot-text-4)]',
+    className,
+  )
+}
+
+export function Button({
+  variant = 'secondary',
+  size = 'md',
+  shape = 'pill',
+  fullWidth = false,
+  className,
+  type = 'button',
+  ...props
+}: ButtonProps) {
+  return (
+    <button
+      type={type}
+      className={buttonClasses({ variant, size, shape, fullWidth, className })}
+      {...props}
+    />
+  )
+}

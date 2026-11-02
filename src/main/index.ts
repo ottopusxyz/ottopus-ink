@@ -1,7 +1,9 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron'
-import { IPC, type AppInfo } from '../shared/ipc'
+import { app, BrowserWindow, ipcMain, Menu, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
+import { detectAgents } from './agents/detect'
+import { agentPath } from './agents/login-path'
 import { appMenuTemplate } from './menu'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
@@ -58,17 +60,32 @@ function createMainWindow(): BrowserWindow {
   return win
 }
 
+/** Every handler starts here: only the app's own page may call in. */
+function assertAppFrame(event: IpcMainInvokeEvent): void {
+  if (!isAppUrl(event.senderFrame?.url ?? '', appEntry)) {
+    throw new Error('IPC from an unexpected frame')
+  }
+}
+
+/** The last detection, shared by every caller until a refresh asks for a new one. */
+let agents: Promise<AgentStatus[]> | null = null
+
 function registerIpc(): void {
   ipcMain.handle(IPC.appInfo, (event): AppInfo => {
-    if (!isAppUrl(event.senderFrame?.url ?? '', appEntry)) {
-      throw new Error('IPC from an unexpected frame')
-    }
+    assertAppFrame(event)
     return {
       name: app.getName(),
       version: app.getVersion(),
       platform: process.platform,
       signer: signer.getStatus(),
     }
+  })
+
+  ipcMain.handle(IPC.detectAgents, (event, options: unknown): Promise<AgentStatus[]> => {
+    assertAppFrame(event)
+    const refresh = typeof options === 'object' && options !== null && 'refresh' in options && options.refresh === true
+    if (!agents || refresh) agents = agentPath().then(detectAgents)
+    return agents
   })
 }
 

@@ -8,6 +8,7 @@ import { IPC, type InkBridge, type SignerStatus } from '../shared/ipc'
  */
 const bridge: InkBridge = {
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
+  detectAgents: (options) => ipcRenderer.invoke(IPC.detectAgents, { refresh: options?.refresh === true }),
   onSignerStatus: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, status: SignerStatus) => listener(status)
     ipcRenderer.on(IPC.signerStatus, handler)

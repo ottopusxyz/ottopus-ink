@@ -5,6 +5,7 @@
  */
 export const IPC = {
   appInfo: 'app:info',
+  detectAgents: 'agents:detect',
   /** Main to renderer: the signer's status, sent on every change. */
   signerStatus: 'signer:status',
 } as const
@@ -48,6 +49,11 @@ export interface AgentStatus {
 /** What the preload exposes on `window.ink`. */
 export interface InkBridge {
   appInfo(): Promise<AppInfo>
+  /**
+   * The agents found on this computer. The first call checks; later calls
+   * return that result unless refresh is set, for a "Check again" button.
+   */
+  detectAgents(options?: { refresh?: boolean }): Promise<AgentStatus[]>
   /** Calls listener on every signer status change; returns an unsubscribe. */
   onSignerStatus(listener: (status: SignerStatus) => void): () => void
 }

@@ -19,6 +19,32 @@ export interface AppInfo {
   signer: SignerStatus
 }
 
+/** The agents Ink drives in the first release, in the order pickers list them. */
+export const AGENT_IDS = ['claude-code', 'codex', 'opencode'] as const
+export type AgentId = (typeof AGENT_IDS)[number]
+
+/**
+ * What detection found for one agent:
+ * - ready: installed, new enough, and signed in (or its sign-in can't be read)
+ * - signed-out: installed and new enough, but not signed in
+ * - outdated: installed, but its --help lacks a flag or command Ink needs
+ * - broken: found on PATH, but `--version` failed
+ * - missing: not on PATH
+ */
+export type AgentState = 'ready' | 'signed-out' | 'outdated' | 'broken' | 'missing'
+
+export interface AgentStatus {
+  id: AgentId
+  state: AgentState
+  /** Where the binary was found, for the settings list. */
+  path: string | null
+  version: string | null
+  /** Flags or commands Ink needs that this version's --help doesn't list. */
+  missing: string[]
+  /** Null when the CLI gives no clear answer. */
+  signedIn: boolean | null
+}
+
 /** What the preload exposes on `window.ink`. */
 export interface InkBridge {
   appInfo(): Promise<AppInfo>

@@ -1,0 +1,98 @@
+import { describe, expect, it } from 'vitest'
+import {
+  agentState,
+  missingFromHelp,
+  parseClaudeAuth,
+  parseCodexAuth,
+  parseOpenCodeAuth,
+  parseVersion,
+  type ProbeResult,
+} from './specs'
+
+const run = (stdout: string, code: number | null = 0, stderr = ''): ProbeResult => ({ code, stdout, stderr })
+
+describe('parseVersion', () => {
+  it('reads each CLI’s version line', () => {
+    expect(parseVersion('2.1.316 (Claude Code)')).toBe('2.1.316')
+    expect(parseVersion('codex-cli 0.156.1')).toBe('0.156.1')
+    expect(parseVersion('1.4.0-beta.2\n')).toBe('1.4.0-beta.2')
+  })
+
+  it('returns null without a version', () => {
+    expect(parseVersion('command not found')).toBeNull()
+  })
+})
+
+describe('missingFromHelp', () => {
+  const claudeHelp = `Options:
+  -p, --print                  Print response and exit
+  --mcp-config <configs...>    Load MCP servers
+  --strict-mcp-config          Only use MCP servers from --mcp-config`
+  const codexHelp = `Commands:
+  exec        Run Codex non-interactively [aliases: e]
+  app-server  [experimental] Run the app server
+Options:
+  -c, --config <key=value>`
+
+  it('finds flags and commands as whole words', () => {
+    expect(missingFromHelp(claudeHelp, ['--print', '--mcp-config', '--strict-mcp-config'])).toEqual([])
+    expect(missingFromHelp(codexHelp, ['app-server', '--config'])).toEqual([])
+  })
+
+  it('reports what is absent, without matching a longer flag that contains it', () => {
+    expect(missingFromHelp(claudeHelp, ['--plugin-dir', '--strict'])).toEqual(['--plugin-dir', '--strict'])
+    expect(missingFromHelp(codexHelp, ['app'])).toEqual(['app'])
+  })
+})
+
+describe('parseClaudeAuth', () => {
+  it('reads loggedIn from the JSON', () => {
+    expect(parseClaudeAuth(run('{"loggedIn":true,"authMethod":"claude.ai"}'))).toBe(true)
+    expect(parseClaudeAuth(run('{"loggedIn":false}', 1))).toBe(false)
+  })
+
+  it('returns null for anything else', () => {
+    expect(parseClaudeAuth(run('error: unknown command'))).toBeNull()
+    expect(parseClaudeAuth(run('{"loggedIn":"yes"}'))).toBeNull()
+  })
+})
+
+describe('parseCodexAuth', () => {
+  it('reads the status line', () => {
+    expect(parseCodexAuth(run('Logged in using ChatGPT'))).toBe(true)
+    expect(parseCodexAuth(run('', 1, 'Not logged in'))).toBe(false)
+  })
+
+  it('returns null when it can’t tell', () => {
+    expect(parseCodexAuth(run('', null))).toBeNull()
+  })
+})
+
+describe('parseOpenCodeAuth', () => {
+  it('counts stored credentials and environment keys', () => {
+    expect(parseOpenCodeAuth(run('●  Anthropic oauth\n└  1 credentials'))).toBe(true)
+    expect(parseOpenCodeAuth(run('└  0 credentials\n└  2 environment variables'))).toBe(true)
+    expect(parseOpenCodeAuth(run('└  0 credentials'))).toBe(false)
+  })
+
+  it('returns null when it fails or prints no count', () => {
+    expect(parseOpenCodeAuth(run('', 1))).toBeNull()
+    expect(parseOpenCodeAuth(run('something else'))).toBeNull()
+  })
+})
+
+describe('agentState', () => {
+  const ok = { path: '/usr/bin/claude', version: '2.1.316', missing: [], signedIn: true }
+
+  it('is ready when everything checks out, or sign-in is unknown', () => {
+    expect(agentState(ok)).toBe('ready')
+    expect(agentState({ ...ok, signedIn: null })).toBe('ready')
+  })
+
+  it('reports the first problem', () => {
+    expect(agentState({ ...ok, path: null, version: null })).toBe('missing')
+    expect(agentState({ ...ok, version: null })).toBe('broken')
+    expect(agentState({ ...ok, missing: ['--plugin-dir'], signedIn: false })).toBe('outdated')
+    expect(agentState({ ...ok, signedIn: false })).toBe('signed-out')
+  })
+})

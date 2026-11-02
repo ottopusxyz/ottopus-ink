@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Badge, Button, Callout } from '@/components/ui'
+import { useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Badge, Button, Callout, Dialog } from '@/components/ui'
 import { CloseIcon } from '@/components/shell/icons'
 import { AGENTS, LATER_AGENTS } from '@/lib/agents'
 import { stepIndex } from '@/lib/roving'
@@ -21,37 +21,24 @@ export interface SettingsDialogProps {
 
 /**
  * Settings as a dialog over the window, the way HyperFrames does it, with the
- * agent and model choices on their own tab.
+ * agent and model choices on their own tab. It is the shared Dialog, sized
+ * and laid out for two columns by .ink-settings in shell.css.
  *
  * None of these choices is saved yet: there is no settings store until the
  * vault lands (issue #12), and the agent list waits on detection (#4). The
  * tabs say so at the top rather than pretend.
  */
 export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
-  const ref = useRef<HTMLDialogElement>(null)
   const [tab, setTab] = useState<TabId>('agent')
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (open && !el.open) el.showModal()
-    if (!open && el.open) el.close()
-  }, [open])
-
   return (
-    <dialog
-      ref={ref}
-      className="ink-settings"
-      aria-labelledby="ink-settings-title"
-      onClose={onClose}
-      onClick={(event) => {
-        if (event.target === ref.current) onClose()
-      }}
-    >
+    <Dialog open={open} onClose={onClose} title="Settings" hideTitle className="ink-settings">
       <div className="flex items-center border-b border-[var(--ot-border)] py-3.5 pr-3.5 pl-[22px]">
-        <h2 id="ink-settings-title" className="m-0 flex-1 text-[15px] font-semibold">
+        {/* The dialog's own title names it for screen readers; this is the
+            visible one, in the header row beside the close button. */}
+        <span aria-hidden className="flex-1 text-[15px] font-semibold">
           Settings
-        </h2>
+        </span>
         <button
           type="button"
           className="grid h-7 w-[30px] cursor-pointer place-items-center rounded-[6px] border-0 bg-transparent text-[var(--ot-text-2)] hover:bg-[var(--ot-surface-3)]"
@@ -78,7 +65,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           {tab === 'agent' ? <AgentTab /> : tab === 'wallet' ? <WalletTab /> : <EmptyTab />}
         </div>
       </div>
-    </dialog>
+    </Dialog>
   )
 }
 

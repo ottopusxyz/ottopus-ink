@@ -370,26 +370,18 @@
 
 /* --- Settings --- */
 
-.ink-settings {
+/* The shared Dialog (ui/dialog.tsx) sized for two columns. Its panel is a
+   flex column; these rules are unlayered, so they win over its Tailwind
+   width, padding and gap without touching the ported file. */
+.ink-settings .ot-dialog-panel {
   width: min(900px, calc(100vw - 48px));
   height: min(640px, calc(100vh - 48px));
-  max-width: none;
-  max-height: none;
-  /* Tailwind's reset zeroes the margin a modal dialog centres itself with. */
-  margin: auto;
+  gap: 0;
   padding: 0;
-  border: 1px solid var(--ot-border);
+  overflow: hidden;
   border-radius: 18px;
   background: var(--ot-surface);
-  color: var(--ot-text);
   box-shadow: 0 2px 6px rgba(22, 33, 62, 0.08), 0 24px 64px rgba(22, 33, 62, 0.22);
-}
-.ink-settings::backdrop {
-  background: rgba(22, 33, 62, 0.34);
-}
-.ink-settings[open] {
-  display: flex;
-  flex-direction: column;
 }
 
 .ink-settings-nav {

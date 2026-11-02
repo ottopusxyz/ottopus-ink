@@ -13,9 +13,10 @@ const signer = new SignerHost(join(import.meta.dirname, 'signer.js'))
 
 app.enableSandbox()
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit()
-}
+// A second launch only hands focus to the first. app.quit() does not stop
+// whenReady from firing, so startup is gated on the lock below, not on quit.
+const primary = app.requestSingleInstanceLock()
+if (!primary) app.quit()
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -77,6 +78,8 @@ app.on('web-contents-created', (_event, contents) => {
 })
 
 void app.whenReady().then(() => {
+  if (!primary) return
+
   // No camera, microphone, notifications-by-prompt or anything else a page can
   // ask for. Features that need one are granted from main, not by the page.
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))

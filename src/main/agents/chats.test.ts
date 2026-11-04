@@ -26,16 +26,20 @@ function fakeSession() {
 
 let session: ReturnType<typeof fakeSession>
 let launched: ClaudeSessionOptions | undefined
+const launches: ClaudeSessionOptions[] = []
 
 beforeEach(() => {
   session = fakeSession()
   vi.mocked(startClaudeSession).mockImplementation((options) => {
     launched = options
+    launches.push(options)
     return session
   })
 })
 
 afterEach(() => {
+  // The registry outlives each test, so every chat a test opened has to end.
+  for (const options of launches.splice(0)) options.onEvent({ type: 'ended', error: null })
   vi.mocked(startClaudeSession).mockReset()
 })
 
@@ -54,6 +58,16 @@ describe('startChat', () => {
 
   it('refuses an agent with no driver yet', () => {
     expect(() => startChat({ ...ready, id: 'codex' }, env, () => undefined)).toThrow(/isn't built yet/)
+  })
+
+  it('refuses a fifth open chat without starting a process, and allows one again after a chat ends', () => {
+    for (let i = 0; i < 4; i++) startChat(ready, env, () => undefined)
+    expect(() => startChat(ready, env, () => undefined)).toThrow(/Too many chats/)
+    expect(startClaudeSession).toHaveBeenCalledTimes(4)
+
+    launched?.onEvent({ type: 'ended', error: null })
+    startChat(ready, env, () => undefined)
+    expect(startClaudeSession).toHaveBeenCalledTimes(5)
   })
 })
 

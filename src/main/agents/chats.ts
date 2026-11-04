@@ -6,6 +6,9 @@ import type { AgentEnv } from './login-env'
 /** Longer than anyone types or pastes into a chat. */
 const MAX_MESSAGE_CHARS = 200_000
 
+/** Each chat is a whole agent process, so a page in a loop mustn't be able to start them without end. */
+const MAX_OPEN_CHATS = 4
+
 const chats = new Map<string, ChatSession>()
 
 /**
@@ -20,6 +23,7 @@ export function startChat(
 ): string {
   if (agent.state !== 'ready' || !agent.path) throw new Error(`${agent.id} is not ready`)
   if (agent.id !== 'claude-code') throw new Error(`Chat with ${agent.id} isn't built yet`)
+  if (chats.size >= MAX_OPEN_CHATS) throw new Error('Too many chats are open. Close one first.')
 
   const chatId = randomUUID()
   const session = startClaudeSession({

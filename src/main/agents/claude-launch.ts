@@ -1,11 +1,42 @@
+import { MCP_SERVER_NAME } from '../mcp/protocol'
+
 /** The MCP tools a locked session may call without asking. Everything else is denied. */
-const ALLOWED_TOOLS = 'mcp__ottopus-ink__*'
+const ALLOWED_TOOLS = `mcp__${MCP_SERVER_NAME}__*`
+
+/** Where a session's process finds its token. */
+export const MCP_TOKEN_ENV = 'OTTOPUS_INK_TOKEN'
 
 export interface ClaudeLaunch {
   /** Path of the file holding the session's MCP servers. */
   mcpConfig: string
   /** The Ink skills, loaded as a plugin for this session only. */
   pluginDir: string | null
+}
+
+export interface InkMcpServer {
+  /** The shim, built next to the main bundle. */
+  shim: string
+  socketPath: string
+}
+
+/**
+ * The session's MCP config: the shim, run by this app's own binary so that no
+ * separate Node is needed. The token is named here, not written: Claude Code
+ * fills it in from its environment, so it stays out of the file and off argv.
+ */
+export function claudeMcpServers({ shim, socketPath }: InkMcpServer): Record<string, unknown> {
+  return {
+    [MCP_SERVER_NAME]: {
+      type: 'stdio',
+      command: process.execPath,
+      args: [shim],
+      env: {
+        ELECTRON_RUN_AS_NODE: '1',
+        OTTOPUS_INK_SOCKET: socketPath,
+        OTTOPUS_INK_TOKEN: `\${${MCP_TOKEN_ENV}}`,
+      },
+    },
+  }
 }
 
 /**

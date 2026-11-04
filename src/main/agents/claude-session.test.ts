@@ -114,10 +114,14 @@ describe('startClaudeSession launch', () => {
 
   it('gives the process the filtered environment, not the one it was given', async () => {
     const file = await standIn('env', `note(process.env); ${answers}`)
-    start(file, { env: { HOME: '/h', PATH: '/usr/bin:/bin', CLAUDE_CODE_PLUGIN_DIRS: '/other', GITHUB_TOKEN: 'test-value' } })
+    start(file, {
+      env: { HOME: '/h', PATH: '/usr/bin:/bin', CLAUDE_CODE_PLUGIN_DIRS: '/other', GITHUB_TOKEN: 'test-value' },
+      sessionEnv: { OTTOPUS_INK_TOKEN: 'for-this-session' },
+    })
     await vi.waitFor(() => expect(existsSync(`${file}.note`)).toBe(true))
     const seen = await notes(file)
     expect(seen.HOME).toBe('/h')
+    expect(seen.OTTOPUS_INK_TOKEN).toBe('for-this-session')
     expect(seen).not.toHaveProperty('CLAUDE_CODE_PLUGIN_DIRS')
     expect(seen).not.toHaveProperty('GITHUB_TOKEN')
   })

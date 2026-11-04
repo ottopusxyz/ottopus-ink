@@ -24,6 +24,8 @@ export interface ClaudeSessionOptions {
   env: NodeJS.ProcessEnv
   /** The `mcpServers` of the session's MCP config. Nothing else is available to it. */
   mcpServers: Record<string, unknown>
+  /** Variables for this session alone, set after env has been filtered. */
+  sessionEnv?: Record<string, string>
   pluginDir?: string | null
   onEvent: (event: ChatEvent) => void
   /** How long a turn gets to stop before the whole session is ended. */
@@ -44,7 +46,7 @@ const MAX_STDERR_CHARS = 4 * 1024
  * with the session, so it picks up no project and leaves none of Ink's files.
  */
 export function startClaudeSession(options: ClaudeSessionOptions): ChatSession {
-  const { binary, env, mcpServers, pluginDir = null, onEvent, stopTurnGraceMs = 5000, closeGraceMs = 500 } = options
+  const { binary, env, mcpServers, sessionEnv, pluginDir = null, onEvent, stopTurnGraceMs = 5000, closeGraceMs = 500 } = options
 
   const dir = mkdtempSync(join(tmpdir(), 'ink-chat-'))
   const mcpConfig = join(dir, 'mcp.json')
@@ -52,7 +54,7 @@ export function startClaudeSession(options: ClaudeSessionOptions): ChatSession {
 
   const child = spawn(binary, claudeArgs({ mcpConfig, pluginDir }), {
     cwd: dir,
-    env: claudeEnv(env),
+    env: { ...claudeEnv(env), ...sessionEnv },
     stdio: ['pipe', 'pipe', 'pipe'],
     detached: true,
   })

@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentStatus, ChatEvent } from '../../shared/ipc'
+import type { McpBridge } from '../mcp/bridge'
+import { claudeMcpServers, MCP_TOKEN_ENV } from './claude-launch'
 import { startClaudeSession, type ChatSession } from './claude-session'
 import type { AgentEnv } from './login-env'
+
+/** What a chat needs to reach Ink's tools. */
+export interface ChatTools {
+  bridge: Pick<McpBridge, 'socketPath' | 'addSession'>
+  shim: string
+}
 
 /** Longer than anyone types or pastes into a chat. */
 const MAX_MESSAGE_CHARS = 200_000
@@ -19,6 +27,7 @@ const chats = new Map<string, ChatSession>()
 export function startChat(
   agent: AgentStatus,
   agentEnv: AgentEnv,
+  { bridge, shim }: ChatTools,
   onEvent: (chatId: string, event: ChatEvent) => void,
 ): string {
   if (agent.state !== 'ready' || !agent.path) throw new Error(`${agent.id} is not ready`)
@@ -26,13 +35,18 @@ export function startChat(
   if (chats.size >= MAX_OPEN_CHATS) throw new Error('Too many chats are open. Close one first.')
 
   const chatId = randomUUID()
+  // One token for each chat, gone with it.
+  const tools = bridge.addSession()
   const session = startClaudeSession({
     binary: agent.path,
     env: { ...process.env, ...agentEnv },
-    // No Ink tools yet: the MCP shim comes next, and goes here.
-    mcpServers: {},
+    mcpServers: claudeMcpServers({ shim, socketPath: bridge.socketPath }),
+    sessionEnv: { [MCP_TOKEN_ENV]: tools.token },
     onEvent: (event) => {
-      if (event.type === 'ended') chats.delete(chatId)
+      if (event.type === 'ended') {
+        chats.delete(chatId)
+        tools.remove()
+      }
       onEvent(chatId, event)
     },
   })

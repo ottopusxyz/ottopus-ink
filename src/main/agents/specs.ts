@@ -50,17 +50,16 @@ export function parseVersion(text: string): string | null {
 }
 
 /**
- * The required flags and commands that `--help` doesn't list. A flag counts
- * anywhere as a whole word; a command only where help lists commands, at the
- * start of a line, so a word in a description doesn't pass for one.
+ * The required flags and commands that `--help` doesn't list. Both must start a
+ * help line, so a mention in another item's description doesn't count: flags
+ * after any short form ("-c, --config"), commands after any program name, which
+ * yargs prints ("  opencode acp") and others don't ("  app-server").
  */
-export function missingFromHelp(help: string, required: readonly string[]): string[] {
+export function missingFromHelp(help: string, required: readonly string[], binary: string): string[] {
   return required.filter((item) => {
     const word = escapeRegExp(item)
-    const listed = item.startsWith('-')
-      ? new RegExp(`(^|[\\s,\\[])${word}($|[\\s,=\\]<])`, 'm')
-      : new RegExp(`^[ \\t]+${word}($|[\\s,])`, 'm')
-    return !listed.test(help)
+    const lead = item.startsWith('-') ? '(?:-\\w, )?' : `(?:${escapeRegExp(binary)}[ \\t]+)?`
+    return !new RegExp(`^[ \\t]+${lead}${word}($|[\\s,=<\\[])`, 'm').test(help)
   })
 }
 
@@ -90,12 +89,16 @@ export function parseCodexAuth({ code, stdout, stderr }: RunResult): boolean | n
 }
 
 /**
- * `opencode auth list` counts stored credentials and the provider keys it
- * finds in the environment. Any of either counts as signed in.
+ * `opencode auth list` differs by release. 1.x counts stored credentials and the
+ * provider keys it finds in the environment; the newer CLI prints one row per
+ * connection, or "No authenticated integrations". Any connection counts as
+ * signed in.
  */
 export function parseOpenCodeAuth({ code, stdout, stderr }: RunResult): boolean | null {
   if (code !== 0) return null
   const text = `${stdout}\n${stderr}`
+  if (/no authenticated integrations/i.test(text)) return false
+  if (/\s(?:stored|environment)\s*$/im.test(text)) return true
   const counts = [...text.matchAll(/(\d+)\s+(?:credentials?|environment variables?)\b/gi)].map((m) => Number(m[1]))
   if (counts.length === 0) return null
   return counts.some((count) => count > 0)

@@ -39,7 +39,7 @@ async function detectAgent(spec: AgentSpec, path: string): Promise<AgentStatus> 
       missing = known
     } else {
       const help = await probe(binary, ['--help'], env)
-      missing = missingFromHelp(`${help.stdout}\n${help.stderr}`, spec.requires)
+      missing = missingFromHelp(`${help.stdout}\n${help.stderr}`, spec.requires, spec.binary)
       // A failed or timed-out --help is not remembered, so the next check tries again.
       if (help.code === 0) flagTable.set(key, missing)
     }

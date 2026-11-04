@@ -32,6 +32,9 @@ export default defineConfig({
           // The signer runs as its own utilityProcess. It is a separate entry so
           // nothing in the main bundle can reach signing code by import.
           signer: resolve('src/signer/index.ts'),
+          // The MCP server an agent launches. It runs outside the app, in the
+          // agent's process tree, so it shares no code with main.
+          shim: resolve('src/shim/index.ts'),
         },
       },
     },

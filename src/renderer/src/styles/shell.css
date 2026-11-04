@@ -359,6 +359,61 @@
   user-select: text;
 }
 
+/* The agent picker's list: a native popover, placed under its button with
+   CSS anchor positioning and flipped above when there's no room below. */
+.ink-popover {
+  inset: auto;
+  margin: 6px 0;
+  position-area: bottom span-right;
+  position-try-fallbacks: flip-block;
+  width: 360px;
+  max-height: min(460px, 70vh);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--ot-border);
+  border-radius: 14px;
+  background: var(--ot-card);
+  color: var(--ot-text);
+  box-shadow: 0 2px 6px rgba(22, 33, 62, 0.08), 0 18px 40px rgba(22, 33, 62, 0.18);
+}
+
+.ink-agent-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.ink-agent-option {
+  cursor: pointer;
+}
+button.ink-agent-option:hover {
+  background: var(--ot-surface-3);
+}
+.ink-agent-option[aria-current="true"] {
+  background: var(--ot-surface-2);
+  box-shadow: inset 0 0 0 1px var(--ot-border-strong);
+}
+
+/* A command to run in a terminal: selectable, so it can be copied. */
+.ink-command {
+  display: block;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--ot-surface-3);
+  font: 12px/1.45 var(--ot-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .ink-plan-pane {
   position: relative;
   width: 326px;

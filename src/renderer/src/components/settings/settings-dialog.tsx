@@ -1,7 +1,9 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Badge, Button, Callout, Dialog } from '@/components/ui'
+import type { AgentId, AgentState, AgentStatus } from '../../../../shared/ipc'
+import { AgentMark } from '@/components/chat/agent-picker'
+import { Badge, Button, Callout, Dialog, type Tone } from '@/components/ui'
 import { CloseIcon } from '@/components/shell/icons'
-import { AGENTS, LATER_AGENTS } from '@/lib/agents'
+import { agentInfo, describeAgent, LATER_AGENTS } from '@/lib/agents'
 import { stepIndex } from '@/lib/roving'
 
 const TABS = [
@@ -17,6 +19,13 @@ type TabId = (typeof TABS)[number]['id']
 export interface SettingsDialogProps {
   open: boolean
   onClose: () => void
+  /** What detection found; null until the first check ends. */
+  agents: readonly AgentStatus[] | null
+  /** The agent new chats use. */
+  selectedAgent: AgentId | null
+  /** True while a check runs. */
+  checking: boolean
+  onCheckAgain: () => void
 }
 
 /**
@@ -24,11 +33,11 @@ export interface SettingsDialogProps {
  * agent and model choices on their own tab. It is the shared Dialog, sized
  * and laid out for two columns by .ink-settings in shell.css.
  *
- * None of these choices is saved yet: there is no settings store until the
- * vault lands (issue #12), and the agent list waits on detection (#4). The
- * tabs say so at the top rather than pretend.
+ * The agent list is real. The choices below it are not saved yet: there is
+ * no settings store until the vault lands (issue #12), and the tabs say so
+ * rather than pretend.
  */
-export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ open, onClose, agents, selectedAgent, checking, onCheckAgain }: SettingsDialogProps) {
   const [tab, setTab] = useState<TabId>('agent')
 
   return (
@@ -62,7 +71,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           ))}
         </nav>
         <div className="min-w-0 flex-1 overflow-auto pt-[18px] pr-7 pb-6 pl-[18px]">
-          {tab === 'agent' ? <AgentTab /> : tab === 'wallet' ? <WalletTab /> : <EmptyTab />}
+          {tab === 'agent' ? (
+            <AgentTab agents={agents} selectedAgent={selectedAgent} checking={checking} onCheckAgain={onCheckAgain} />
+          ) : tab === 'wallet' ? <WalletTab /> : <EmptyTab />}
         </div>
       </div>
     </Dialog>
@@ -72,41 +83,76 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 function NotSavedYet() {
   return (
     <Callout severity="info" title="A preview" className="mb-4">
-      These choices are not saved yet. They start working as agents and the vault are connected.
+      The choices below are not saved yet. They start working as agents and the vault are connected.
     </Callout>
   )
 }
 
-function AgentTab() {
+const STATE_TONE: Record<AgentState, Tone> = {
+  ready: 'ok',
+  'signed-out': 'warn',
+  outdated: 'warn',
+  broken: 'block',
+  missing: 'neutral',
+}
+
+function AgentTab({
+  agents,
+  selectedAgent,
+  checking,
+  onCheckAgain,
+}: Omit<SettingsDialogProps, 'open' | 'onClose'>) {
   const [access, setAccess] = useState('ottopus')
   const [send, setSend] = useState('queue')
   return (
     <>
       <h2 className="m-0 text-[16px] font-semibold">Agent</h2>
-      <p className="mt-1.5 mb-3.5 text-[13px] text-[var(--ot-text-2)]">The agent and model used for new chats.</p>
-      <NotSavedYet />
+      <p className="mt-1.5 mb-3.5 text-[13px] text-[var(--ot-text-2)]">
+        The agents Ink found on this computer, and how new chats use them.
+      </p>
 
-      <section className="flex flex-col gap-2 border-t border-[var(--ot-border)] py-4">
-        <h3 className="m-0 mb-1 text-[14px] font-semibold">Agents on this computer</h3>
-        {AGENTS.map((agent) => (
-          <div
-            key={agent.id}
-            className="flex items-center gap-3 rounded-[12px] border border-[var(--ot-border)] bg-[var(--ot-card)] px-3 py-2.5"
-          >
-            <span className="ink-agent-mark" style={{ background: agent.fill, color: agent.ink }}>
-              {agent.mark}
-            </span>
-            <span className="flex-1">
-              <b className="text-[14px] font-semibold">{agent.name}</b>
-              <br />
-              <span className="text-[12px] text-[var(--ot-text-3)]">Not checked yet</span>
-            </span>
-          </div>
-        ))}
+      <section className="flex flex-col gap-2 border-t border-[var(--ot-border)] py-4" aria-busy={checking}>
+        <div className="mb-1 flex items-center gap-3">
+          <h3 className="m-0 flex-1 text-[14px] font-semibold">Agents on this computer</h3>
+          <Button size="sm" onClick={onCheckAgain} disabled={checking}>
+            {checking ? 'Checking…' : 'Check again'}
+          </Button>
+        </div>
+        {agents === null ? (
+          <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Looking for Claude Code, Codex and OpenCode…</p>
+        ) : (
+          agents.map((agent) => {
+            const copy = describeAgent(agent)
+            return (
+              <div
+                key={agent.id}
+                className="flex items-start gap-3 rounded-[12px] border border-[var(--ot-border)] bg-[var(--ot-card)] px-3 py-2.5"
+              >
+                <AgentMark id={agent.id} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <b className="text-[14px] font-semibold">{agentInfo(agent.id).name}</b>
+                    <Badge tone={STATE_TONE[agent.state]}>{copy.label}</Badge>
+                    {agent.id === selectedAgent ? <Badge tone="plan">New chats</Badge> : null}
+                  </span>
+                  <span className="mt-1 block text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">{copy.hint}</span>
+                  {copy.command ? <code className="ink-command">{copy.command}</code> : null}
+                  {agent.path ? (
+                    <span className="selectable mt-1 block font-mono text-[11px] text-[var(--ot-text-3)]">
+                      {agent.path}
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+            )
+          })
+        )}
         <p className="m-0 pl-0.5 text-[12px] text-[var(--ot-text-3)]">
           {LATER_AGENTS.join(', ')} come later. Ink uses your own agent login; it never asks for an API key.
         </p>
       </section>
+
+      <NotSavedYet />
 
       <Setting
         title="Agent access"

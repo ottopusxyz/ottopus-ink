@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppInfo, SignerStatus } from '../../shared/ipc'
+import type { AgentId, AgentStatus, AppInfo, SignerStatus } from '../../shared/ipc'
+import { AgentPicker } from '@/components/chat/agent-picker'
 import { ChatView } from '@/components/chat/chat-view'
 import { HomeView } from '@/components/home/home-view'
 import { PageView } from '@/components/pages/page-view'
@@ -7,7 +8,9 @@ import { SettingsDialog } from '@/components/settings/settings-dialog'
 import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
+import { chooseAgent } from '@/lib/agents'
 import { chatTitle, HOME_DRAFT, withDraft, type Chat, type Drafts } from '@/lib/chats'
+import { latestOnly } from '@/lib/latest'
 
 const mac = navigator.userAgent.includes('Mac')
 
@@ -23,6 +26,14 @@ export function App() {
   const draftKey = view.kind === 'chat' ? view.chatId : HOME_DRAFT
   const draft = drafts[draftKey] ?? ''
   const setDraft = (text: string) => setDrafts((all) => withDraft(all, draftKey, text))
+  // What detection found (null until the first check ends), and the agent the
+  // person picked. New chats use the pick while it is ready.
+  const [agents, setAgents] = useState<AgentStatus[] | null>(null)
+  const [agentPick, setAgentPick] = useState<AgentId | null>(null)
+  const selectedAgent = agents ? chooseAgent(agents, agentPick) : null
+  // True from launch: the first check is running, and Check again waits for it.
+  const [checkingAgents, setCheckingAgents] = useState(true)
+  const [beginDetection] = useState(latestOnly)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -40,6 +51,31 @@ export function App() {
     )
     return unsubscribe
   }, [])
+
+  const detectAgents = useCallback(
+    (refresh: boolean) => {
+      // Only the newest answer counts: an older check that finishes late must
+      // not put back what it saw before, say, a sign-in.
+      const isLatest = beginDetection()
+      window.ink
+        .detectAgents({ refresh })
+        .then(
+          (found) => {
+            if (isLatest()) setAgents(found)
+          },
+          (error: unknown) => {
+            console.error('Could not detect agents', error)
+            if (isLatest()) setAgents((current) => current ?? [])
+          },
+        )
+        .finally(() => {
+          if (isLatest()) setCheckingAgents(false)
+        })
+    },
+    [beginDetection],
+  )
+
+  useEffect(() => detectAgents(false), [detectAgents])
 
   const newChat = useCallback(() => {
     setView({ kind: 'home' })
@@ -77,6 +113,8 @@ export function App() {
 
   const openChat = (chatId: string) => setView({ kind: 'chat', chatId })
 
+  const agentPicker = <AgentPicker agents={agents} selected={selectedAgent} onSelect={setAgentPick} />
+
   const current = view.kind === 'chat' ? chats.find((chat) => chat.id === view.chatId) : undefined
 
   return (
@@ -100,7 +138,7 @@ export function App() {
       {view.kind === 'page' ? (
         <PageView page={view.page} />
       ) : current ? (
-        <ChatView chat={current} draft={draft} onDraft={setDraft} onSubmit={send} />
+        <ChatView chat={current} draft={draft} onDraft={setDraft} onSubmit={send} agentPicker={agentPicker} />
       ) : (
         <HomeView
           draft={draft}
@@ -110,9 +148,20 @@ export function App() {
           onOpenChat={openChat}
           onPortfolio={() => setView({ kind: 'page', page: 'portfolio' })}
           composerRef={composerRef}
+          agentPicker={agentPicker}
         />
       )}
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        agents={agents}
+        selectedAgent={selectedAgent}
+        checking={checkingAgents}
+        onCheckAgain={() => {
+          setCheckingAgents(true)
+          detectAgents(true)
+        }}
+      />
     </AppShell>
   )
 }

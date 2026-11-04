@@ -26,6 +26,8 @@ describe('parseVersion', () => {
 describe('missingFromHelp', () => {
   // Lines as the real CLIs print them: Claude Code 2.1.316 and codex-cli 0.156.1.
   const claudeHelp = `Options:
+  --allowedTools, --allowed-tools <tools...>
+      Comma or space-separated list of tool names to allow
   --input-format <format>               Input format (only works with --print)
   --mcp-config <configs...>             Load MCP servers from JSON files
   --output-format <format>              Output format (only works with --print)
@@ -57,7 +59,7 @@ Commands:
 
   it('passes each CLI’s real help', () => {
     const claude = ['--print', '--input-format', '--output-format', '--mcp-config', '--strict-mcp-config']
-    expect(missingFromHelp(claudeHelp, [...claude, '--setting-sources', '--plugin-dir', '--tools'], 'claude')).toEqual([])
+    expect(missingFromHelp(claudeHelp, [...claude, '--setting-sources', '--plugin-dir', '--tools', '--allowedTools'], 'claude')).toEqual([])
     expect(missingFromHelp(codexHelp, ['app-server', '--config'], 'codex')).toEqual([])
     expect(missingFromHelp(opencodeHelp, ['acp'], 'opencode')).toEqual([])
     expect(missingFromHelp(opencodeNextHelp, ['acp'], 'opencode')).toEqual([])

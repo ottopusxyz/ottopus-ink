@@ -18,7 +18,7 @@ export interface RunOptions {
 const MAX_OUTPUT_CHARS = 1024 * 1024
 
 /** A background child can hold the pipes open after the command exits; don't wait on it for long. */
-const DRAIN_AFTER_EXIT_MS = 250
+export const DRAIN_AFTER_EXIT_MS = 250
 
 const running = new Set<ChildProcess>()
 
@@ -85,7 +85,7 @@ export function stopRuns(): void {
 }
 
 /** Signals the command's whole process group, which it leads because it was spawned detached. */
-function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+export function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   if (child.pid === undefined) return
   try {
     process.kill(-child.pid, signal)

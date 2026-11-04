@@ -51,6 +51,8 @@ export function claudeArgs({ mcpConfig, pluginDir }: ClaudeLaunch): string[] {
  * many variables that would undo the flags above. CLAUDE_CODE_PLUGIN_DIRS, for
  * one, loads plugins whatever `--setting-sources` says, and a launch from a
  * terminal inherits it. It also keeps the user's other secrets from the agent.
+ * Of the ANTHROPIC_ variables only the sign-in ones pass: others can send every
+ * chat, wallet tool results included, to another server (ANTHROPIC_BASE_URL).
  */
 const PASSED_THROUGH = [
   /^(?:HOME|USER|LOGNAME|PATH|SHELL|TERM|TZ|TMPDIR|TEMP|TMP|LANG|LC_[A-Z]+)$/,
@@ -58,7 +60,7 @@ const PASSED_THROUGH = [
   /^XDG_RUNTIME_DIR$/,
   /^(?:https?_proxy|all_proxy|no_proxy|HTTPS?_PROXY|ALL_PROXY|NO_PROXY)$/,
   /^(?:NODE_EXTRA_CA_CERTS|SSL_CERT_FILE|SSL_CERT_DIR)$/,
-  /^(?:CLAUDE_CONFIG_DIR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_[A-Z_]+)$/,
+  /^(?:CLAUDE_CONFIG_DIR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN)$/,
 ]
 
 export function claudeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

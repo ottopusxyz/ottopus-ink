@@ -51,8 +51,20 @@ describe('claudeEnv', () => {
       NODE_EXTRA_CA_CERTS: '/ca.pem',
       CLAUDE_CONFIG_DIR: '/h/.other',
       ANTHROPIC_API_KEY: 'test-value',
+      ANTHROPIC_AUTH_TOKEN: 'test-value',
+      CLAUDE_CODE_OAUTH_TOKEN: 'test-value',
     }
     expect(claudeEnv(env)).toMatchObject(env)
+  })
+
+  it('drops the ANTHROPIC_ variables that could send a chat elsewhere or change its model', () => {
+    const env = claudeEnv({
+      ANTHROPIC_BASE_URL: 'https://elsewhere.test',
+      ANTHROPIC_CUSTOM_HEADERS: 'x: y',
+      ANTHROPIC_MODEL: 'other',
+      ANTHROPIC_SMALL_FAST_MODEL: 'other',
+    })
+    expect(Object.keys(env).filter((name) => name.startsWith('ANTHROPIC_'))).toEqual([])
   })
 
   it('drops what would change the session or does not concern it', () => {

@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, ipcMain, Menu, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
 import { detectAgents } from './agents/detect'
-import { agentPath } from './agents/login-path'
+import { agentEnv } from './agents/login-env'
 import { stopRuns } from './agents/run'
 import { appMenuTemplate } from './menu'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
@@ -85,7 +85,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.detectAgents, (event, options: unknown): Promise<AgentStatus[]> => {
     assertAppFrame(event)
     const refresh = typeof options === 'object' && options !== null && 'refresh' in options && options.refresh === true
-    if (!agents || refresh) agents = agentPath().then(detectAgents)
+    if (!agents || refresh) agents = agentEnv().then(detectAgents)
     return agents
   })
 }

@@ -2,6 +2,7 @@ import { access, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import type { AgentStatus } from '../../shared/ipc'
+import type { AgentEnv } from './login-env'
 import { run, type RunResult } from './run'
 import { AGENT_SPECS, agentState, missingFromHelp, parseVersion, type AgentSpec } from './specs'
 
@@ -15,19 +16,19 @@ const PROBE_TIMEOUT_MS = 15_000
 const flagTable = new Map<string, string[]>()
 
 /**
- * Finds and checks every agent on the given PATH, in parallel. Read-only: it
- * runs `--version`, `--help` and the sign-in status command, nothing that
+ * Finds and checks every agent, in parallel, with the login shell's variables
+ * over this process's environment. Read-only: it runs `--version`, `--help` and the sign-in status command, nothing that
  * changes the agent's config or starts a session.
  */
-export function detectAgents(path: string): Promise<AgentStatus[]> {
-  return Promise.all(AGENT_SPECS.map((spec) => detectAgent(spec, path)))
+export function detectAgents(agentEnv: AgentEnv): Promise<AgentStatus[]> {
+  const env = { ...process.env, ...agentEnv }
+  return Promise.all(AGENT_SPECS.map((spec) => detectAgent(spec, env, agentEnv.PATH)))
 }
 
-async function detectAgent(spec: AgentSpec, path: string): Promise<AgentStatus> {
+async function detectAgent(spec: AgentSpec, env: NodeJS.ProcessEnv, path: string): Promise<AgentStatus> {
   const binary = await findExecutable(spec.binary, path)
   if (!binary) return { id: spec.id, state: 'missing', path: null, version: null, missing: [], signedIn: null }
 
-  const env = { ...process.env, PATH: path }
   const [versionRun, authRun] = await Promise.all([probe(binary, ['--version'], env), probe(binary, spec.auth.args, env)])
   const version = versionRun.code === 0 ? parseVersion(versionRun.stdout) : null
 

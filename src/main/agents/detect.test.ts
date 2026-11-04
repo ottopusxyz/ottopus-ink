@@ -50,7 +50,7 @@ describe('findExecutable', () => {
 
 describe('detectAgents', () => {
   it('reports each agent’s state, version, missing flags and sign-in', async () => {
-    const [claude, codex, opencode] = await detectAgents(bin)
+    const [claude, codex, opencode] = await detectAgents({ PATH: bin })
     expect(claude).toEqual({
       id: 'claude-code',
       state: 'ready',
@@ -61,5 +61,26 @@ describe('detectAgents', () => {
     })
     expect(codex).toMatchObject({ id: 'codex', state: 'outdated', version: '0.1.0', missing: ['app-server'], signedIn: false })
     expect(opencode).toMatchObject({ id: 'opencode', state: 'missing', path: null })
+  })
+
+  it('runs CLIs with the login shell’s variables, so a custom config folder is seen', async () => {
+    const other = join(root, 'other')
+    await mkdir(other)
+    const file = join(other, 'codex')
+    await writeFile(
+      file,
+      `#!/bin/sh
+case "$1" in
+  --version) echo 'codex-cli 0.2.0' ;;
+  --help) printf '  app-server  Run\\n  -c, --config <k=v>\\n' ;;
+  login) if [ "$CODEX_HOME" = /custom/codex ]; then echo 'Logged in using ChatGPT'; else echo 'Not logged in'; exit 1; fi ;;
+esac
+`,
+    )
+    await chmod(file, 0o755)
+    const signedIn = await detectAgents({ PATH: other, CODEX_HOME: '/custom/codex' })
+    expect(signedIn[1]).toMatchObject({ id: 'codex', state: 'ready', signedIn: true })
+    const signedOut = await detectAgents({ PATH: other })
+    expect(signedOut[1]).toMatchObject({ id: 'codex', state: 'signed-out', signedIn: false })
   })
 })

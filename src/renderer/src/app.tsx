@@ -10,6 +10,7 @@ import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
 import { chooseAgent } from '@/lib/agents'
 import { chatTitle, HOME_DRAFT, withDraft, type Chat, type Drafts } from '@/lib/chats'
+import { latestOnly } from '@/lib/latest'
 
 const mac = navigator.userAgent.includes('Mac')
 
@@ -30,7 +31,9 @@ export function App() {
   const [agents, setAgents] = useState<AgentStatus[] | null>(null)
   const [agentPick, setAgentPick] = useState<AgentId | null>(null)
   const selectedAgent = agents ? chooseAgent(agents, agentPick) : null
-  const [checkingAgents, setCheckingAgents] = useState(false)
+  // True from launch: the first check is running, and Check again waits for it.
+  const [checkingAgents, setCheckingAgents] = useState(true)
+  const [beginDetection] = useState(latestOnly)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
@@ -49,12 +52,30 @@ export function App() {
     return unsubscribe
   }, [])
 
-  useEffect(() => {
-    window.ink.detectAgents().then(setAgents, (error: unknown) => {
-      console.error('Could not detect agents', error)
-      setAgents([])
-    })
-  }, [])
+  const detectAgents = useCallback(
+    (refresh: boolean) => {
+      // Only the newest answer counts: an older check that finishes late must
+      // not put back what it saw before, say, a sign-in.
+      const isLatest = beginDetection()
+      window.ink
+        .detectAgents({ refresh })
+        .then(
+          (found) => {
+            if (isLatest()) setAgents(found)
+          },
+          (error: unknown) => {
+            console.error('Could not detect agents', error)
+            if (isLatest()) setAgents((current) => current ?? [])
+          },
+        )
+        .finally(() => {
+          if (isLatest()) setCheckingAgents(false)
+        })
+    },
+    [beginDetection],
+  )
+
+  useEffect(() => detectAgents(false), [detectAgents])
 
   const newChat = useCallback(() => {
     setView({ kind: 'home' })
@@ -91,14 +112,6 @@ export function App() {
   }
 
   const openChat = (chatId: string) => setView({ kind: 'chat', chatId })
-
-  const checkAgentsAgain = () => {
-    setCheckingAgents(true)
-    window.ink
-      .detectAgents({ refresh: true })
-      .then(setAgents, (error: unknown) => console.error('Could not detect agents', error))
-      .finally(() => setCheckingAgents(false))
-  }
 
   const agentPicker = <AgentPicker agents={agents} selected={selectedAgent} onSelect={setAgentPick} />
 
@@ -144,7 +157,10 @@ export function App() {
         agents={agents}
         selectedAgent={selectedAgent}
         checking={checkingAgents}
-        onCheckAgain={checkAgentsAgain}
+        onCheckAgain={() => {
+          setCheckingAgents(true)
+          detectAgents(true)
+        }}
       />
     </AppShell>
   )

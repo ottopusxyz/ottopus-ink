@@ -30,15 +30,19 @@ const FALLBACK_DIRS = [
 /** Marks PATH in the shell's output, so rc files that print a banner don't matter. */
 const MARK = '__INK_PATH__'
 
-/** Prints PATH between the marks. Braces matter: "$PATH__INK_PATH__" would be one variable name. */
-export const PATH_COMMAND = `printf '%s' "${MARK}\${PATH}${MARK}"`
+/**
+ * Prints PATH between the marks. printenv rather than $PATH, because the
+ * syntaxes differ: fish rejects "${PATH}", and fish prints its PATH list with
+ * spaces in places other shells use colons. printenv prints what agents get.
+ */
+export const PATH_COMMAND = `printf '%s' ${MARK}; printenv PATH; printf '%s' ${MARK}`
 
 /** The PATH between the two marks, or null when the shell didn't print it. */
 export function extractPath(output: string): string | null {
   const start = output.indexOf(MARK)
   const end = start === -1 ? -1 : output.indexOf(MARK, start + MARK.length)
   if (end === -1) return null
-  return output.slice(start + MARK.length, end) || null
+  return output.slice(start + MARK.length, end).trim() || null
 }
 
 /** PATH lists joined in order, each folder once, empty entries dropped. */

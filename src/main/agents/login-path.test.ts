@@ -4,7 +4,7 @@ import { extractPath, mergePaths, PATH_COMMAND } from './login-path'
 
 describe('extractPath', () => {
   it('reads PATH between the marks, ignoring anything an rc file printed', () => {
-    expect(extractPath('Welcome back!\n__INK_PATH__/a:/b__INK_PATH__')).toBe('/a:/b')
+    expect(extractPath('Welcome back!\n__INK_PATH__/a:/b\n__INK_PATH__')).toBe('/a:/b')
   })
 
   it('returns null when the marks are missing or empty', () => {
@@ -28,7 +28,12 @@ describe('mergePaths', () => {
 
 describe('PATH_COMMAND', () => {
   it('prints the PATH a shell has, between the marks', () => {
-    const output = execFileSync('/bin/sh', ['-c', PATH_COMMAND], { env: { PATH: '/x/bin:/y/bin' } }).toString()
-    expect(extractPath(output)).toBe('/x/bin:/y/bin')
+    // printenv itself must be findable, so the shell's PATH includes the system folders.
+    const output = execFileSync('/bin/sh', ['-c', PATH_COMMAND], { env: { PATH: '/x/bin:/usr/bin:/bin' } }).toString()
+    expect(extractPath(output)).toBe('/x/bin:/usr/bin:/bin')
+  })
+
+  it('uses no variable syntax, which differs between bash, zsh and fish', () => {
+    expect(PATH_COMMAND).not.toContain('$')
   })
 })

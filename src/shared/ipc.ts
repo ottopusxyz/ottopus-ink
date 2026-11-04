@@ -46,6 +46,18 @@ export interface AgentStatus {
   signedIn: boolean | null
 }
 
+/** What happens in a chat, whichever agent is driving it. */
+export type ChatEvent =
+  /** The agent's session as it reports it, at the start of each turn. */
+  | { type: 'session'; tools: string[]; model: string | null }
+  /** The next piece of the reply. */
+  | { type: 'text'; text: string }
+  | { type: 'tool-call'; id: string; name: string; input: unknown }
+  | { type: 'tool-result'; id: string; text: string; isError: boolean }
+  | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
+  /** The agent's process is gone and the chat can't continue. Error is null when Ink closed it. */
+  | { type: 'ended'; error: string | null }
+
 /** What the preload exposes on `window.ink`. */
 export interface InkBridge {
   appInfo(): Promise<AppInfo>

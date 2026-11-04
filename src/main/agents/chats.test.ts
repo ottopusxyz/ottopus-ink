@@ -14,6 +14,11 @@ const ready: AgentStatus = {
   signedIn: true,
 }
 const env = { PATH: '/bin' }
+const removeTools = vi.fn<() => void>()
+const tools = {
+  shim: '/app/shim.js',
+  bridge: { socketPath: '/run/ink/mcp.sock', addSession: () => ({ token: 'token-for-this-chat', remove: removeTools }) },
+}
 
 function fakeSession() {
   return {
@@ -45,28 +50,34 @@ afterEach(() => {
 
 describe('startChat', () => {
   it('runs the binary detection found, with no servers but its own', () => {
-    startChat(ready, env, () => undefined)
+    startChat(ready, env, tools, () => undefined)
     expect(launched?.binary).toBe('/detected/claude')
-    expect(launched?.mcpServers).toEqual({})
+    expect(Object.keys(launched?.mcpServers ?? {})).toEqual(['ottopus-ink'])
     expect(launched?.env?.PATH).toBe('/bin')
   })
 
+  it('hands the token to the process alone, never into its MCP config', () => {
+    startChat(ready, env, tools, () => undefined)
+    expect(launched?.sessionEnv).toEqual({ OTTOPUS_INK_TOKEN: 'token-for-this-chat' })
+    expect(JSON.stringify(launched?.mcpServers)).not.toContain('token-for-this-chat')
+  })
+
   it.each(['signed-out', 'outdated', 'broken', 'missing'] as const)('refuses an agent that is %s', (state) => {
-    expect(() => startChat({ ...ready, state }, env, () => undefined)).toThrow(/not ready/)
+    expect(() => startChat({ ...ready, state }, env, tools, () => undefined)).toThrow(/not ready/)
     expect(startClaudeSession).not.toHaveBeenCalled()
   })
 
   it('refuses an agent with no driver yet', () => {
-    expect(() => startChat({ ...ready, id: 'codex' }, env, () => undefined)).toThrow(/isn't built yet/)
+    expect(() => startChat({ ...ready, id: 'codex' }, env, tools, () => undefined)).toThrow(/isn't built yet/)
   })
 
   it('refuses a fifth open chat without starting a process, and allows one again after a chat ends', () => {
-    for (let i = 0; i < 4; i++) startChat(ready, env, () => undefined)
-    expect(() => startChat(ready, env, () => undefined)).toThrow(/Too many chats/)
+    for (let i = 0; i < 4; i++) startChat(ready, env, tools, () => undefined)
+    expect(() => startChat(ready, env, tools, () => undefined)).toThrow(/Too many chats/)
     expect(startClaudeSession).toHaveBeenCalledTimes(4)
 
     launched?.onEvent({ type: 'ended', error: null })
-    startChat(ready, env, () => undefined)
+    startChat(ready, env, tools, () => undefined)
     expect(startClaudeSession).toHaveBeenCalledTimes(5)
   })
 })
@@ -74,13 +85,13 @@ describe('startChat', () => {
 describe('a running chat', () => {
   it('passes events on, marked with the chat they belong to', () => {
     const seen: [string, ChatEvent][] = []
-    const chatId = startChat(ready, env, (id, event) => seen.push([id, event]))
+    const chatId = startChat(ready, env, tools, (id, event) => seen.push([id, event]))
     launched?.onEvent({ type: 'text', text: 'hi' })
     expect(seen).toEqual([[chatId, { type: 'text', text: 'hi' }]])
   })
 
   it('reaches only the chat it names', () => {
-    const chatId = startChat(ready, env, () => undefined)
+    const chatId = startChat(ready, env, tools, () => undefined)
     sendToChat(chatId, 'hi')
     stopChatTurn(chatId)
     closeChat(chatId)
@@ -91,19 +102,22 @@ describe('a running chat', () => {
   })
 
   it('refuses a message past the limit without sending any of it', () => {
-    const chatId = startChat(ready, env, () => undefined)
+    const chatId = startChat(ready, env, tools, () => undefined)
     expect(() => sendToChat(chatId, 'x'.repeat(200_001))).toThrow(/too long/)
     expect(session.send).not.toHaveBeenCalled()
   })
 
-  it('forgets a chat once it has ended', () => {
-    const chatId = startChat(ready, env, () => undefined)
+  it('forgets a chat once it has ended, and revokes its token', () => {
+    removeTools.mockClear()
+    const chatId = startChat(ready, env, tools, () => undefined)
+    expect(removeTools).not.toHaveBeenCalled()
     launched?.onEvent({ type: 'ended', error: null })
+    expect(removeTools).toHaveBeenCalledOnce()
     expect(() => sendToChat(chatId, 'hi')).toThrow(/ended/)
   })
 
   it('kills what is still running when the app quits', () => {
-    const chatId = startChat(ready, env, () => undefined)
+    const chatId = startChat(ready, env, tools, () => undefined)
     killChats()
     expect(session.kill).toHaveBeenCalledOnce()
     // The real session reports its end, which forgets it.

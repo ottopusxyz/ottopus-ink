@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { claudeArgs, claudeEnv } from './claude-launch'
+import { claudeArgs, claudeEnv, claudeMcpServers } from './claude-launch'
 import { AGENT_SPECS } from './specs'
+
+describe('claudeMcpServers', () => {
+  const servers = claudeMcpServers({ shim: '/app/out/main/shim.js', socketPath: '/run/ink/mcp.sock' })
+
+  it('is only the Ink server, under that name and not `ottopus`', () => {
+    expect(Object.keys(servers)).toEqual(['ottopus-ink'])
+  })
+
+  it('runs the shim with the app binary, as plain Node', () => {
+    expect(servers['ottopus-ink']).toMatchObject({
+      command: process.execPath,
+      args: ['/app/out/main/shim.js'],
+      env: { ELECTRON_RUN_AS_NODE: '1', OTTOPUS_INK_SOCKET: '/run/ink/mcp.sock' },
+    })
+  })
+
+  it('names the token rather than holding it', () => {
+    expect(servers['ottopus-ink']).toMatchObject({ env: { OTTOPUS_INK_TOKEN: '${OTTOPUS_INK_TOKEN}' } })
+  })
+})
 
 describe('claudeArgs', () => {
   const args = claudeArgs({ mcpConfig: '/tmp/ink/mcp.json', pluginDir: null })

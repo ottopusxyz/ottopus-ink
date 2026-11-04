@@ -6,6 +6,7 @@ import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './age
 import { detectAgents } from './agents/detect'
 import { agentEnv } from './agents/login-env'
 import { stopRuns } from './agents/run'
+import { startMcpBridge, type McpBridge } from './mcp/bridge'
 import { appMenuTemplate } from './menu'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
@@ -76,6 +77,21 @@ function assertAppFrame(event: IpcMainInvokeEvent): void {
 /** The last detection, shared by every caller until a refresh asks for a new one. */
 let agents: Promise<AgentStatus[]> | null = null
 
+/** Started with the first chat, so the app opens no socket until something needs one. */
+let mcpBridge: Promise<McpBridge> | null = null
+
+function getMcpBridge(): Promise<McpBridge> {
+  mcpBridge ??= startMcpBridge({
+    // Private to the user on Linux. macOS has no such folder, so the app's own data folder.
+    parentDir: process.env.XDG_RUNTIME_DIR ?? app.getPath('userData'),
+    version: app.getVersion(),
+  }).catch((error: unknown) => {
+    mcpBridge = null
+    throw error
+  })
+  return mcpBridge
+}
+
 function registerIpc(): void {
   ipcMain.handle(IPC.appInfo, (event): AppInfo => {
     assertAppFrame(event)
@@ -99,7 +115,8 @@ function registerIpc(): void {
     agents ??= agentEnv().then(detectAgents)
     const status = (await agents).find(({ id }) => id === agent)
     if (!status) throw new Error('Unknown agent')
-    return startChat(status, await agentEnv(), (chatId, chatEvent) => sendToWindows(IPC.chatEvent, chatId, chatEvent))
+    const tools = { bridge: await getMcpBridge(), shim: join(import.meta.dirname, 'shim.js') }
+    return startChat(status, await agentEnv(), tools, (chatId, chatEvent) => sendToWindows(IPC.chatEvent, chatId, chatEvent))
   })
 
   ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {
@@ -161,4 +178,5 @@ app.on('before-quit', () => {
   signer.stop()
   stopRuns()
   killChats()
+  void mcpBridge?.then((bridge) => bridge.close())
 })

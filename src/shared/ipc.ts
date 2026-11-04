@@ -6,6 +6,12 @@
 export const IPC = {
   appInfo: 'app:info',
   detectAgents: 'agents:detect',
+  startChat: 'chat:start',
+  sendToChat: 'chat:send',
+  stopChatTurn: 'chat:stop-turn',
+  closeChat: 'chat:close',
+  /** Main to renderer: what happened in a chat. */
+  chatEvent: 'chat:event',
   /** Main to renderer: the signer's status, sent on every change. */
   signerStatus: 'signer:status',
 } as const
@@ -66,6 +72,15 @@ export interface InkBridge {
    * return that result unless refresh is set, for a "Check again" button.
    */
   detectAgents(options?: { refresh?: boolean }): Promise<AgentStatus[]>
+  /** Starts a chat with an agent detection found ready, and returns its id. */
+  startChat(agent: AgentId): Promise<string>
+  /** Starts a turn. Rejects while one is running. */
+  sendToChat(chatId: string, text: string): Promise<void>
+  /** Stops the running turn and keeps the conversation. */
+  stopChatTurn(chatId: string): Promise<void>
+  closeChat(chatId: string): Promise<void>
+  /** Calls listener on everything that happens in any chat; returns an unsubscribe. */
+  onChatEvent(listener: (chatId: string, event: ChatEvent) => void): () => void
   /** Calls listener on every signer status change; returns an unsubscribe. */
   onSignerStatus(listener: (status: SignerStatus) => void): () => void
 }

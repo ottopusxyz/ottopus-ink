@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, ipcMain, Menu, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
+import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
 import { detectAgents } from './agents/detect'
 import { agentEnv } from './agents/login-env'
 import { stopRuns } from './agents/run'
@@ -14,10 +15,14 @@ const rendererIndex = join(import.meta.dirname, '../renderer/index.html')
 /** The page the window loads; navigations and IPC are checked against it. */
 const appEntry = devServerUrl ?? pathToFileURL(rendererIndex).href
 const signer = new SignerHost(join(import.meta.dirname, 'signer.js'), (status) => {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.webContents.isDestroyed()) win.webContents.send(IPC.signerStatus, status)
-  }
+  sendToWindows(IPC.signerStatus, status)
 })
+
+function sendToWindows(channel: string, ...args: unknown[]): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.webContents.isDestroyed()) win.webContents.send(channel, ...args)
+  }
+}
 
 app.enableSandbox()
 
@@ -88,6 +93,32 @@ function registerIpc(): void {
     if (!agents || refresh) agents = agentEnv({ refresh }).then(detectAgents)
     return agents
   })
+
+  ipcMain.handle(IPC.startChat, async (event, agent: unknown): Promise<string> => {
+    assertAppFrame(event)
+    agents ??= agentEnv().then(detectAgents)
+    const status = (await agents).find(({ id }) => id === agent)
+    if (!status) throw new Error('Unknown agent')
+    return startChat(status, await agentEnv(), (chatId, chatEvent) => sendToWindows(IPC.chatEvent, chatId, chatEvent))
+  })
+
+  ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {
+    assertAppFrame(event)
+    if (typeof chatId !== 'string' || typeof text !== 'string') throw new Error('Bad message')
+    sendToChat(chatId, text)
+  })
+
+  ipcMain.handle(IPC.stopChatTurn, (event, chatId: unknown) => {
+    assertAppFrame(event)
+    if (typeof chatId !== 'string') throw new Error('Bad chat')
+    stopChatTurn(chatId)
+  })
+
+  ipcMain.handle(IPC.closeChat, (event, chatId: unknown) => {
+    assertAppFrame(event)
+    if (typeof chatId !== 'string') throw new Error('Bad chat')
+    closeChat(chatId)
+  })
 }
 
 app.on('second-instance', () => {
@@ -129,4 +160,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   signer.stop()
   stopRuns()
+  killChats()
 })

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { RunResult } from './run'
 import {
   agentState,
   missingFromHelp,
@@ -6,10 +7,9 @@ import {
   parseCodexAuth,
   parseOpenCodeAuth,
   parseVersion,
-  type ProbeResult,
 } from './specs'
 
-const run = (stdout: string, code: number | null = 0, stderr = ''): ProbeResult => ({ code, stdout, stderr })
+const run = (stdout: string, code: number | null = 0, stderr = ''): RunResult => ({ code, stdout, stderr })
 
 describe('parseVersion', () => {
   it('reads each CLI’s version line', () => {

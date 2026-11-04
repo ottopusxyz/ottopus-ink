@@ -1,9 +1,9 @@
-import { execFile } from 'node:child_process'
 import { access, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import type { AgentStatus } from '../../shared/ipc'
-import { AGENT_SPECS, agentState, missingFromHelp, parseVersion, type AgentSpec, type ProbeResult } from './specs'
+import { run, type RunResult } from './run'
+import { AGENT_SPECS, agentState, missingFromHelp, parseVersion, type AgentSpec } from './specs'
 
 /** Long enough for a cold Node CLI on a slow disk, short enough not to hang the picker. */
 const PROBE_TIMEOUT_MS = 15_000
@@ -64,12 +64,6 @@ export async function findExecutable(name: string, path: string): Promise<string
   return null
 }
 
-/** Runs a CLI without a shell. Never rejects: a failure is a result with a null code. */
-function probe(file: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<ProbeResult> {
-  return new Promise((resolve) => {
-    execFile(file, args, { env, timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-      const code = error ? (typeof error.code === 'number' ? error.code : null) : 0
-      resolve({ code, stdout: String(stdout), stderr: String(stderr) })
-    })
-  })
+function probe(file: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<RunResult> {
+  return run(file, args, { env, timeoutMs: PROBE_TIMEOUT_MS })
 }

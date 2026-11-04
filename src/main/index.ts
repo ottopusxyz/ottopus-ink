@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain, Menu, session, shell, type IpcMainInvokeEv
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
 import { detectAgents } from './agents/detect'
 import { agentPath } from './agents/login-path'
+import { stopRuns } from './agents/run'
 import { appMenuTemplate } from './menu'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
@@ -125,4 +126,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => signer.stop())
+app.on('before-quit', () => {
+  signer.stop()
+  stopRuns()
+})

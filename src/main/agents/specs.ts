@@ -1,11 +1,5 @@
 import type { AgentId, AgentState } from '../../shared/ipc'
-
-/** What one run of a CLI gave back. code is null when it timed out or failed to start. */
-export interface ProbeResult {
-  code: number | null
-  stdout: string
-  stderr: string
-}
+import type { RunResult } from './run'
 
 export interface AgentSpec {
   id: AgentId
@@ -17,7 +11,7 @@ export interface AgentSpec {
    */
   requires: readonly string[]
   /** How to read sign-in status. parse returns null when it can't tell. */
-  auth: { args: readonly string[]; parse: (result: ProbeResult) => boolean | null }
+  auth: { args: readonly string[]; parse: (result: RunResult) => boolean | null }
 }
 
 export const AGENT_SPECS: readonly AgentSpec[] = [
@@ -75,7 +69,7 @@ function escapeRegExp(text: string): string {
 }
 
 /** `claude auth status --json` has a loggedIn boolean. */
-export function parseClaudeAuth({ stdout }: ProbeResult): boolean | null {
+export function parseClaudeAuth({ stdout }: RunResult): boolean | null {
   try {
     const status: unknown = JSON.parse(stdout)
     if (typeof status === 'object' && status !== null && 'loggedIn' in status) {
@@ -88,7 +82,7 @@ export function parseClaudeAuth({ stdout }: ProbeResult): boolean | null {
 }
 
 /** `codex login status` prints "Logged in using …" or "Not logged in". */
-export function parseCodexAuth({ code, stdout, stderr }: ProbeResult): boolean | null {
+export function parseCodexAuth({ code, stdout, stderr }: RunResult): boolean | null {
   const text = `${stdout}\n${stderr}`
   if (/not logged in/i.test(text)) return false
   if (code === 0 && /logged in/i.test(text)) return true
@@ -99,7 +93,7 @@ export function parseCodexAuth({ code, stdout, stderr }: ProbeResult): boolean |
  * `opencode auth list` counts stored credentials and the provider keys it
  * finds in the environment. Any of either counts as signed in.
  */
-export function parseOpenCodeAuth({ code, stdout, stderr }: ProbeResult): boolean | null {
+export function parseOpenCodeAuth({ code, stdout, stderr }: RunResult): boolean | null {
   if (code !== 0) return null
   const text = `${stdout}\n${stderr}`
   const counts = [...text.matchAll(/(\d+)\s+(?:credentials?|environment variables?)\b/gi)].map((m) => Number(m[1]))

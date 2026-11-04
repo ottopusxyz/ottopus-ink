@@ -1,6 +1,6 @@
-import { execFile } from 'node:child_process'
 import { homedir, userInfo } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { run } from './run'
 
 /**
  * Where agent CLIs are looked for.
@@ -52,18 +52,15 @@ export function mergePaths(...lists: (string | null | undefined)[]): string {
 
 /**
  * Runs the person's shell as an interactive login shell and reads its PATH.
- * Resolves null after five seconds, or if the shell fails before printing it.
+ * Null if it blocks past the deadline, or fails before printing it; an rc file
+ * that exits non-zero may still have printed PATH first.
  */
-function loginShellPath(): Promise<string | null> {
+async function loginShellPath(): Promise<string | null> {
   const shell = process.env.SHELL || userInfo().shell || '/bin/sh'
-  return new Promise((resolve) => {
-    execFile(
-      shell,
-      ['-ilc', PATH_COMMAND],
-      // oh-my-zsh would otherwise offer to update itself and wait for an answer.
-      { timeout: 5000, env: { ...process.env, DISABLE_AUTO_UPDATE: 'true' } },
-      // An rc file that exits non-zero may still have printed PATH first.
-      (_error, stdout) => resolve(extractPath(String(stdout))),
-    )
+  const { stdout } = await run(shell, ['-ilc', PATH_COMMAND], {
+    // oh-my-zsh would otherwise offer to update itself and wait for an answer.
+    env: { ...process.env, DISABLE_AUTO_UPDATE: 'true' },
+    timeoutMs: 5000,
   })
+  return extractPath(stdout)
 }

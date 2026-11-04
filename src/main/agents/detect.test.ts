@@ -63,6 +63,29 @@ describe('detectAgents', () => {
     expect(opencode).toMatchObject({ id: 'opencode', state: 'missing', path: null })
   })
 
+  it('calls an agent broken, not outdated, when --help fails, and tries again next time', async () => {
+    const other = join(root, 'help-fails')
+    await mkdir(other)
+    const file = join(other, 'codex')
+    const write = async (help: string) => {
+      await writeFile(
+        file,
+        `#!/bin/sh
+case "$1" in
+  --version) echo 'codex-cli 0.3.0' ;;
+  --help) ${help} ;;
+  login) echo 'Logged in using ChatGPT' ;;
+esac
+`,
+      )
+      await chmod(file, 0o755)
+    }
+    await write(`echo 'config file is corrupt' >&2; exit 1`)
+    expect((await detectAgents({ PATH: other }))[1]).toMatchObject({ state: 'broken', version: '0.3.0', missing: [] })
+    await write(`printf '  app-server  Run\\n  -c, --config <k=v>\\n'`)
+    expect((await detectAgents({ PATH: other }))[1]).toMatchObject({ state: 'ready', version: '0.3.0' })
+  })
+
   it('runs CLIs with the login shell’s variables, so a custom config folder is seen', async () => {
     const other = join(root, 'other')
     await mkdir(other)

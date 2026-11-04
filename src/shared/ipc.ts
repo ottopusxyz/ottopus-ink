@@ -29,7 +29,7 @@ export type AgentId = (typeof AGENT_IDS)[number]
  * - ready: installed, new enough, and signed in (or its sign-in can't be read)
  * - signed-out: installed and new enough, but not signed in
  * - outdated: installed, but its --help lacks a flag or command Ink needs
- * - broken: found on PATH, but `--version` failed
+ * - broken: found on PATH, but `--version` or `--help` failed
  * - missing: not on PATH
  */
 export type AgentState = 'ready' | 'signed-out' | 'outdated' | 'broken' | 'missing'

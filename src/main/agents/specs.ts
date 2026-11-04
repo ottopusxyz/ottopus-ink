@@ -108,11 +108,12 @@ export function parseOpenCodeAuth({ code, stdout, stderr }: RunResult): boolean 
 export function agentState(found: {
   path: string | null
   version: string | null
-  missing: readonly string[]
+  /** Null when --help itself failed, so what it lacks is unknown. */
+  missing: readonly string[] | null
   signedIn: boolean | null
 }): AgentState {
   if (!found.path) return 'missing'
-  if (!found.version) return 'broken'
+  if (!found.version || !found.missing) return 'broken'
   if (found.missing.length > 0) return 'outdated'
   if (found.signedIn === false) return 'signed-out'
   return 'ready'

@@ -131,6 +131,7 @@ describe('agentState', () => {
   it('reports the first problem', () => {
     expect(agentState({ ...ok, path: null, version: null })).toBe('missing')
     expect(agentState({ ...ok, version: null })).toBe('broken')
+    expect(agentState({ ...ok, missing: null })).toBe('broken')
     expect(agentState({ ...ok, missing: ['--plugin-dir'], signedIn: false })).toBe('outdated')
     expect(agentState({ ...ok, signedIn: false })).toBe('signed-out')
   })

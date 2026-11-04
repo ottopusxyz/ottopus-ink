@@ -32,7 +32,8 @@ async function detectAgent(spec: AgentSpec, env: NodeJS.ProcessEnv, path: string
   const [versionRun, authRun] = await Promise.all([probe(binary, ['--version'], env), probe(binary, spec.auth.args, env)])
   const version = versionRun.code === 0 ? parseVersion(versionRun.stdout) : null
 
-  let missing: string[] = []
+  // Null when --help itself failed: that says nothing about which flags exist.
+  let missing: string[] | null = []
   if (version) {
     const key = `${spec.id}@${version}`
     const known = flagTable.get(key)
@@ -40,14 +41,18 @@ async function detectAgent(spec: AgentSpec, env: NodeJS.ProcessEnv, path: string
       missing = known
     } else {
       const help = await probe(binary, ['--help'], env)
-      missing = missingFromHelp(`${help.stdout}\n${help.stderr}`, spec.requires, spec.binary)
-      // A failed or timed-out --help is not remembered, so the next check tries again.
-      if (help.code === 0) flagTable.set(key, missing)
+      if (help.code === 0) {
+        missing = missingFromHelp(`${help.stdout}\n${help.stderr}`, spec.requires, spec.binary)
+        flagTable.set(key, missing)
+      } else {
+        // Not remembered, so the next check tries again.
+        missing = null
+      }
     }
   }
 
-  const found = { path: binary, version, missing, signedIn: spec.auth.parse(authRun) }
-  return { id: spec.id, state: agentState(found), ...found }
+  const found = { path: binary, version, signedIn: spec.auth.parse(authRun) }
+  return { id: spec.id, state: agentState({ ...found, missing }), ...found, missing: missing ?? [] }
 }
 
 /** The first file named `name` on PATH that this user may execute. */

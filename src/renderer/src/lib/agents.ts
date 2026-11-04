@@ -89,7 +89,7 @@ export function describeAgent(status: AgentStatus): AgentCopy {
         command: info.update,
       }
     case 'broken':
-      return { label: "Doesn't start", hint: `${status.path} didn't answer --version. Try running it in a terminal.` }
+      return { label: "Doesn't start", hint: `${status.path} didn't answer --version or --help. Try running it in a terminal.` }
     case 'missing':
       return { label: 'Not installed', hint: 'Install it in a terminal, then check again.', command: info.install }
   }

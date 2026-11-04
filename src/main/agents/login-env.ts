@@ -31,11 +31,26 @@ export const SHELL_ENV_NAMES = [
   'XDG_CACHE_HOME',
 ] as const
 
-export function agentEnv(): Promise<AgentEnv> {
-  cached ??= readAgentEnv()
-  return cached
+/**
+ * Keeps the last read, so the shell runs once rather than on every call. A read
+ * that didn't complete isn't kept, and refresh reads again, so a shell that
+ * timed out at launch or a folder added to PATH since doesn't need a restart.
+ */
+export function keepLastRead<T>(read: () => Promise<{ value: T; complete: boolean }>) {
+  let kept: Promise<T> | undefined
+  return ({ refresh = false }: { refresh?: boolean } = {}): Promise<T> => {
+    if (!kept || refresh) {
+      const reading: Promise<T> = read().then(({ value, complete }) => {
+        if (!complete && kept === reading) kept = undefined
+        return value
+      })
+      kept = reading
+    }
+    return kept
+  }
 }
-let cached: Promise<AgentEnv> | undefined
+
+export const agentEnv = keepLastRead(readAgentEnv)
 
 const home = homedir()
 /** Added to PATH in case the shell could not be read. */
@@ -48,12 +63,15 @@ const FALLBACK_DIRS = [
   '/usr/local/bin',
 ]
 
-async function readAgentEnv(): Promise<AgentEnv> {
+async function readAgentEnv(): Promise<{ value: AgentEnv; complete: boolean }> {
   const login = await readLoginShell()
   return {
-    ...login,
-    // The login shell's folders first, then this process's, then the usual ones.
-    PATH: mergePaths(login?.PATH, process.env.PATH, FALLBACK_DIRS.join(delimiter)),
+    value: {
+      ...login,
+      // The login shell's folders first, then this process's, then the usual ones.
+      PATH: mergePaths(login?.PATH, process.env.PATH, FALLBACK_DIRS.join(delimiter)),
+    },
+    complete: login !== null,
   }
 }
 

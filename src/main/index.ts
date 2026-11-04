@@ -85,7 +85,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.detectAgents, (event, options: unknown): Promise<AgentStatus[]> => {
     assertAppFrame(event)
     const refresh = typeof options === 'object' && options !== null && 'refresh' in options && options.refresh === true
-    if (!agents || refresh) agents = agentEnv().then(detectAgents)
+    if (!agents || refresh) agents = agentEnv({ refresh }).then(detectAgents)
     return agents
   })
 }

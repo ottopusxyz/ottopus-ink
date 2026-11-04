@@ -23,7 +23,7 @@ beforeAll(async () => {
   await mkdir(bin)
   await fakeCli('claude', {
     '--version': `echo '2.1.316 (Claude Code)'`,
-    '--help': `printf '  -p, --print\\n  --input-format <f>\\n  --output-format <f>\\n  --mcp-config <c>\\n  --strict-mcp-config\\n  --setting-sources <s>\\n  --plugin-dir <p>\\n  --tools <t>\\n'`,
+    '--help': `printf '  -p, --print\\n  --input-format <f>\\n  --output-format <f>\\n  --verbose\\n  --include-partial-messages\\n  --no-session-persistence\\n  --mcp-config <c>\\n  --strict-mcp-config\\n  --tools <t>\\n  --setting-sources <s>\\n  --allowedTools, --allowed-tools <t>\\n  --permission-mode <m>\\n  --plugin-dir <p>\\n'`,
     auth: `echo '{"loggedIn":true}'`,
   })
   await fakeCli('codex', {

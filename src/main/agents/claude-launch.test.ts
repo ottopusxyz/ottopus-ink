@@ -1,0 +1,92 @@
+import { describe, expect, it } from 'vitest'
+import { claudeArgs, claudeEnv } from './claude-launch'
+import { AGENT_SPECS } from './specs'
+
+describe('claudeArgs', () => {
+  const args = claudeArgs({ mcpConfig: '/tmp/ink/mcp.json', pluginDir: null })
+  const valueOf = (flag: string) => args[args.indexOf(flag) + 1]
+
+  it('turns off every built-in tool and all of the user setup', () => {
+    expect(valueOf('--tools')).toBe('')
+    expect(valueOf('--setting-sources')).toBe('')
+    expect(args).toContain('--strict-mcp-config')
+    expect(args).toContain('--no-session-persistence')
+  })
+
+  it('denies anything that is not an Ink tool', () => {
+    expect(valueOf('--permission-mode')).toBe('dontAsk')
+    expect(valueOf('--allowedTools')).toBe('mcp__ottopus-ink__*')
+  })
+
+  it('reads its MCP servers from the given file', () => {
+    expect(valueOf('--mcp-config')).toBe('/tmp/ink/mcp.json')
+  })
+
+  it('never asks to skip permissions', () => {
+    expect(args.join(' ')).not.toMatch(/bypass|dangerously/i)
+  })
+
+  it('loads the Ink skills only when given them', () => {
+    expect(args).not.toContain('--plugin-dir')
+    const withSkills = claudeArgs({ mcpConfig: 'm', pluginDir: '/app/skills' })
+    expect(withSkills[withSkills.indexOf('--plugin-dir') + 1]).toBe('/app/skills')
+  })
+
+  it('uses only flags that detection requires, so an older CLI shows as outdated', () => {
+    const claude = AGENT_SPECS.find((spec) => spec.id === 'claude-code')
+    const flags = claudeArgs({ mcpConfig: 'm', pluginDir: 'p' }).filter((arg) => arg.startsWith('--'))
+    expect(claude?.requires).toEqual(expect.arrayContaining(flags))
+  })
+})
+
+describe('claudeEnv', () => {
+  it('keeps what the CLI needs to run, reach the network and sign in', () => {
+    const env = {
+      HOME: '/h',
+      PATH: '/bin',
+      LANG: 'C',
+      LC_ALL: 'C',
+      XDG_CONFIG_HOME: '/h/.c',
+      HTTPS_PROXY: 'http://proxy',
+      NODE_EXTRA_CA_CERTS: '/ca.pem',
+      CLAUDE_CONFIG_DIR: '/h/.other',
+      ANTHROPIC_API_KEY: 'test-value',
+    }
+    expect(claudeEnv(env)).toMatchObject(env)
+  })
+
+  it('drops what would change the session or does not concern it', () => {
+    const env = claudeEnv({
+      HOME: '/h',
+      CLAUDE_CODE_PLUGIN_DIRS: '/other/plugin',
+      CLAUDECODE: '1',
+      CLAUDE_CODE_ENTRYPOINT: 'sdk',
+      CLAUDE_CODE_SHELL: '/bin/evil',
+      NODE_OPTIONS: '--require /evil.js',
+      GITHUB_TOKEN: 'test-value',
+      AWS_SECRET_ACCESS_KEY: 'test-value',
+      XDG_CONFIG_DIRS: '/etc',
+    })
+    for (const name of [
+      'CLAUDE_CODE_PLUGIN_DIRS',
+      'CLAUDECODE',
+      'CLAUDE_CODE_ENTRYPOINT',
+      'CLAUDE_CODE_SHELL',
+      'NODE_OPTIONS',
+      'GITHUB_TOKEN',
+      'AWS_SECRET_ACCESS_KEY',
+      'XDG_CONFIG_DIRS',
+    ]) {
+      expect(env).not.toHaveProperty(name)
+    }
+    expect(env.HOME).toBe('/h')
+  })
+
+  it('turns off the housekeeping it can, whatever was set before', () => {
+    expect(claudeEnv({ CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0' })).toMatchObject({
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      DISABLE_AUTOUPDATER: '1',
+    })
+  })
+})

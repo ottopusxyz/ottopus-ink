@@ -111,11 +111,14 @@ export function startClaudeSession(options: ClaudeSessionOptions): ChatSession {
   child.stdout.setEncoding('utf8')
   child.stdout.on('data', (chunk: string) => {
     buffer += chunk
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
-    for (const line of lines) {
-      if (ended) return
-      read(line).forEach(emit)
+    // Only split when a line has ended, so a long line isn't rescanned on every chunk.
+    if (chunk.includes('\n')) {
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        if (ended) return
+        read(line).forEach(emit)
+      }
     }
     if (buffer.length > MAX_LINE_CHARS) finish('Claude Code sent more than Ink can read.')
   })

@@ -299,19 +299,17 @@ describe('startClaudeSession ending', () => {
   })
 
   it('ends a chat whose agent never finishes a line', async () => {
-    const file = await standIn(
-      'flood',
-      `onLine(() => {
-         const block = 'x'.repeat(1024 * 1024)
-         const pour = () => { for (let i = 0; i < 4; i++) process.stdout.write(block); setTimeout(pour, 1) }
-         pour()
-       })`,
-    )
+    const file = await standIn('flood', `onLine(() => process.stdout.write('x'.repeat(17 * 1024 * 1024)))`)
     const { session, events } = start(file)
     session.send('go')
-    expect(await vi.waitFor(() => ended(events), { timeout: 10_000 })).toEqual({
-      type: 'ended',
-      error: 'Claude Code sent more than Ink can read.',
-    })
-  }, 15_000)
+    expect(await ended(events)).toEqual({ type: 'ended', error: 'Claude Code sent more than Ink can read.' })
+  })
+
+  it('still reads a line that is long but finished', async () => {
+    const file = await standIn('long', `onLine(() => { say(delta('y'.repeat(2 * 1024 * 1024))); say(done) })`)
+    const { session, events } = start(file)
+    session.send('go')
+    await turnEnds(events, 1)
+    expect(events[0]).toEqual({ type: 'text', text: 'y'.repeat(2 * 1024 * 1024) })
+  })
 })

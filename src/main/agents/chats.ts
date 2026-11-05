@@ -33,7 +33,7 @@ export function startChat(
 ): string {
   if (agent.state !== 'ready' || !agent.path) throw new Error(`${agent.id} is not ready`)
   if (agent.id !== 'claude-code') throw new Error(`Chat with ${agent.id} isn't built yet`)
-  if (chats.size >= MAX_OPEN_CHATS) throw new Error('Too many chats are open. Close one first.')
+  if (chats.size >= MAX_OPEN_CHATS) throw new Error('Too many chats are open. End one first.')
 
   const chatId = randomUUID()
   // One token for each chat, gone with it.

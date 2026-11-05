@@ -134,6 +134,15 @@ describe('Markdown: links', () => {
     expect(shown).toContain('&lt;https://b.example&gt;')
   })
 
+  it('shows a link title as text, never only on hover', () => {
+    expect(body('[a](https://x.example "WARNING")')).toBe(
+      `<p>${open('https://x.example/')}a &quot;WARNING&quot; <span class="ink-md__url">(https://x.example/)</span></a></p>`,
+    )
+    expect(body('[a](http://x.example "WARNING")')).toBe('<p>a &quot;WARNING&quot; (http://x.example)</p>')
+    expect(body('[a][r]\n\n[r]: https://x.example "WARNING"')).toContain('a &quot;WARNING&quot; <span')
+    expect(body('[a](https://x.example)')).not.toContain('title')
+  })
+
   it('shows no link at all inside code', () => {
     expect(body('`https://a.example`')).toBe('<p><code>https://a.example</code></p>')
   })

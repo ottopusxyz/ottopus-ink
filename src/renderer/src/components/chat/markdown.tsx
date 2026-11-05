@@ -161,11 +161,17 @@ function link(token: Tokens.Link, key: number, depth: number): ReactNode {
   // A bare URL or `<https://example.com>` has no label of its own.
   const bare = token.raw === token.text || token.raw === `<${token.text}>`
   const target = safeExternalUrl(token.href)
+  const label = (
+    <>
+      {inline(token.tokens, depth + 1, true)}
+      {token.title ? ` "${token.title}"` : null}
+    </>
+  )
   if (!target) {
     if (bare) return token.text
     return (
       <Fragment key={key}>
-        {inline(token.tokens, depth + 1, true)} ({token.href})
+        {label} ({token.href})
       </Fragment>
     )
   }
@@ -175,7 +181,7 @@ function link(token: Tokens.Link, key: number, depth: number): ReactNode {
         target
       ) : (
         <>
-          {inline(token.tokens, depth + 1, true)} <span className="ink-md__url">({target})</span>
+          {label} <span className="ink-md__url">({target})</span>
         </>
       )}
     </a>

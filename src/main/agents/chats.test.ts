@@ -158,10 +158,24 @@ describe('a running chat', () => {
     const seen: ChatEvent[] = []
     startChat(ready, env, tools, (_id, event) => seen.push(event))
     proposePlan?.(plan)
-    expect(seen).toEqual([{ type: 'plan', plan }])
+    expect(seen).toEqual([])
+
+    launched?.onEvent(report())
+    proposePlan?.(plan)
+    expect(seen.at(-1)).toEqual({ type: 'plan', plan })
+
+    const before = seen.length
     launched?.onEvent({ type: 'ended', error: null })
     proposePlan?.(plan)
-    expect(seen).toHaveLength(2)
+    expect(seen).toHaveLength(before + 1)
+  })
+
+  it('passes on no plan once a session has broken the lock', () => {
+    const seen: ChatEvent[] = []
+    startChat(ready, env, tools, (_id, event) => seen.push(event))
+    launched?.onEvent(report(['Bash']))
+    proposePlan?.({ id: 'p', status: 'draft', outcome: 'send', asset: 'NEAR', amount: '1', chain: null, to: null, toAsset: null, toChain: null })
+    expect(seen.some((event) => event.type === 'plan')).toBe(false)
   })
 
   it('reaches only the chat it names', () => {

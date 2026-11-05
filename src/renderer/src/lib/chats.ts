@@ -97,6 +97,8 @@ export function messageFailed(chat: Chat, error: string): Chat {
 
 /** What one event from the chat's session does to it. */
 export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
+  // Ending a chat takes a moment in the main process. It stops here at once.
+  if (chat.phase === 'ended') return chat
   switch (event.type) {
     case 'session':
     case 'subagent':
@@ -104,12 +106,17 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
     case 'lock':
       if (event.locked) return { ...chat, lock: chat.lock === 'unlocked' ? 'unlocked' : 'locked' }
       return {
-        ...withItem(chat, {
-          kind: 'notice',
-          severity: 'block',
-          title: 'Ink stopped this chat',
-          text: `The agent showed ${event.found.join(', ')}. Ink chats may only use Ottopus tools.`,
-        }),
+        ...withItem(
+          // What this agent proposed can't be left standing as if it were still good.
+          { ...chat, items: chat.items.filter((item) => item.kind !== 'plan') },
+          {
+            kind: 'notice',
+            severity: 'block',
+            title: 'Ink stopped this chat',
+            text: `The agent showed ${event.found.join(', ')}. Ink chats may only use Ottopus tools.${chat.plan ? ' Its plan was removed.' : ''}`,
+          },
+        ),
+        plan: null,
         lock: 'unlocked',
       }
     case 'text': {
@@ -137,14 +144,12 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
       }
     case 'plan':
       return { ...withItem(chat, { kind: 'plan', plan: event.plan }), plan: event.plan }
-    case 'turn-end': {
-      const phase = chat.phase === 'ended' ? 'ended' : 'ready'
-      if (event.outcome === 'stopped') return { ...withItem(chat, { kind: 'notice', severity: 'info', title: 'Stopped', text: null }), phase }
+    case 'turn-end':
+      if (event.outcome === 'stopped') return { ...withItem(chat, { kind: 'notice', severity: 'info', title: 'Stopped', text: null }), phase: 'ready' }
       if (event.outcome === 'failed') {
-        return { ...withItem(chat, { kind: 'notice', severity: 'block', title: 'The agent hit an error', text: event.error }), phase }
+        return { ...withItem(chat, { kind: 'notice', severity: 'block', title: 'The agent hit an error', text: event.error }), phase: 'ready' }
       }
-      return { ...chat, phase }
-    }
+      return { ...chat, phase: 'ready' }
     case 'ended': {
       // Being stopped for the lock already has its own notice.
       if (event.error === null || chat.lock === 'unlocked') return { ...chat, phase: 'ended' }

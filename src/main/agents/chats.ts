@@ -38,9 +38,11 @@ export function startChat(
   const chatId = randomUUID()
   // One token for each chat, gone with it.
   let over = false
+  // Nothing an unchecked session proposes reaches the person.
+  let locked = false
   const tools = bridge.addSession({
     onPlan: (plan) => {
-      if (!over) onEvent(chatId, { type: 'plan', plan })
+      if (!over && locked) onEvent(chatId, { type: 'plan', plan })
     },
   })
   const watchLock = lockWatcher(tools.connected)
@@ -60,7 +62,8 @@ export function startChat(
       onEvent(chatId, event)
       const found = watchLock(event)
       if (found === null) return
-      onEvent(chatId, { type: 'lock', locked: found.length === 0, found })
+      locked = found.length === 0
+      onEvent(chatId, { type: 'lock', locked, found })
       if (found.length > 0) session.kill(`Ink stopped this chat because the agent showed ${found.join(', ')}.`)
     },
   })

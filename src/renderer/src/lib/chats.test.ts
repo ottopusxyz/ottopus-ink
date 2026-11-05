@@ -129,6 +129,22 @@ describe('applyChatEvent', () => {
   it('never goes from unlocked back to locked', () => {
     expect(after([{ type: 'lock', locked: false, found: ['x'] }, { type: 'lock', locked: true, found: [] }]).lock).toBe('unlocked')
   })
+
+  it('removes the plan of an agent that broke the lock, and says so', () => {
+    const chat = after([
+      { type: 'plan', plan },
+      { type: 'lock', locked: false, found: ['the tool Bash'] },
+    ])
+    expect(chat.plan).toBeNull()
+    expect(chat.items.some((item) => item.kind === 'plan')).toBe(false)
+    expect(chat.items.at(-1)).toMatchObject({ text: expect.stringContaining('Its plan was removed.') as string })
+  })
+
+  it('takes nothing more once a chat has ended, even while its process is closing', () => {
+    const ended: Chat = { ...started(), phase: 'ended' }
+    const events: ChatEvent[] = [{ type: 'text', text: 'late' }, { type: 'plan', plan }, { type: 'tool-call', id: 't', name: 'x', input: '{}' }]
+    expect(after(events, ended)).toBe(ended)
+  })
 })
 
 describe('limits on what an agent can fill', () => {

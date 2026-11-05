@@ -70,6 +70,26 @@ describe('startMcpBridge socket', () => {
 })
 
 describe('startMcpBridge tokens', () => {
+  it('remembers that a token connected, but not for a bad hello or another token', async () => {
+    const [session, other] = [bridge.addSession(), bridge.addSession()]
+    expect(session.connected()).toBe(false)
+
+    const stranger = client()
+    stranger.socket.write(hello('wrong'))
+    await closed(stranger)
+    expect(session.connected()).toBe(false)
+
+    const state = client()
+    state.socket.write(hello(session.token) + ping(1))
+    await answered(state)
+    expect(session.connected()).toBe(true)
+    expect(other.connected()).toBe(false)
+
+    state.socket.destroy()
+    await closed(state)
+    expect(session.connected()).toBe(true)
+  })
+
   it('answers requests after a good hello, even split across chunks', async () => {
     const { token } = bridge.addSession()
     const state = client()

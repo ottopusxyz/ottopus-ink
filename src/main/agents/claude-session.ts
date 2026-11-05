@@ -15,8 +15,8 @@ export interface ChatSession {
   stopTurn(): void
   /** Ends the chat, giving the process a moment to exit by itself. */
   close(): void
-  /** Ends the chat at once, for when the app is quitting. */
-  kill(): void
+  /** Ends the chat at once, for when the app is quitting or the session can't be trusted. */
+  kill(reason?: string): void
 }
 
 export interface ClaudeSessionOptions {
@@ -160,6 +160,6 @@ export function startClaudeSession(options: ClaudeSessionOptions): ChatSession {
       stopTimer = setTimeout(() => close('Claude Code did not stop when asked, so the chat was ended.'), stopTurnGraceMs)
     },
     close: () => close(),
-    kill: () => finish(null),
+    kill: (reason) => finish(reason ?? null),
   }
 }

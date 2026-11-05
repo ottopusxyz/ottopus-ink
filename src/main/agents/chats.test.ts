@@ -17,8 +17,20 @@ const env = { PATH: '/bin' }
 const removeTools = vi.fn<() => void>()
 const tools = {
   shim: '/app/shim.js',
-  bridge: { socketPath: '/run/ink/mcp.sock', addSession: () => ({ token: 'token-for-this-chat', remove: removeTools }) },
+  bridge: {
+    socketPath: '/run/ink/mcp.sock',
+    addSession: () => ({ token: 'token-for-this-chat', connected: () => shimConnected, remove: removeTools }),
+  },
 }
+let shimConnected = true
+const inkTool = 'mcp__ottopus-ink__get_accounts'
+const report = (extra: string[] = []): ChatEvent => ({
+  type: 'session',
+  tools: [inkTool, ...extra],
+  servers: ['ottopus-ink'],
+  plugins: [],
+  model: null,
+})
 
 function fakeSession() {
   return {
@@ -35,6 +47,7 @@ const launches: ClaudeSessionOptions[] = []
 
 beforeEach(() => {
   session = fakeSession()
+  shimConnected = true
   vi.mocked(startClaudeSession).mockImplementation((options) => {
     launched = options
     launches.push(options)
@@ -79,6 +92,42 @@ describe('startChat', () => {
     launched?.onEvent({ type: 'ended', error: null })
     startChat(ready, env, tools, () => undefined)
     expect(startClaudeSession).toHaveBeenCalledTimes(5)
+  })
+})
+
+describe('the lock on a chat', () => {
+  const eventsOf = () => {
+    const seen: ChatEvent[] = []
+    startChat(ready, env, tools, (_id, event) => seen.push(event))
+    return seen
+  }
+
+  it('says a session with only Ink tools is locked, and leaves it running', () => {
+    const seen = eventsOf()
+    launched?.onEvent(report())
+    expect(seen).toEqual([report(), { type: 'lock', locked: true, found: [] }])
+    expect(session.kill).not.toHaveBeenCalled()
+  })
+
+  it('stops a session with an extra tool and says why', () => {
+    const seen = eventsOf()
+    launched?.onEvent(report(['Bash']))
+    expect(seen.at(-1)).toEqual({ type: 'lock', locked: false, found: ['the tool Bash'] })
+    expect(session.kill).toHaveBeenCalledExactlyOnceWith('Ink stopped this chat because the agent showed the tool Bash.')
+  })
+
+  it('stops a session whose Ink tools never came through the shim', () => {
+    shimConnected = false
+    eventsOf()
+    launched?.onEvent(report())
+    expect(session.kill).toHaveBeenCalledOnce()
+  })
+
+  it('passes on nothing after a chat has ended', () => {
+    const seen = eventsOf()
+    launched?.onEvent({ type: 'ended', error: 'gone' })
+    launched?.onEvent({ type: 'text', text: 'late' })
+    expect(seen).toEqual([{ type: 'ended', error: 'gone' }])
   })
 })
 

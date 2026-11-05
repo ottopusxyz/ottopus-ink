@@ -15,6 +15,8 @@ export interface McpBridgeOptions {
 
 export interface McpSession {
   token: string
+  /** Whether the token has ever opened a connection. */
+  connected(): boolean
   /** Revokes the token and drops the session's connection. */
   remove(): void
 }
@@ -47,7 +49,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
   const socketPath = join(dir, 'mcp.sock')
 
   /** Each live session's connection, by the hash of its token. */
-  const sessions = new Map<string, { connection: Socket | null }>()
+  const sessions = new Map<string, { connection: Socket | null; everConnected: boolean }>()
   const connections = new Set<Socket>()
 
   const server = createServer((connection) => {
@@ -72,6 +74,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
       // One at a time for each session: a shim that restarts takes over from the old one.
       session.connection?.destroy()
       session.connection = connection
+      session.everConnected = true
       connection.once('close', () => {
         if (session.connection === connection) session.connection = null
       })
@@ -117,10 +120,11 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
         addSession() {
           const token = randomBytes(32).toString('hex')
           const key = hash(token)
-          const session = { connection: null as Socket | null }
+          const session = { connection: null as Socket | null, everConnected: false }
           sessions.set(key, session)
           return {
             token,
+            connected: () => session.everConnected,
             remove() {
               sessions.delete(key)
               session.connection?.destroy()

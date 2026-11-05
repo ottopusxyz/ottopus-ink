@@ -85,7 +85,7 @@ export function HomeView({
               >
                 <span className="ink-eyebrow">In progress</span>
                 <span className="text-[14px] font-semibold">{running.title}</span>
-                <span className="text-[12px] text-[var(--ot-text-2)]">{running.step ?? 'Waiting on a step'}</span>
+                <span className="text-[12px] text-[var(--ot-text-2)]">{running.step ?? 'Your agent is working'}</span>
               </button>
             ) : (
               <div className="ink-glance">

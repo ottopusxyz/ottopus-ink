@@ -9,7 +9,7 @@ import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
 import { chooseAgent } from '@/lib/agents'
-import { HOME_DRAFT, withDraft, type Drafts } from '@/lib/chats'
+import { HOME_DRAFT, isWorking, withDraft, type Drafts } from '@/lib/chats'
 import { latestOnly } from '@/lib/latest'
 import { useChats } from '@/lib/use-chats'
 
@@ -147,7 +147,7 @@ export function App() {
           draft={draft}
           onDraft={setDraft}
           onSubmit={send}
-          live={chats.filter((chat) => chat.status === 'live')}
+          live={chats.filter((chat) => chat.status === 'live' || isWorking(chat))}
           onOpenChat={openChat}
           onPortfolio={() => setView({ kind: 'page', page: 'portfolio' })}
           composerRef={composerRef}

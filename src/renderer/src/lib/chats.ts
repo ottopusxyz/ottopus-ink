@@ -159,6 +159,11 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
   }
 }
 
+/** Whether a chat's agent is busy with something right now. */
+export function isWorking({ phase }: Pick<Chat, 'phase'>): boolean {
+  return phase === 'starting' || phase === 'answering' || phase === 'stopping'
+}
+
 /** What the status area says about a chat's lock, and how much it should worry anyone. */
 export function lockStatus({ lock, phase }: Pick<Chat, 'lock' | 'phase'>): { text: string; hint: string; tone: 'ok' | 'plan' | 'block' | 'neutral' } {
   if (lock === 'unlocked') {
@@ -173,7 +178,10 @@ export function lockStatus({ lock, phase }: Pick<Chat, 'lock' | 'phase'>): { tex
 
 const INK_TOOL_PREFIX = 'mcp__ottopus-ink__'
 
-/** A tool's name to show: Ink's own without the prefix, anything else in full so it stands out. */
+/**
+ * A tool's name to show: Ink's real tools without the prefix, anything else in full
+ * so it stands out. An agent can make up a name like `mcp__ottopus-ink__sign`.
+ */
 export function toolLabel(name: string): string {
   const short = name.slice(INK_TOOL_PREFIX.length)
   return name.startsWith(INK_TOOL_PREFIX) && INK_TOOLS.some((tool) => tool === short) ? short : name

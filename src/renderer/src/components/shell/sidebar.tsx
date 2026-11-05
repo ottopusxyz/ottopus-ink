@@ -1,7 +1,7 @@
 import { useMemo, useState, type Ref } from 'react'
 import type { SignerStatus } from '../../../../shared/ipc'
 import { Badge } from '@/components/ui'
-import { filterChats, lockStatus, type Chat } from '@/lib/chats'
+import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
 import {
   ActivityIcon,
   ChatIcon,
@@ -134,9 +134,7 @@ export function Sidebar({
 
 function ChatStatusMark({ chat }: { chat: Chat }) {
   if (chat.status === 'live') return <span className="ink-live-dot" role="img" aria-label="In progress" />
-  if (chat.phase === 'answering' || chat.phase === 'stopping') {
-    return <span className="ink-live-dot" role="img" aria-label="Your agent is working" />
-  }
+  if (isWorking(chat)) return <span className="ink-live-dot" role="img" aria-label="Your agent is working" />
   if (chat.status === 'settled') {
     return <CheckIcon aria-label="Settled" style={{ color: 'var(--ot-ok)' }} />
   }

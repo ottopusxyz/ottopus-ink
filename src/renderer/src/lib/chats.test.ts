@@ -8,6 +8,7 @@ import {
   filterChats,
   HOME_DRAFT,
   ipcErrorText,
+  isWorking,
   lockStatus,
   MAX_ITEMS,
   MAX_REPLY_CHARS,
@@ -140,7 +141,6 @@ describe('applyChatEvent', () => {
     expect(chat.items.at(-1)).toMatchObject({ text: expect.stringContaining('Its plan was removed.') as string })
   })
 
-  it('takes nothing more once a chat has ended, even while its process is closing', () => {
   it('still says the lock broke if that arrives just after End', () => {
     const ended: Chat = { ...started(), phase: 'ended' }
     const chat = after([{ type: 'lock', locked: false, found: ['the tool Bash'] }], ended)
@@ -149,6 +149,7 @@ describe('applyChatEvent', () => {
     expect(lockStatus(chat).text).toBe('Not locked, chat stopped')
   })
 
+  it('takes nothing more once a chat has ended, even while its process is closing', () => {
     const ended: Chat = { ...started(), phase: 'ended' }
     const events: ChatEvent[] = [{ type: 'text', text: 'late' }, { type: 'plan', plan }, { type: 'tool-call', id: 't', name: 'x', input: '{}' }]
     expect(after(events, ended)).toBe(ended)
@@ -208,6 +209,13 @@ describe('sending another message', () => {
   })
 })
 
+describe('isWorking', () => {
+  it('is true from starting until the turn is over', () => {
+    expect((['starting', 'answering', 'stopping'] as const).every((phase) => isWorking({ phase }))).toBe(true)
+    expect((['ready', 'ended'] as const).some((phase) => isWorking({ phase }))).toBe(false)
+  })
+})
+
 describe('lockStatus', () => {
   it('only says locked once a report has shown it', () => {
     expect(lockStatus({ lock: 'unchecked', phase: 'answering' })).toMatchObject({ text: 'Lock not checked yet', tone: 'plan' })
@@ -229,6 +237,7 @@ describe('toolLabel', () => {
     expect(toolLabel('mcp__ottopus-ink__get_accounts')).toBe('get_accounts')
     expect(toolLabel('Bash')).toBe('Bash')
     expect(toolLabel('mcp__ottopus-ink-evil__x')).toBe('mcp__ottopus-ink-evil__x')
+    expect(toolLabel('mcp__ottopus-ink__sign_transaction')).toBe('mcp__ottopus-ink__sign_transaction')
   })
 })
 
@@ -237,7 +246,6 @@ describe('planHeadline', () => {
     expect(planHeadline(plan)).toBe('Send 1 NEAR')
     expect(planHeadline({ ...plan, outcome: 'swap', amount: '0.1', asset: 'ETH', toAsset: 'USDC' })).toBe('Swap 0.1 ETH to USDC')
     expect(planHeadline({ ...plan, outcome: 'stake', amount: '10' })).toBe('Stake 10 NEAR')
-    expect(toolLabel('mcp__ottopus-ink__sign_transaction')).toBe('mcp__ottopus-ink__sign_transaction')
   })
 })
 

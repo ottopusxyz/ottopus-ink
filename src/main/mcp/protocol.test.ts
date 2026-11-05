@@ -103,6 +103,9 @@ describe('handleMcpMessage', () => {
       ['a line break', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice.near\nTo: mallory.near' }],
       ['a unicode line separator', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice mallory' }],
       ['a bidi override that reorders an address', { outcome: 'send', asset: 'NEAR', amount: '1', to: '‮raen.ecila' }],
+      ['a blank-looking braille character', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice.near⠀mallory.near' }],
+      ['a Hangul filler', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice.nearㅤmallory.near' }],
+      ['a lookalike letter in an address', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'аlice.near' }],
       ['a zero-width character', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice​.near' }],
       ['a control character', { outcome: 'send', asset: 'NEAR\u0007', amount: '1', to: 'alice.near' }],
     ])('refuses %s and hands over no plan', (_name, args) => {

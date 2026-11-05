@@ -68,11 +68,12 @@ const NOT_SET_UP = toolAnswer('The wallet is not set up yet.')
 const MAX_PLAN_FIELD_CHARS = 256
 
 /**
- * One word with nothing hidden in it. A card shows an agent's values as written, so
- * spaces and line breaks could make one field read as a whole other instruction,
- * and control and format characters (U+202E, say) could reorder an address.
+ * One word of visible ASCII. A card shows an agent's values as written, so spaces and
+ * line breaks could make one field read as a whole other instruction, and other
+ * characters could reorder an address (U+202E), look like a gap in one (U+2800) or
+ * pass for a letter in one (Cyrillic а). Addresses and asset symbols don't need them.
  */
-const PLAN_FIELD = /^[^\s\p{Cc}\p{Cf}]+$/u
+const PLAN_FIELD = /^[!-~]+$/
 
 const PLAN_FIELDS = ['outcome', 'asset', 'chain', 'amount', 'to', 'to_asset', 'to_chain']
 const PLAN_OUTCOMES = ['send', 'swap', 'stake'] as const
@@ -158,7 +159,7 @@ export function handleMcpMessage(message: unknown, version: string, onPlan?: (pl
       }
       if (params.name === 'create_plan') {
         const plan = planFrom(params.arguments)
-        if (!plan) return result(toolAnswer('Those plan details do not match the schema. Each value must be one word with no spaces, a send needs to, and a swap needs to_asset.', true))
+        if (!plan) return result(toolAnswer('Those plan details do not match the schema. Each value must be one word of plain ASCII, a send needs to, and a swap needs to_asset.', true))
         onPlan?.(plan)
         return result(toolAnswer(`Plan ${plan.id} is a placeholder. The wallet is not set up yet, so it can't be reviewed or signed.`))
       }

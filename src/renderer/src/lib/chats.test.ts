@@ -141,6 +141,14 @@ describe('applyChatEvent', () => {
   })
 
   it('takes nothing more once a chat has ended, even while its process is closing', () => {
+  it('still says the lock broke if that arrives just after End', () => {
+    const ended: Chat = { ...started(), phase: 'ended' }
+    const chat = after([{ type: 'lock', locked: false, found: ['the tool Bash'] }], ended)
+    expect(chat).toMatchObject({ lock: 'unlocked', phase: 'ended' })
+    expect(chat.items.at(-1)).toMatchObject({ title: 'Ink stopped this chat' })
+    expect(lockStatus(chat).text).toBe('Not locked, chat stopped')
+  })
+
     const ended: Chat = { ...started(), phase: 'ended' }
     const events: ChatEvent[] = [{ type: 'text', text: 'late' }, { type: 'plan', plan }, { type: 'tool-call', id: 't', name: 'x', input: '{}' }]
     expect(after(events, ended)).toBe(ended)

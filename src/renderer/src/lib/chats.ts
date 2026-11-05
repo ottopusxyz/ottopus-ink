@@ -97,8 +97,9 @@ export function messageFailed(chat: Chat, error: string): Chat {
 
 /** What one event from the chat's session does to it. */
 export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
-  // Ending a chat takes a moment in the main process. It stops here at once.
-  if (chat.phase === 'ended') return chat
+  // Ending a chat takes a moment in the main process, and it stops here at once. The
+  // exception is the lock: a person who pressed End must still hear that it broke.
+  if (chat.phase === 'ended' && event.type !== 'lock') return chat
   switch (event.type) {
     case 'session':
     case 'subagent':

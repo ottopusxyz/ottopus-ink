@@ -4,6 +4,7 @@ import { PANE_LIFE, Sea } from '@/components/motion/sea'
 import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
 import type { Chat, ChatItem } from '@/lib/chats'
+import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { AgentMark } from './agent-picker'
 import { Composer } from './composer'
 import { PlanCard } from './plan-card'
@@ -90,11 +91,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
           {chat.items.map((item) => (
             <ConversationItem key={item.id} item={item} />
           ))}
-          {working ? (
-            <p role="status" className="m-0 text-[13px] text-[var(--ot-text-3)]">
-              {working}
-            </p>
-          ) : null}
+          {working ? <AgentThinking className="ink-thinking" variant="infinity" label={working} showTimer={false} /> : null}
         </div>
 
         <Composer

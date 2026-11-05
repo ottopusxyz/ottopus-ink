@@ -9,6 +9,9 @@ import { safeExternalUrl } from '../../../../shared/external-url'
  */
 export const MAX_MARKDOWN_CHARS = 20_000
 
+/** Past this many possible table cells a reply stays plain text too, at about 0.2s to draw. */
+export const MAX_TABLE_CELLS = 20_000
+
 /** Quotes, lists and emphasis nested deeper than this show their source. */
 const MAX_DEPTH = 8
 
@@ -24,7 +27,7 @@ export function Markdown({ text }: { text: string }) {
 }
 
 function render(text: string): ReactNode {
-  if (text.length <= MAX_MARKDOWN_CHARS) {
+  if (text.length <= MAX_MARKDOWN_CHARS && mostTableCells(text) <= MAX_TABLE_CELLS) {
     try {
       return blocks(new Lexer({ gfm: true }).lex(text), 0)
     } catch {
@@ -32,6 +35,17 @@ function render(text: string): ReactNode {
     }
   }
   return <p>{text}</p>
+}
+
+/**
+ * The most cells a reply's tables could make. The parser pads every row to its
+ * header's width, so 16,000 characters can ask for 3,000,000 cells, and this has
+ * to be known before parsing because the parser makes them all.
+ */
+function mostTableCells(text: string): number {
+  const lines = text.split(/\r\n?|\n/)
+  const widest = Math.max(...lines.map((line) => line.split('|').length - 1))
+  return widest === 0 ? 0 : (widest + 1) * lines.length
 }
 
 function blocks(tokens: Token[], depth: number): ReactNode {

@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { MAX_MARKDOWN_CHARS, Markdown } from './markdown'
+import { MAX_MARKDOWN_CHARS, MAX_TABLE_CELLS, Markdown } from './markdown'
 
 const html = (text: string) => renderToStaticMarkup(createElement(Markdown, { text }))
 /** What's inside the wrapper. */
@@ -204,6 +204,50 @@ describe('Markdown: replies built to break it', () => {
     const columns = '|a'.repeat(MAX_MARKDOWN_CHARS / 7)
     expect(html(`${columns}|\n${'|-'.repeat(MAX_MARKDOWN_CHARS / 7)}|\n${columns}|`)).toContain('<table>')
     expect(html(`|a|\n|-|\n${'|1|\n'.repeat(MAX_MARKDOWN_CHARS / 5)}`)).toContain('<table>')
+  })
+
+  describe('a short reply asking for a huge table', () => {
+    /** A header this wide pads every one of these short rows to its width. */
+    const table = (columns: number, rows: number, line = '\n') =>
+      `${'|a'.repeat(columns)}|${line}${'|-'.repeat(columns)}|${line}${`|x|${line}`.repeat(rows)}`
+
+    it('stays plain text instead of making millions of cells', () => {
+      const text = table(1000, 3000)
+      expect(text.length).toBeLessThan(MAX_MARKDOWN_CHARS)
+      expect(html(text)).not.toContain('<table>')
+      expect(html(text)).toContain('|x|')
+    })
+
+    it('stays plain text at the worst size the length limit allows', () => {
+      expect(html(table(2400, 2400))).not.toContain('<table>')
+    })
+
+    it("can't get past the limit with other line endings, or inside a quote", () => {
+      expect(html(table(1000, 3000, '\r'))).not.toContain('<table>')
+      expect(html(table(1000, 3000, '\r\n'))).not.toContain('<table>')
+      expect(html(`> ${table(1000, 1000, '\n> ')}`)).not.toContain('<table>')
+    })
+
+    it('still draws a table just under the limit', () => {
+      const shown = html(table(100, 180))
+      expect(102 * 183).toBeLessThanOrEqual(MAX_TABLE_CELLS)
+      expect(shown.match(/<td/g)).toHaveLength(18_000)
+    })
+
+    it('falls back just over the limit', () => {
+      expect(102 * 201).toBeGreaterThan(MAX_TABLE_CELLS)
+      expect(html(table(100, 198))).not.toContain('<table>')
+    })
+
+    it('leaves a long reply with an ordinary table and no other pipes alone', () => {
+      const prose = 'A line of ordinary prose.\n'.repeat(400)
+      expect(html(`${prose}\n| a | b | c |\n|---|---|---|\n| 1 | 2 | 3 |`)).toContain('<table>')
+    })
+
+    it('leaves a reply with no pipes alone, however many lines it has', () => {
+      expect(html('a\n'.repeat(MAX_MARKDOWN_CHARS / 2))).toContain('<p>')
+      expect(html('**a**\n'.repeat(1000))).toContain('<strong>')
+    })
   })
 
   it('still shows text built to slow down autolinks', () => {

@@ -105,6 +105,21 @@ describe('claudeEventReader on anything else', () => {
     ])
   })
 
+  it('cuts long names in a report, and treats an endless list as unreadable', () => {
+    const read = claudeEventReader()
+    const long = 'x'.repeat(5000)
+    const short = `${'x'.repeat(1000)}…`
+    const named = { tools: [long], mcp_servers: [{ name: long }], plugins: [{ name: long, path: '/x' }] }
+    expect(read(line({ type: 'system', subtype: 'init', ...named }))).toEqual([
+      { type: 'session', tools: [short], servers: [short], plugins: [short], model: null },
+    ])
+
+    const many = { tools: Array(201).fill('x'), mcp_servers: Array(201).fill({ name: 'x' }), plugins: Array(201).fill({ name: 'x' }) }
+    expect(read(line({ type: 'system', subtype: 'init', ...many }))).toEqual([
+      { type: 'session', tools: null, servers: null, plugins: null, model: null },
+    ])
+  })
+
   it('cuts what it keeps from a huge line, so the page never has to receive it all', () => {
     const big = 'x'.repeat(300_000)
     const read = claudeEventReader()

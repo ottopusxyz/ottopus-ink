@@ -38,6 +38,12 @@ describe('lockWatcher on a report', () => {
     expect(check(report(fields))).toContain(expected)
   })
 
+  it('names only the first few of a long list', () => {
+    const found = check(report({ tools: Array.from({ length: 25 }, (_, i) => `tool${i}`) }))
+    expect(found).toHaveLength(11)
+    expect(found?.at(-1)).toBe('15 more')
+  })
+
   it('finds Ink tools that never came through the shim', () => {
     expect(check(report(), false)).toEqual(["ottopus-ink tools that didn't come through Ink's shim"])
   })

@@ -3,6 +3,8 @@ import { MCP_SERVER_NAME } from '../mcp/protocol'
 
 const TOOL_PREFIX = `mcp__${MCP_SERVER_NAME}__`
 
+const MAX_FOUND = 10
+
 /**
  * What a session's report shows beyond Ink's own tools, in words for the person.
  * Skills and subagents aren't checked: a session lists Claude Code's built-in ones
@@ -17,7 +19,8 @@ function outsideInk(tools: string[] | null, servers: string[] | null, plugins: s
   for (const tool of tools ?? []) if (!tool.startsWith(TOOL_PREFIX)) found.push(`the tool ${tool}`)
   for (const server of servers ?? []) if (server !== MCP_SERVER_NAME) found.push(`the MCP server ${server}`)
   for (const plugin of plugins ?? []) found.push(`the plugin ${plugin}`)
-  return found
+  // This goes in a notice for the person, who doesn't need all of a long list.
+  return found.length > MAX_FOUND ? [...found.slice(0, MAX_FOUND), `${found.length - MAX_FOUND} more`] : found
 }
 
 /**

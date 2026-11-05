@@ -26,6 +26,9 @@ const MAX_TOOL_INPUT_CHARS = 20_000
 const MAX_TEXT_CHARS = 200_000
 const MAX_NAME_CHARS = 1000
 
+/** Far more tools, servers or plugins than a session has. A longer list reads as unreadable, which stops the chat. */
+const MAX_LIST_ITEMS = 200
+
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text)
 
 /**
@@ -44,13 +47,13 @@ function inputText(input: unknown): string {
 
 /** The names in a report's list, or null if it isn't one: a report that can't be read mustn't look like an empty one. */
 function namesOf(value: unknown, keep: (entry: Fields) => boolean = () => true): string[] | null {
-  if (!Array.isArray(value)) return null
+  if (!Array.isArray(value) || value.length > MAX_LIST_ITEMS) return null
   const entries = value.filter(isFields)
   if (entries.length !== value.length) return null
   const names: string[] = []
   for (const entry of entries) {
     if (typeof entry.name !== 'string') return null
-    if (keep(entry)) names.push(entry.name)
+    if (keep(entry)) names.push(clip(entry.name, MAX_NAME_CHARS))
   }
   return names
 }
@@ -88,7 +91,10 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
       return [
         {
           type: 'session',
-          tools: Array.isArray(tools) && tools.every((tool) => typeof tool === 'string') ? tools : null,
+          tools:
+            Array.isArray(tools) && tools.length <= MAX_LIST_ITEMS && tools.every((tool) => typeof tool === 'string')
+              ? tools.map((tool: string) => clip(tool, MAX_NAME_CHARS))
+              : null,
           servers: namesOf(event.mcp_servers),
           // Every session lists Claude Code's own plugins, whatever its settings say.
           plugins: namesOf(event.plugins, (plugin) => plugin.path !== 'builtin'),

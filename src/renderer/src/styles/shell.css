@@ -377,6 +377,91 @@
   user-select: text;
 }
 
+/* An agent's reply. Headings stay near body size, so a reply can't pass for Ink's own interface. */
+.ink-md {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 94%;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.ink-md p,
+.ink-md h3,
+.ink-md h4 {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.ink-md h3,
+.ink-md h4 {
+  font-family: var(--ot-font-ui);
+  font-weight: 600;
+}
+.ink-md h3 {
+  margin-top: 4px;
+  font-size: 15.5px;
+  line-height: 1.4;
+}
+.ink-md h4 {
+  font-size: 14px;
+}
+.ink-md ul,
+.ink-md ol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 22px;
+}
+.ink-md ul {
+  list-style: disc;
+}
+.ink-md ol {
+  list-style: decimal;
+}
+.ink-md li > * + * {
+  margin-top: 4px;
+}
+.ink-md li::marker {
+  color: var(--ot-text-3);
+}
+.ink-md blockquote {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--ot-border);
+  color: var(--ot-text-2);
+}
+.ink-md code {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: var(--ot-surface-3);
+  box-decoration-break: clone;
+  font: 12.5px/1.45 var(--ot-font-mono);
+}
+.ink-md pre {
+  flex: none;
+  margin: 0;
+  overflow-x: auto;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--ot-surface-3);
+  font: 12px/1.5 var(--ot-font-mono);
+  overflow-wrap: normal;
+  scrollbar-color: var(--ot-text-3) transparent;
+  scrollbar-width: thin;
+}
+.ink-md pre code {
+  padding: 0;
+  background: none;
+  font: inherit;
+}
+
 /* A tool call: one quiet line that opens to show what was sent and returned. */
 .ink-tool {
   align-self: flex-start;

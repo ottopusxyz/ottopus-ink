@@ -10,6 +10,7 @@ import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { ComposerLoader } from '@/vendor/boardui/composer-loader'
 import { AgentMark } from './agent-picker'
 import { Composer, SKILLS_HINT, TOOLS_HINT } from './composer'
+import { Markdown } from './markdown'
 import { PlanCard } from './plan-card'
 import { ToolCall } from './tool-call'
 
@@ -39,8 +40,9 @@ const COMPOSER_LIGHT: [string, string, string, string] = ['var(--ot-plan-border)
  * water, so a transaction in flight reads as something happening rather than
  * as a row in a wallet.
  *
- * Everything an agent sends is drawn as plain text. Its replies aren't rendered
- * as Markdown, so it has no way to put links or images in front of the person.
+ * An agent's replies get the formatting `Markdown` allows, and the rest of what
+ * it sends is drawn as plain text, so it has no way to put links or images in
+ * front of the person.
  */
 export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: ChatViewProps) {
   const scroller = useRef<HTMLDivElement>(null)
@@ -155,7 +157,7 @@ const ConversationItem = memo(function ConversationItem({ item }: { item: ChatIt
     case 'user':
       return <div className="ink-bubble">{item.text}</div>
     case 'agent':
-      return <p className="selectable m-0 max-w-[94%] text-[14px] leading-[1.6] whitespace-pre-wrap">{item.text}</p>
+      return <Markdown text={item.text} />
     case 'notice':
       // Errors hold still, so Otto isn't animated in either of these.
       if (item.ends) {

@@ -76,6 +76,7 @@ describe('turning something on', () => {
     const [question] = confirm.mock.calls[0] ?? []
     expect(question?.detail).toContain('move funds')
     expect(question?.detail).toContain('/bin/tool --flag')
+    expect(question?.detail).toContain('runs as you')
   })
 
   it('warns harder if its name suggests it moves funds, and flags that in the list', async () => {

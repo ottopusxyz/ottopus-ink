@@ -49,11 +49,16 @@ export function expandableValues(server: ServerDef): string[] {
 }
 
 /**
- * What must never reach an external server: Ink's token, which would let it call
- * Ink's tools, and the agent's own sign-in. Blank in each server's environment,
+ * What shouldn't be handed to an external server: Ink's token, which lets its holder
+ * call Ink's tools, and the agent's own sign-in. Blank in each server's environment,
  * because a stdio server inherits the whole environment of the CLI that starts it,
  * and refused as a `${NAME}`, because the CLI would fill that in from the same place.
  * The two messaging variables are ones the CLI sets for itself.
+ *
+ * This stops them being passed along, not a program set on taking them. A stdio
+ * server runs as the same user, so it can read its parent's /proc/<pid>/environ on
+ * Linux, and the same user's files. Only an OS sandbox could prevent that, which is
+ * why turning one on is presented as trusting a program with this computer.
  */
 export const SECRET_ENV_NAMES = [
   'OTTOPUS_INK_TOKEN',

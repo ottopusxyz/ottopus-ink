@@ -78,7 +78,8 @@ export function ToolsTab({ onChange }: ToolsTabProps) {
 
       <Callout severity="caution" title="These can act outside Ink" className="mb-4">
         Ink can't see what an outside tool does. One that holds its own keys could move funds with no review or signature in Ink, and any of them
-        could send out what your agent reads. Only turn on what you trust.
+        could send out what your agent reads. A program runs as you, with your access to this computer. Only turn on what you'd trust as an installed
+        program.
       </Callout>
 
       {error ? (

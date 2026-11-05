@@ -153,7 +153,7 @@ function describeRun(entry: CatalogEntry): string {
 }
 
 const RISK =
-  'Ink cannot see what this does. If it holds its own keys, your agent could move funds through it with no review or signature in Ink. It can also send what your agent reads, such as your balances, outside Ink. A program on this computer runs with your own access to your files.'
+  "Ink cannot see what this does. If it holds its own keys, your agent could move funds through it with no review or signature in Ink. It can also send what your agent reads, such as your balances, outside Ink. A program on this computer runs as you: it can read your files and, with some effort, what this chat uses to reach Ink. Only turn it on if you trust it as you would any program you install."
 
 const FUNDS_RISK = 'Its name suggests it may send, sign or trade. Only turn this on if you trust it with your funds.\n\n'
 

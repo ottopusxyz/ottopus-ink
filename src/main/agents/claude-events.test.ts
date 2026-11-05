@@ -105,6 +105,22 @@ describe('claudeEventReader on anything else', () => {
     ])
   })
 
+  it('cuts what it keeps from a huge line, so the page never has to receive it all', () => {
+    const big = 'x'.repeat(300_000)
+    const read = claudeEventReader()
+    expect(read(line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: big } } }))).toEqual([
+      { type: 'text', text: `${'x'.repeat(200_000)}…` },
+    ])
+    expect(read(line({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'a', content: big }] } }))).toEqual([
+      { type: 'tool-result', id: 'a', text: `${'x'.repeat(200_000)}…`, isError: false },
+    ])
+    expect(read(line({ type: 'result', is_error: true, result: big }))).toEqual([
+      { type: 'turn-end', outcome: 'failed', error: `${'x'.repeat(200_000)}…` },
+    ])
+    const [call] = read(line({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: big }] } }))
+    expect(call).toMatchObject({ name: `${'x'.repeat(1000)}…` })
+  })
+
   it('reports the work of a subagent instead of reading it as the reply', () => {
     const read = claudeEventReader()
     const delta = { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hidden' } }

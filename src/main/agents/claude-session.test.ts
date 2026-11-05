@@ -314,6 +314,8 @@ describe('startClaudeSession ending', () => {
     const { session, events } = start(file)
     session.send('go')
     await turnEnds(events, 1)
-    expect(events[0]).toEqual({ type: 'text', text: 'y'.repeat(2 * 1024 * 1024) })
+    // Read and not treated as a stuck agent, though only the start of it goes on to the page.
+    expect(events[0]).toEqual({ type: 'text', text: `${'y'.repeat(200_000)}…` })
+    expect(events.at(-1)).toEqual({ type: 'turn-end', outcome: 'done', error: null })
   })
 })

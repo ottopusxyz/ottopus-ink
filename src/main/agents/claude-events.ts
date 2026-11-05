@@ -22,6 +22,12 @@ function resultText(content: unknown): string {
 /** Past what anyone reads in a tool call's details. */
 const MAX_TOOL_INPUT_CHARS = 20_000
 
+/** A line can be 16 MiB, and all of what's kept from it has to be sent to the page. */
+const MAX_TEXT_CHARS = 200_000
+const MAX_NAME_CHARS = 1000
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text)
+
 /**
  * A tool call's input as text. Made here because the agent chooses its shape: nested
  * deep enough it can't be serialized or sent to the page, which would hide the call
@@ -30,8 +36,7 @@ const MAX_TOOL_INPUT_CHARS = 20_000
 function inputText(input: unknown): string {
   if (input === undefined || input === null) return ''
   try {
-    const text = JSON.stringify(input, null, 2)
-    return text.length > MAX_TOOL_INPUT_CHARS ? `${text.slice(0, MAX_TOOL_INPUT_CHARS)}…` : text
+    return clip(JSON.stringify(input, null, 2), MAX_TOOL_INPUT_CHARS)
   } catch {
     return 'Ink could not show this input: it is nested too deeply.'
   }
@@ -96,7 +101,7 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
       const { delta } = event.event
       if (isFields(delta) && delta.type === 'text_delta' && typeof delta.text === 'string') {
         textInTurn = true
-        return [{ type: 'text', text: delta.text }]
+        return [{ type: 'text', text: clip(delta.text, MAX_TEXT_CHARS) }]
       }
       return []
     }
@@ -104,7 +109,7 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
     if (event.type === 'assistant' && isFields(event.message)) {
       return blocksOf(event.message.content).flatMap((block): ChatEvent[] =>
         block.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string'
-          ? [{ type: 'tool-call', id: block.id, name: block.name, input: inputText(block.input) }]
+          ? [{ type: 'tool-call', id: clip(block.id, MAX_NAME_CHARS), name: clip(block.name, MAX_NAME_CHARS), input: inputText(block.input) }]
           : [],
       )
     }
@@ -115,8 +120,8 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
           ? [
               {
                 type: 'tool-result',
-                id: block.tool_use_id,
-                text: resultText(block.content),
+                id: clip(block.tool_use_id, MAX_NAME_CHARS),
+                text: clip(resultText(block.content), MAX_TEXT_CHARS),
                 isError: block.is_error === true,
               },
             ]
@@ -125,7 +130,7 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
     }
 
     if (event.type === 'result') {
-      const said = typeof event.result === 'string' ? event.result : ''
+      const said = typeof event.result === 'string' ? clip(event.result, MAX_TEXT_CHARS) : ''
       // The reply, should a version ever finish a turn without streaming it.
       const missedText: ChatEvent[] = event.is_error !== true && !textInTurn && said ? [{ type: 'text', text: said }] : []
       textInTurn = false

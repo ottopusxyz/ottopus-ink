@@ -49,6 +49,13 @@ function createMainWindow(): BrowserWindow {
 
   win.once('ready-to-show', () => win.show())
 
+  // A page that goes away takes what it knows about its chats with it, leaving
+  // nothing that could ever close them.
+  win.webContents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
+    if (isMainFrame && !isSameDocument) killChats()
+  })
+  win.on('closed', killChats)
+
   // The renderer never opens windows or navigates away. Links go to the OS
   // browser, and only https ones.
   win.webContents.setWindowOpenHandler(({ url }) => {

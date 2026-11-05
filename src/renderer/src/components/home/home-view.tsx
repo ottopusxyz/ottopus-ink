@@ -25,6 +25,8 @@ export interface HomeViewProps {
   agentPicker: ReactNode
   /** Off until there's a ready agent to send to. */
   canSend: boolean
+  /** What new chats get beyond Ottopus tools, by name. */
+  external: readonly string[]
 }
 
 /**
@@ -41,6 +43,7 @@ export function HomeView({
   composerRef,
   agentPicker,
   canSend,
+  external,
 }: HomeViewProps) {
   const running = live[0]
 
@@ -63,6 +66,7 @@ export function HomeView({
             textareaRef={composerRef}
             agentPicker={agentPicker}
             canSend={canSend}
+            external={external}
             placeholder="Tell your agent what to do: swap, send, bridge or stake."
           />
 

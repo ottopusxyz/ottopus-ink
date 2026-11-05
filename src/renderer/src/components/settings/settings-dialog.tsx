@@ -1,14 +1,16 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
-import type { AgentId, AgentState, AgentStatus } from '../../../../shared/ipc'
+import type { AgentId, AgentState, AgentStatus, ExternalItem } from '../../../../shared/ipc'
 import { AgentMark } from '@/components/chat/agent-picker'
 import { Badge, Button, Callout, Dialog, Tooltip, type Tone } from '@/components/ui'
 import { CloseIcon } from '@/components/shell/icons'
 import { agentInfo, describeAgent, LATER_AGENTS } from '@/lib/agents'
 import { stepIndex } from '@/lib/roving'
+import { ToolsTab } from './tools-tab'
 
 const TABS = [
   { id: 'general', label: 'General' },
   { id: 'agent', label: 'Agent' },
+  { id: 'tools', label: 'Tools and skills' },
   { id: 'wallet', label: 'Wallet and backup' },
   { id: 'security', label: 'Security' },
   { id: 'updates', label: 'Updates' },
@@ -26,6 +28,8 @@ export interface SettingsDialogProps {
   /** True while a check runs. */
   checking: boolean
   onCheckAgain: () => void
+  /** Called with the external tools list whenever the tab reads or changes it. */
+  onExternalChange: (items: ExternalItem[]) => void
 }
 
 /**
@@ -37,7 +41,7 @@ export interface SettingsDialogProps {
  * no settings store until the vault lands (issue #12), and the tabs say so
  * rather than pretend.
  */
-export function SettingsDialog({ open, onClose, agents, selectedAgent, checking, onCheckAgain }: SettingsDialogProps) {
+export function SettingsDialog({ open, onClose, agents, selectedAgent, checking, onCheckAgain, onExternalChange }: SettingsDialogProps) {
   const [tab, setTab] = useState<TabId>('agent')
 
   return (
@@ -73,7 +77,13 @@ export function SettingsDialog({ open, onClose, agents, selectedAgent, checking,
         <div className="min-w-0 flex-1 overflow-auto pt-[18px] pr-7 pb-6 pl-[18px]">
           {tab === 'agent' ? (
             <AgentTab agents={agents} selectedAgent={selectedAgent} checking={checking} onCheckAgain={onCheckAgain} />
-          ) : tab === 'wallet' ? <WalletTab /> : <EmptyTab />}
+          ) : tab === 'tools' ? (
+            <ToolsTab onChange={onExternalChange} />
+          ) : tab === 'wallet' ? (
+            <WalletTab />
+          ) : (
+            <EmptyTab />
+          )}
         </div>
       </div>
     </Dialog>
@@ -101,8 +111,7 @@ function AgentTab({
   selectedAgent,
   checking,
   onCheckAgain,
-}: Omit<SettingsDialogProps, 'open' | 'onClose'>) {
-  const [access, setAccess] = useState('ottopus')
+}: Omit<SettingsDialogProps, 'open' | 'onClose' | 'onExternalChange'>) {
   const [send, setSend] = useState('queue')
   return (
     <>
@@ -154,20 +163,6 @@ function AgentTab({
 
       <NotSavedYet />
 
-      <Setting
-        title="Agent access"
-        description="Ottopus tools only, the default: in Ink chats the agent can read balances and propose plans, and nothing else. No shell, no other MCP servers."
-      >
-        <Segmented
-          label="Agent access"
-          value={access}
-          onChange={setAccess}
-          options={[
-            ['ottopus', 'Ottopus tools only'],
-            ['all', 'Also my tools'],
-          ]}
-        />
-      </Setting>
       <Setting
         title="While the agent works, Send"
         description="Queue runs your words next. Steer stops the run and starts again with them. Ctrl+Enter does the other."

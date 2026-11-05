@@ -16,3 +16,4 @@ export {
   type StatusChipProps,
 } from './status-chip'
 export { TokenAmount, type TokenAmountProps } from './token-amount'
+export { Tooltip, type TooltipProps } from './tooltip'

@@ -256,10 +256,11 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.ink-picker:hover:not(:disabled) {
+.ink-picker:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--ot-surface-3);
 }
-.ink-picker:disabled {
+.ink-picker:disabled,
+.ink-picker[aria-disabled="true"] {
   color: var(--ot-text-3);
   cursor: default;
 }
@@ -276,7 +277,8 @@
   color: var(--ot-text-2);
   cursor: pointer;
 }
-.ink-round:disabled {
+.ink-round:disabled,
+.ink-round[aria-disabled="true"] {
   cursor: default;
   opacity: 0.6;
 }
@@ -433,6 +435,42 @@
 
 /* The agent picker's list: a native popover, placed under its button with
    CSS anchor positioning and flipped above when there's no room below. */
+.ink-tip {
+  display: inline-flex;
+}
+.ink-tip--block {
+  display: block;
+}
+/* The text colours flipped, so it reads as a layer over either theme. */
+.ink-tooltip {
+  inset: auto;
+  width: max-content;
+  max-width: 260px;
+  margin: 6px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--ot-radius-sm);
+  background: var(--ot-text);
+  color: var(--ot-surface);
+  font: 500 12px/1.4 var(--ot-font-ui);
+  white-space: normal;
+  box-shadow: var(--ot-shadow-card);
+  position-area: top;
+  position-try-fallbacks: flip-block, top span-right, top span-left, bottom span-right, bottom span-left;
+  transition: opacity var(--ot-dur-fast) var(--ot-ease-out), translate var(--ot-dur-fast) var(--ot-ease-out);
+}
+@starting-style {
+  .ink-tooltip:popover-open {
+    opacity: 0;
+    translate: 0 2px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-tooltip {
+    transition: none;
+  }
+}
+
 .ink-popover {
   inset: auto;
   margin: 6px 0;

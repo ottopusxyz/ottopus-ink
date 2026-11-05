@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, type ReactNode } from 'react'
 import { Otto } from '@/components/brand/otto'
-import { Callout, ErrorState } from '@/components/ui'
+import { Callout, ErrorState, Tooltip } from '@/components/ui'
 import { PANE_LIFE, Sea } from '@/components/motion/sea'
 import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
@@ -9,7 +9,7 @@ import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { ComposerLoader } from '@/vendor/boardui/composer-loader'
 import { AgentMark } from './agent-picker'
-import { Composer } from './composer'
+import { Composer, SKILLS_HINT, TOOLS_HINT } from './composer'
 import { PlanCard } from './plan-card'
 import { ToolCall } from './tool-call'
 
@@ -70,14 +70,18 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
             {agent.name}
           </span>
           <span className="flex-1" />
-          <button type="button" className="ink-picker" disabled>
-            Skills
-            <ChevronDownIcon size={12} />
-          </button>
-          <span className="ink-connector">
-            <PlugIcon size={13} />
-            ottopus-ink
-          </span>
+          <Tooltip text={SKILLS_HINT}>
+            <button type="button" className="ink-picker" aria-disabled>
+              Skills
+              <ChevronDownIcon size={12} />
+            </button>
+          </Tooltip>
+          <Tooltip text={TOOLS_HINT}>
+            <span className="ink-connector" tabIndex={0}>
+              <PlugIcon size={13} />
+              ottopus-ink
+            </span>
+          </Tooltip>
           <button type="button" className="ink-picker" disabled={chat.phase === 'ended' || !chat.sessionId} onClick={onEnd}>
             End chat
           </button>

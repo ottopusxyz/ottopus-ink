@@ -1,7 +1,7 @@
 import { useMemo, useState, type Ref } from 'react'
 import type { SignerStatus } from '../../../../shared/ipc'
 import { AgentMark } from '@/components/chat/agent-picker'
-import { Badge } from '@/components/ui'
+import { Badge, Tooltip } from '@/components/ui'
 import { agentInfo } from '@/lib/agents'
 import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
 import {
@@ -167,12 +167,14 @@ const LOCK_COLOURS = {
 function LockIndicator({ chat }: { chat: Chat }) {
   const { text, hint, tone } = lockStatus(chat)
   return (
-    <div className="ink-signer" role="status" title={hint}>
-      <span style={{ color: LOCK_COLOURS[tone] }}>
-        <PlugIcon />
-      </span>
-      <span className="flex-1">{text}</span>
-    </div>
+    <Tooltip text={hint} className="ink-tip--block">
+      <div className="ink-signer" role="status" tabIndex={0}>
+        <span style={{ color: LOCK_COLOURS[tone] }}>
+          <PlugIcon />
+        </span>
+        <span className="flex-1">{text}</span>
+      </div>
+    </Tooltip>
   )
 }
 
@@ -186,13 +188,21 @@ function SignerIndicator({ status, version }: { status: SignerStatus | null; ver
     status === 'ready' ? 'Signer isolated' : status === 'stopped' ? 'Signer stopped' : 'Signer starting'
   const colour =
     status === 'ready' ? 'var(--ot-ok)' : status === 'stopped' ? 'var(--ot-block-solid)' : 'var(--ot-plan)'
+  const hint =
+    status === 'ready'
+      ? 'Signing runs in its own process, apart from this window and your agent.'
+      : status === 'stopped'
+        ? "The signing process isn't running, so nothing can be signed."
+        : 'The signing process is starting.'
   return (
-    <div className="ink-signer" role="status">
-      <span style={{ color: colour }}>
-        <ShieldIcon />
-      </span>
-      <span className="flex-1">{copy}</span>
-      <span className="font-mono text-[11px] text-[var(--ot-text-3)]">v{version ?? '…'}</span>
-    </div>
+    <Tooltip text={hint} className="ink-tip--block">
+      <div className="ink-signer" role="status" tabIndex={0}>
+        <span style={{ color: colour }}>
+          <ShieldIcon />
+        </span>
+        <span className="flex-1">{copy}</span>
+        <span className="font-mono text-[11px] text-[var(--ot-text-3)]">v{version ?? '…'}</span>
+      </div>
+    </Tooltip>
   )
 }

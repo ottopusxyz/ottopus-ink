@@ -28,6 +28,7 @@ function icon(paths: ReactNode, strokeWidth = 1.75) {
   }
 }
 
+export const StopIcon = icon(<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" />)
 export const PlusIcon = icon(<path d="M12 5v14M5 12h14" />, 2)
 export const SearchIcon = icon(
   <>

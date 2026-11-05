@@ -2,7 +2,9 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { Callout } from '@/components/ui'
 import { PANE_LIFE, Sea } from '@/components/motion/sea'
 import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
-import type { Chat } from '@/lib/chats'
+import { agentInfo } from '@/lib/agents'
+import type { Chat, ChatItem } from '@/lib/chats'
+import { AgentMark } from './agent-picker'
 import { Composer } from './composer'
 
 export interface ChatViewProps {
@@ -10,7 +12,17 @@ export interface ChatViewProps {
   draft: string
   onDraft: (value: string) => void
   onSubmit: () => void
-  agentPicker: ReactNode
+  onStop: () => void
+  onEnd: () => void
+}
+
+/** How near the bottom counts as following along. Further up, someone is reading. */
+const FOLLOW_PX = 80
+
+const WORKING: Partial<Record<Chat['phase'], string>> = {
+  starting: 'Starting your agent…',
+  answering: 'Working…',
+  stopping: 'Stopping…',
 }
 
 /**
@@ -18,20 +30,36 @@ export interface ChatViewProps {
  * water, so a transaction in flight reads as something happening rather than
  * as a row in a wallet.
  *
- * Nothing answers yet. The agent drivers (issues #5 to #7) and the chat
- * stream (#10) fill the conversation in; this lays out where they land.
+ * Everything an agent sends is drawn as plain text. Its replies aren't rendered
+ * as Markdown, so it has no way to put links or images in front of the person.
  */
-export function ChatView({ chat, draft, onDraft, onSubmit, agentPicker }: ChatViewProps) {
-  const end = useRef<HTMLDivElement>(null)
+export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: ChatViewProps) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const composer = useRef<HTMLTextAreaElement>(null)
+  const following = useRef(true)
+  const agent = agentInfo(chat.agent)
+  const working = WORKING[chat.phase]
+  const running = chat.phase === 'answering' || chat.phase === 'stopping'
+
+  // Opening a chat starts at its end, ready for a reply.
   useEffect(() => {
-    end.current?.scrollIntoView({ block: 'end' })
-  }, [chat.messages.length])
+    following.current = true
+    composer.current?.focus()
+  }, [chat.id])
+
+  useEffect(() => {
+    const element = scroller.current
+    if (element && following.current) element.scrollTop = element.scrollHeight
+  }, [chat.id, chat.items, working])
 
   return (
     <>
       <main className="ink-panel flex flex-col" id="main" aria-label={chat.title}>
         <div className="ink-chat-toolbar">
-          {agentPicker}
+          <span className="ink-picker cursor-default">
+            <AgentMark id={chat.agent} small />
+            {agent.name}
+          </span>
           <span className="flex-1" />
           <button type="button" className="ink-picker" disabled>
             Skills
@@ -41,27 +69,44 @@ export function ChatView({ chat, draft, onDraft, onSubmit, agentPicker }: ChatVi
             <PlugIcon size={13} />
             ottopus-ink
           </span>
+          <button type="button" className="ink-picker" disabled={chat.phase === 'ended' || !chat.sessionId} onClick={onEnd}>
+            End chat
+          </button>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-[22px] py-[18px]">
-          {chat.messages.map((message) =>
-            message.role === 'user' ? (
-              <div key={message.id} className="ink-bubble">
-                {message.text}
-              </div>
-            ) : (
-              <p key={message.id} className="selectable m-0 max-w-[94%] text-[14px] leading-[1.6]">
-                {message.text}
-              </p>
-            ),
-          )}
-          <Callout severity="info" title="No agent is connected yet">
-            Ink can find your agents but can't drive them yet; that comes with the chat drivers. Nothing was sent.
-          </Callout>
-          <div ref={end} />
+        <div
+          ref={scroller}
+          className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-[22px] py-[18px]"
+          onScroll={(event) => {
+            const { scrollHeight, scrollTop, clientHeight } = event.currentTarget
+            following.current = scrollHeight - scrollTop - clientHeight < FOLLOW_PX
+          }}
+        >
+          {chat.trimmed ? (
+            <p className="m-0 text-center text-[12px] text-[var(--ot-text-3)]">Earlier messages are no longer shown.</p>
+          ) : null}
+          {chat.items.map((item) => (
+            <ConversationItem key={item.id} item={item} />
+          ))}
+          {working ? (
+            <p role="status" className="m-0 text-[13px] text-[var(--ot-text-3)]">
+              {working}
+            </p>
+          ) : null}
         </div>
 
-        <Composer compact value={draft} onChange={onDraft} onSubmit={onSubmit} placeholder="Reply to your agent" />
+        <Composer
+          compact
+          textareaRef={composer}
+          value={draft}
+          onChange={onDraft}
+          onSubmit={onSubmit}
+          onStop={running ? onStop : undefined}
+          stopping={chat.phase === 'stopping'}
+          canSend={chat.phase === 'ready'}
+          disabled={chat.phase === 'ended'}
+          placeholder={chat.phase === 'ended' ? 'This chat has ended. Start a new one to keep going.' : 'Reply to your agent'}
+        />
       </main>
 
       <aside className="ink-plan-pane" aria-label="Live plan">
@@ -81,4 +126,22 @@ export function ChatView({ chat, draft, onDraft, onSubmit, agentPicker }: ChatVi
       </aside>
     </>
   )
+}
+
+function ConversationItem({ item }: { item: ChatItem }): ReactNode {
+  switch (item.kind) {
+    case 'user':
+      return <div className="ink-bubble">{item.text}</div>
+    case 'agent':
+      return <p className="selectable m-0 max-w-[94%] text-[14px] leading-[1.6] whitespace-pre-wrap">{item.text}</p>
+    case 'notice':
+      return (
+        <Callout severity={item.severity} title={item.title} compact>
+          {item.text}
+        </Callout>
+      )
+    case 'tool':
+    case 'plan':
+      return null
+  }
 }

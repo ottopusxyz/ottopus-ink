@@ -41,8 +41,8 @@ const COMPOSER_LIGHT: [string, string, string, string] = ['var(--ot-plan-border)
  * as a row in a wallet.
  *
  * An agent's replies get the formatting `Markdown` allows, and the rest of what
- * it sends is drawn as plain text, so it has no way to put links or images in
- * front of the person.
+ * it sends is drawn as plain text, so it has no way to load an image or disguise
+ * where a link goes.
  */
 export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: ChatViewProps) {
   const scroller = useRef<HTMLDivElement>(null)

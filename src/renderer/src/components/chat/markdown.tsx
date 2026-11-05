@@ -1,19 +1,23 @@
 import { Fragment, type ReactNode } from 'react'
-import { Lexer, type MarkedToken, type Token } from 'marked'
+import { Lexer, type MarkedToken, type Token, type Tokens } from 'marked'
+import { safeExternalUrl } from '../../../../shared/external-url'
 
-/** Past this a reply stays plain text, so a hostile agent can't freeze the window by re-parsing a huge one. */
-export const MAX_MARKDOWN_CHARS = 50_000
+/**
+ * Past this a reply stays plain text, so a hostile agent can't freeze the window
+ * by re-parsing a huge one. The parser's email autolinks take quadratic time, at
+ * about 0.4s here and 2.5s at 50,000.
+ */
+export const MAX_MARKDOWN_CHARS = 20_000
 
 /** Quotes, lists and emphasis nested deeper than this show their source. */
 const MAX_DEPTH = 8
 
 /**
- * An agent's reply. Only bold, italics, headings, lists, quotes and code get any
- * formatting. A link shows its full URL as text and can't be clicked, and anything
+ * An agent's reply. Only bold, italics, headings, lists, quotes, code and tables
+ * get any formatting. An https link can be clicked and opens in the OS browser,
+ * always with its real address showing, and any other link is text. Anything
  * else, including images and HTML, shows as the text the agent sent. So an agent
- * can't put a link or image in front of the person, or hide text from them.
- *
- * GFM stays off, which leaves bare URLs, tables, strikethrough and task lists as text.
+ * can't load anything, disguise where a link goes, or hide text from the person.
  */
 export function Markdown({ text }: { text: string }) {
   return <div className="ink-md">{render(text)}</div>
@@ -22,7 +26,7 @@ export function Markdown({ text }: { text: string }) {
 function render(text: string): ReactNode {
   if (text.length <= MAX_MARKDOWN_CHARS) {
     try {
-      return blocks(new Lexer({ gfm: false }).lex(text), 0)
+      return blocks(new Lexer({ gfm: true }).lex(text), 0)
     } catch {
       // Nesting deep enough to overflow the parser's stack. The text still shows below.
     }
@@ -59,27 +63,60 @@ function block(token: MarkedToken, key: number, depth: number): ReactNode {
       return (
         <List key={key} start={token.ordered && token.start !== '' ? token.start : undefined}>
           {token.items.map((item, index) => (
-            <li key={index}>{blocks(item.tokens, depth + 1)}</li>
+            <li key={index}>{itemBlocks(item, depth + 1)}</li>
           ))}
         </List>
       )
     }
+    case 'table':
+      return (
+        <div key={key} className="ink-md__table">
+          <table>
+            <thead>
+              <tr>{cells(token.header, 'th', depth)}</tr>
+            </thead>
+            <tbody>
+              {token.rows.map((row, index) => (
+                <tr key={index}>{cells(row, 'td', depth)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
     default:
       return <p key={key}>{token.raw.trimEnd()}</p>
   }
 }
 
-function inline(tokens: Token[], depth: number): ReactNode {
-  return tokens.map((token, key) => span(token as MarkedToken, key, depth))
+function cells(row: Tokens.TableCell[], Cell: 'th' | 'td', depth: number): ReactNode {
+  return row.map((cell, index) => (
+    <Cell key={index} data-align={cell.align ?? undefined}>
+      {inline(cell.tokens, depth + 1)}
+    </Cell>
+  ))
 }
 
-function span(token: MarkedToken, key: number, depth: number): ReactNode {
+/** A task's checkbox stays the `[x]` the agent wrote, because a real one could pass for something Ink had checked. */
+function itemBlocks(item: Tokens.ListItem, depth: number): ReactNode {
+  const [box, line] = item.tokens as (MarkedToken | undefined)[]
+  if (box?.type === 'checkbox' && (line?.type === 'text' || line?.type === 'paragraph') && line.tokens) {
+    line.tokens.unshift(box)
+    item.tokens.shift()
+  }
+  return blocks(item.tokens, depth)
+}
+
+function inline(tokens: Token[], depth: number, inLink = false): ReactNode {
+  return tokens.map((token, key) => span(token as MarkedToken, key, depth, inLink))
+}
+
+function span(token: MarkedToken, key: number, depth: number, inLink: boolean): ReactNode {
   if (depth > MAX_DEPTH) return token.raw
   switch (token.type) {
     case 'strong':
-      return <strong key={key}>{inline(token.tokens, depth + 1)}</strong>
+      return <strong key={key}>{inline(token.tokens, depth + 1, inLink)}</strong>
     case 'em':
-      return <em key={key}>{inline(token.tokens, depth + 1)}</em>
+      return <em key={key}>{inline(token.tokens, depth + 1, inLink)}</em>
     case 'codespan':
       return <code key={key}>{token.text}</code>
     case 'br':
@@ -87,15 +124,34 @@ function span(token: MarkedToken, key: number, depth: number): ReactNode {
     case 'escape':
       return token.text
     case 'link':
-      // `<https://example.com>` already shows its URL.
-      if (token.raw === `<${token.text}>`) return token.text
-      return (
-        <Fragment key={key}>
-          {inline(token.tokens, depth + 1)} ({token.href})
-        </Fragment>
-      )
+      return inLink ? token.raw : link(token, key, depth)
     default:
       // Raw rather than `text`, which has decoded entities such as `&#x200B;`.
       return token.raw
   }
+}
+
+function link(token: Tokens.Link, key: number, depth: number): ReactNode {
+  // A bare URL or `<https://example.com>` has no label of its own.
+  const bare = token.raw === token.text || token.raw === `<${token.text}>`
+  const target = safeExternalUrl(token.href)
+  if (!target) {
+    if (bare) return token.text
+    return (
+      <Fragment key={key}>
+        {inline(token.tokens, depth + 1, true)} ({token.href})
+      </Fragment>
+    )
+  }
+  return (
+    <a key={key} href={target} target="_blank" rel="noopener noreferrer">
+      {bare ? (
+        target
+      ) : (
+        <>
+          {inline(token.tokens, depth + 1, true)} <span className="ink-md__url">({target})</span>
+        </>
+      )}
+    </a>
+  )
 }

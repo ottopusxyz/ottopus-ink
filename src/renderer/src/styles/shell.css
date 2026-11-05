@@ -461,6 +461,55 @@
   background: none;
   font: inherit;
 }
+.ink-md a {
+  color: var(--ot-plan);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ink-md a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--ot-plan);
+  outline-offset: 2px;
+}
+.ink-md__url {
+  overflow-wrap: anywhere;
+}
+.ink-md__table {
+  flex: none;
+  overflow-x: auto;
+  border: 1px solid var(--ot-border);
+  border-radius: 8px;
+  scrollbar-color: var(--ot-text-3) transparent;
+  scrollbar-width: thin;
+}
+.ink-md table {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+}
+.ink-md th,
+.ink-md td {
+  max-width: 320px;
+  padding: 6px 10px;
+  text-align: left;
+}
+.ink-md th {
+  background: var(--ot-surface-3);
+  font-weight: 600;
+}
+.ink-md td {
+  border-top: 1px solid var(--ot-border);
+}
+.ink-md [data-align="center"] {
+  text-align: center;
+}
+.ink-md [data-align="right"] {
+  text-align: right;
+}
 
 /* A tool call: one quiet line that opens to show what was sent and returned. */
 .ink-tool {

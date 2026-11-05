@@ -47,6 +47,7 @@ Ported from [ottopusxyz/ottopus](https://github.com/ottopusxyz/ottopus) (MIT, bu
 - the UI primitives in `src/renderer/src/components/ui`
 - Otto and his badge in `src/renderer/src/components/brand`
 - the bubbles, sea life and stillness in `src/renderer/src/components/motion` (everything there except `sea.tsx`)
+- the Claude and Codex marks in `src/renderer/src/assets/agents`, which came from [Simple Icons](https://simpleicons.org) (CC0). The marks stay the trademarks of their owners and are used only to show which agent a chat runs on
 
 Copied from [BoardUI](https://github.com/BoardUI/boardui) 0.5.9 (MIT, Copyright (c) 2026 Mertcan Dundar Esmergul (BoardUI)):
 

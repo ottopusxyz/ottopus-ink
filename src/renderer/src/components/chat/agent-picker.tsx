@@ -1,5 +1,7 @@
 import { useId, useRef, type CSSProperties } from 'react'
 import type { AgentId, AgentStatus } from '../../../../shared/ipc'
+import claudeLogo from '@/assets/agents/claude.svg'
+import codexLogo from '@/assets/agents/codex.svg'
 import { ChevronDownIcon } from '@/components/shell/icons'
 import { agentInfo, describeAgent } from '@/lib/agents'
 
@@ -87,15 +89,29 @@ export function AgentPicker({ agents, selected, onSelect }: AgentPickerProps) {
   )
 }
 
-/** An agent's two-letter mark in its colours. */
+const LOGOS: Partial<Record<AgentId, string>> = {
+  'claude-code': claudeLogo,
+  codex: codexLogo,
+}
+
+/**
+ * An agent's logo on a cream tile, or its two-letter mark in its colours where we
+ * have no logo. The tile stays cream in both themes because the logos are drawn for
+ * a light ground.
+ */
 export function AgentMark({ id, small = false }: { id: AgentId; small?: boolean }) {
   const info = agentInfo(id)
+  const logo = LOGOS[id]
+  const size = small ? { width: 18, height: 18, fontSize: 9 } : {}
+  if (logo) {
+    return (
+      <span aria-hidden className="ink-agent-mark ink-agent-mark--logo" style={size}>
+        <img src={logo} alt="" draggable={false} />
+      </span>
+    )
+  }
   return (
-    <span
-      aria-hidden
-      className="ink-agent-mark"
-      style={{ background: info.fill, color: info.ink, ...(small ? { width: 18, height: 18, fontSize: 9 } : {}) }}
-    >
+    <span aria-hidden className="ink-agent-mark" style={{ background: info.fill, color: info.ink, ...size }}>
       {info.mark}
     </span>
   )

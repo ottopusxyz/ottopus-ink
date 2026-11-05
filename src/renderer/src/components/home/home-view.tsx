@@ -1,5 +1,6 @@
 import type { ReactNode, Ref } from 'react'
 import { Otto } from '@/components/brand/otto'
+import { AgentMark } from '@/components/chat/agent-picker'
 import { Composer } from '@/components/chat/composer'
 import { Sea } from '@/components/motion/sea'
 import { ArrowRightIcon, ChatIcon, StakeIcon, SwapIcon } from '@/components/shell/icons'
@@ -84,7 +85,10 @@ export function HomeView({
                 onClick={() => onOpenChat(running.id)}
               >
                 <span className="ink-eyebrow">In progress</span>
-                <span className="text-[14px] font-semibold">{running.title}</span>
+                <span className="flex items-center gap-2 text-[14px] font-semibold">
+                  <AgentMark id={running.agent} small />
+                  {running.title}
+                </span>
                 <span className="text-[12px] text-[var(--ot-text-2)]">{running.step ?? 'Your agent is working'}</span>
               </button>
             ) : (

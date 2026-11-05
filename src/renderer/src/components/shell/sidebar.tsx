@@ -1,10 +1,11 @@
 import { useMemo, useState, type Ref } from 'react'
 import type { SignerStatus } from '../../../../shared/ipc'
+import { AgentMark } from '@/components/chat/agent-picker'
 import { Badge } from '@/components/ui'
+import { agentInfo } from '@/lib/agents'
 import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
 import {
   ActivityIcon,
-  ChatIcon,
   CheckIcon,
   PlugIcon,
   PlusIcon,
@@ -88,7 +89,7 @@ export function Sidebar({
               aria-current={view.kind === 'chat' && view.chatId === chat.id ? 'page' : undefined}
               onClick={() => onOpenChat(chat.id)}
             >
-              <ChatStatusMark chat={chat} />
+              <ChatMark chat={chat} />
               <span className="ink-side-item__label">{chat.title}</span>
               {chat.status === 'live' && chat.step ? <Badge tone="plan">{chat.step}</Badge> : null}
             </button>
@@ -132,13 +133,27 @@ export function Sidebar({
   )
 }
 
+function ChatMark({ chat }: { chat: Chat }) {
+  return (
+    <span className="ink-chat-mark">
+      <AgentMark id={chat.agent} small />
+      <span className="sr-only">{agentInfo(chat.agent).name}</span>
+      <ChatStatusMark chat={chat} />
+    </span>
+  )
+}
+
 function ChatStatusMark({ chat }: { chat: Chat }) {
   if (chat.status === 'live') return <span className="ink-live-dot" role="img" aria-label="In progress" />
   if (isWorking(chat)) return <span className="ink-live-dot" role="img" aria-label="Your agent is working" />
   if (chat.status === 'settled') {
-    return <CheckIcon aria-label="Settled" style={{ color: 'var(--ot-ok)' }} />
+    return (
+      <span className="ink-chat-mark__settled">
+        <CheckIcon size={9} aria-label="Settled" />
+      </span>
+    )
   }
-  return <ChatIcon />
+  return null
 }
 
 const LOCK_COLOURS = {

@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
-import { Lexer, type MarkedToken, type Token, type Tokens } from 'marked'
+import { Lexer, type Links, type MarkedToken, type Token, type Tokens } from 'marked'
 import { safeExternalUrl } from '../../../../shared/external-url'
 
 /**
@@ -11,6 +11,9 @@ export const MAX_MARKDOWN_CHARS = 20_000
 
 /** Past this many possible table cells a reply stays plain text too, at about 0.2s to draw. */
 export const MAX_TABLE_CELLS = 20_000
+
+/** Past this many characters repeated by reference links a reply stays plain text too. */
+export const MAX_REFERENCED_CHARS = 100_000
 
 /** Quotes, lists and emphasis nested deeper than this show their source. */
 const MAX_DEPTH = 8
@@ -29,7 +32,8 @@ export function Markdown({ text }: { text: string }) {
 function render(text: string): ReactNode {
   if (text.length <= MAX_MARKDOWN_CHARS && mostTableCells(text) <= MAX_TABLE_CELLS) {
     try {
-      return blocks(new Lexer({ gfm: true }).lex(text), 0)
+      const tokens = new Lexer({ gfm: true }).lex(text)
+      if (mostReferencedChars(text, tokens.links) <= MAX_REFERENCED_CHARS) return blocks(tokens, 0)
     } catch {
       // Nesting deep enough to overflow the parser's stack. The text still shows below.
     }
@@ -46,6 +50,16 @@ function mostTableCells(text: string): number {
   const lines = text.split(/\r\n?|\n/)
   const widest = Math.max(...lines.map((line) => line.split('|').length - 1))
   return widest === 0 ? 0 : (widest + 1) * lines.length
+}
+
+/**
+ * The most text reference links could repeat. Each `[r]` shows its definition's
+ * whole address and title, so one long definition and many short `[r]`s would
+ * turn 16,000 characters into millions.
+ */
+function mostReferencedChars(text: string, links: Links): number {
+  const longest = Object.values(links).map(({ href, title }) => href.length + (title?.length ?? 0))
+  return Math.max(0, ...longest) * (text.split('[').length - 1)
 }
 
 function blocks(tokens: Token[], depth: number): ReactNode {

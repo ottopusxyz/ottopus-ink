@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { MAX_MARKDOWN_CHARS, MAX_TABLE_CELLS, Markdown } from './markdown'
+import { MAX_MARKDOWN_CHARS, MAX_REFERENCED_CHARS, MAX_TABLE_CELLS, Markdown } from './markdown'
 
 const html = (text: string) => renderToStaticMarkup(createElement(Markdown, { text }))
 /** What's inside the wrapper. */
@@ -320,6 +320,34 @@ describe('Markdown: replies built to break it', () => {
     it('leaves a reply with no pipes alone, however many lines it has', () => {
       expect(html('a\n'.repeat(MAX_MARKDOWN_CHARS / 2))).toContain('<p>')
       expect(html('**a**\n'.repeat(1000))).toContain('<strong>')
+    })
+  })
+
+  describe('a short reply repeating a long link', () => {
+    const definition = (chars: number) => `[r]: https://a.example/${'a'.repeat(chars - 'https://a.example/'.length)}`
+
+    it('stays plain text instead of showing the address thousands of times', () => {
+      const text = `${definition(15_000)}\n\n${'[r] '.repeat(1000)}`
+      expect(text.length).toBeLessThan(MAX_MARKDOWN_CHARS)
+      expect(html(text)).not.toContain('<a ')
+      expect(html(text).length).toBeLessThan(text.length * 2)
+    })
+
+    it('counts a long title too', () => {
+      const text = `[r]: https://a.example "${'t'.repeat(15_000)}"\n\n${'[r] '.repeat(1000)}`
+      expect(html(text)).not.toContain('<a ')
+    })
+
+    it('falls back only past the limit', () => {
+      const uses = (count: number) => `${definition(1000)}\n\n${'[r] '.repeat(count)}`
+      expect(MAX_REFERENCED_CHARS).toBe(100_000)
+      expect(html(uses(99)).match(/<a /g)).toHaveLength(99)
+      expect(html(uses(101))).not.toContain('<a ')
+    })
+
+    it('leaves ordinary references and inline links alone', () => {
+      const shown = html(`[a][r] and [b][r] and [c](https://c.example).\n\n${definition(200)}`)
+      expect(shown.match(/<a /g)).toHaveLength(3)
     })
   })
 

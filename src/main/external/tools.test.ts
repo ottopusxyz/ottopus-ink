@@ -245,6 +245,11 @@ describe('parseNewServer', () => {
     expect(parseNewServer({ name: 'a', url: 'http://localhost:3000/mcp' })?.server).toMatchObject({ transport: 'http' })
   })
 
+  it('takes flags that only sound like keys when no value follows them', () => {
+    expect(parseNewServer({ name: 'a', command: 'x', args: ['--no-auth', '--verbose'] })).not.toBeNull()
+    expect(parseNewServer({ name: 'a', url: 'https://example.test/mcp?network=mainnet' })).not.toBeNull()
+  })
+
   it.each([
     ['nothing', null],
     ['a string', 'npx'],
@@ -263,6 +268,12 @@ describe('parseNewServer', () => {
     ["Ink's token as a variable", { name: 'a', command: 'x', envNames: ['OTTOPUS_INK_TOKEN'] }],
     ['the sign-in as a variable', { name: 'a', command: 'x', envNames: ['ANTHROPIC_API_KEY'] }],
     ["Ink's token in an argument", { name: 'a', command: 'x', args: ['${OTTOPUS_INK_TOKEN}'] }],
+    ['a key in an address', { name: 'a', url: 'https://example.test/mcp?api_key=abc' }],
+    ['a key-shaped value in an address', { name: 'a', url: 'https://example.test/mcp?x=sk-abc123' }],
+    ['a token in an address', { name: 'a', url: 'https://example.test/mcp?token=abc' }],
+    ['a key after a flag', { name: 'a', command: 'x', args: ['--api-key', 'abc'] }],
+    ['a key joined to a flag', { name: 'a', command: 'x', args: ['--token=abc'] }],
+    ['a key-shaped argument', { name: 'a', command: 'x', args: ['ghp_abc123'] }],
     ['a variable as the command', { name: 'a', command: '${MCP_BIN}' }],
     ['a variable in an argument', { name: 'a', command: 'x', args: ['${MCP_CONFIG}'] }],
     ['a variable in an address', { name: 'a', url: 'https://${MCP_HOST}/mcp' }],

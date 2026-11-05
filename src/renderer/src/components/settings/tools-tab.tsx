@@ -122,7 +122,7 @@ export function ToolsTab({ onChange }: ToolsTabProps) {
       <form className="mt-5 flex flex-col gap-2 border-t border-[var(--ot-border)] pt-4" onSubmit={(event) => void add(event)}>
         <h3 className="m-0 text-[14px] font-semibold">Add an MCP server</h3>
         <p className="m-0 text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">
-          It stays off until you turn it on. Keys go in environment variables: give their names, and Ink reads them from your shell when a chat starts.
+          It stays off until you turn it on. Don't write a key into the address or arguments, where it would be saved: give the names of environment variables instead, and Ink reads them from your shell when a chat starts.
         </p>
         <FormField label="Name" value={form.name} onChange={(name) => setForm({ ...form, name })} placeholder="near-tools" />
         <FormField

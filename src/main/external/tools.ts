@@ -5,9 +5,10 @@ import { buildSessionExternal, type SessionExternal } from './session'
 import type { ExternalItem, NewExternalServer } from '../../shared/ipc'
 
 /**
- * What's kept on disk: only commands, addresses, the names of variables and what's
- * switched on. No value of any secret, since those stay in the shell or the agent's
- * own config.
+ * What's kept on disk: commands and addresses for what was added by hand, the names
+ * of variables, and what's switched on. Keys belong in the shell or the agent's own
+ * config. Ink refuses the obvious ways of writing one into a server, but can't
+ * recognise every one, which is why the file is also 0600.
  */
 interface Saved {
   added: { id: string; name: string; server: ServerDef }[]
@@ -59,13 +60,35 @@ function isSafeUrl(value: string): boolean {
   }
 }
 
+const SECRET_NAME = /key|token|secret|password|passwd|credential|auth|signature/i
+const SECRET_SHAPE = /^(?:sk-|sk_|pk_|ghp_|gho_|github_pat_|xox[a-z]-|AKIA|eyJ)/
+
+/**
+ * Whether a server plainly has a key written into it, which would then sit in the
+ * settings file. This catches the common forms, not every one, so it can only keep
+ * people from doing it by accident.
+ */
+function holdsObviousSecret(url: string | null, args: readonly string[]): boolean {
+  if (url !== null) {
+    const { searchParams } = new URL(url)
+    return [...searchParams.keys()].some((name) => SECRET_NAME.test(name)) || [...searchParams.values()].some((value) => SECRET_SHAPE.test(value))
+  }
+  return args.some((arg, index) => {
+    if (SECRET_SHAPE.test(arg)) return true
+    const flag = /^--?([\w-]+)(=.*)?$/.exec(arg)
+    if (!flag || !SECRET_NAME.test(flag[1] ?? '')) return false
+    // "--api-key=value", or "--api-key value" with a value after it.
+    return flag[2] !== undefined || (args[index + 1] !== undefined && !args[index + 1]?.startsWith('-'))
+  })
+}
+
 /** A server from the page, which isn't trusted, or null if it doesn't hold up. */
 export function parseNewServer(input: unknown): { name: string; server: ServerDef } | null {
   if (typeof input !== 'object' || input === null) return null
   const { name, command, args, url, envNames } = input as Partial<Record<keyof NewExternalServer, unknown>>
   if (typeof name !== 'string' || !NAME.test(name)) return null
   if (url !== undefined && url !== null && url !== '') {
-    if (command || !isVisibleText(url) || !isSafeUrl(url)) return null
+    if (command || !isVisibleText(url) || !isSafeUrl(url) || holdsObviousSecret(url, [])) return null
     const remote: ServerDef = { transport: 'http', url, headers: {} }
     return letsVariableChooseWhatRuns(remote) ? null : { name, server: remote }
   }
@@ -74,6 +97,7 @@ export function parseNewServer(input: unknown): { name: string; server: ServerDe
   const names = envNames ?? []
   if (!Array.isArray(argList) || argList.length > MAX_ARGS || !argList.every(isVisibleText)) return null
   if (!Array.isArray(names) || names.length > MAX_ARGS || !names.every((item) => typeof item === 'string' && ENV_NAME.test(item))) return null
+  if (holdsObviousSecret(null, argList)) return null
   const server: ServerDef = { transport: 'stdio', command, args: argList, env: {}, envNames: names }
   return asksForSecrets(server) || letsVariableChooseWhatRuns(server) ? null : { name, server }
 }
@@ -168,7 +192,7 @@ export function createExternalTools({ file, bundled, detect, readEnv }: External
 
     async add(input, confirm) {
       const parsed = parseNewServer(input)
-      if (!parsed) throw new Error("That server's details don't look right")
+      if (!parsed) throw new Error("That server's details don't look right. A key in an address or argument belongs in an environment variable instead.")
       const entry = addedEntry({ id: `added:${randomUUID()}`, ...parsed })
       const agreed = await confirm({
         message: `Add ${parsed.name} to Ink's list?`,

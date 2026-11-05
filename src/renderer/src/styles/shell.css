@@ -359,6 +359,62 @@
   user-select: text;
 }
 
+/* A tool call: one quiet line that opens to show what was sent and returned. */
+.ink-tool {
+  align-self: flex-start;
+  max-width: 94%;
+  min-width: 0;
+  border: 1px solid var(--ot-border);
+  border-radius: 10px;
+  background: var(--ot-card);
+  font-size: 12.5px;
+}
+.ink-tool[open] {
+  width: 94%;
+  padding-bottom: 10px;
+}
+.ink-tool summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  color: var(--ot-text-2);
+  list-style: none;
+  cursor: pointer;
+}
+.ink-tool summary::-webkit-details-marker {
+  display: none;
+}
+.ink-tool[open] summary svg:last-child {
+  transform: rotate(180deg);
+}
+.ink-tool > .ink-eyebrow {
+  display: block;
+  padding: 6px 10px 3px;
+}
+.ink-tool pre {
+  max-height: 220px;
+  margin: 0 10px;
+  overflow: auto;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--ot-surface-3);
+  font: 12px/1.45 var(--ot-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.ink-plan-card {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+  padding: 14px;
+}
+
 /* The agent picker's list: a native popover, placed under its button with
    CSS anchor positioning and flipped above when there's no room below. */
 .ink-popover {

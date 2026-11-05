@@ -6,6 +6,8 @@ import { agentInfo } from '@/lib/agents'
 import type { Chat, ChatItem } from '@/lib/chats'
 import { AgentMark } from './agent-picker'
 import { Composer } from './composer'
+import { PlanCard } from './plan-card'
+import { ToolCall } from './tool-call'
 
 export interface ChatViewProps {
   chat: Chat
@@ -113,15 +115,19 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
         <Sea creatures={PANE_LIFE} shafts={false} />
         <div className="relative flex h-full flex-col gap-3 p-[18px]">
           <span className="ink-eyebrow">Live plan</span>
-          <div className="flex flex-col items-start gap-2 rounded-[12px] border border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_86%,transparent)] p-3.5">
-            <span className="text-[var(--ot-plan)]">
-              <ListIcon />
-            </span>
-            <span className="text-[14px] font-semibold">No plan yet</span>
-            <span className="text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">
-              When your agent proposes one, each step shows here and opens for review in its own window.
-            </span>
-          </div>
+          {chat.plan ? (
+            <PlanCard plan={chat.plan} />
+          ) : (
+            <div className="flex flex-col items-start gap-2 rounded-[12px] border border-[var(--ot-border)] bg-[color-mix(in_srgb,var(--ot-card)_86%,transparent)] p-3.5">
+              <span className="text-[var(--ot-plan)]">
+                <ListIcon />
+              </span>
+              <span className="text-[14px] font-semibold">No plan yet</span>
+              <span className="text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">
+                When your agent proposes one, each step shows here and opens for review in its own window.
+              </span>
+            </div>
+          )}
         </div>
       </aside>
     </>
@@ -141,7 +147,8 @@ function ConversationItem({ item }: { item: ChatItem }): ReactNode {
         </Callout>
       )
     case 'tool':
+      return <ToolCall {...item} />
     case 'plan':
-      return null
+      return <PlanCard plan={item.plan} />
   }
 }

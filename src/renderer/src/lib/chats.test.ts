@@ -8,12 +8,15 @@ import {
   filterChats,
   HOME_DRAFT,
   ipcErrorText,
+  lockStatus,
   MAX_ITEMS,
   MAX_REPLY_CHARS,
   MAX_TOOL_CHARS,
   messageFailed,
   messageSent,
   newChat,
+  planHeadline,
+  toolLabel,
   withDraft,
   type Chat,
 } from './chats'
@@ -178,6 +181,38 @@ describe('sending another message', () => {
   it('adds nothing if the chat has already ended', () => {
     const ended = after([{ type: 'ended', error: 'gone' }])
     expect(messageFailed(ended, 'This chat has ended')).toBe(ended)
+  })
+})
+
+describe('lockStatus', () => {
+  it('only says locked once a report has shown it', () => {
+    expect(lockStatus({ lock: 'unchecked', phase: 'answering' })).toMatchObject({ text: 'Lock not checked yet', tone: 'plan' })
+    expect(lockStatus({ lock: 'locked', phase: 'ready' })).toMatchObject({ text: 'Locked to Ottopus tools', tone: 'ok' })
+  })
+
+  it('stops saying locked when nothing is running', () => {
+    expect(lockStatus({ lock: 'locked', phase: 'ended' })).toMatchObject({ text: 'Chat ended', tone: 'neutral' })
+    expect(lockStatus({ lock: 'unchecked', phase: 'ended' })).toMatchObject({ text: 'Chat ended', tone: 'neutral' })
+  })
+
+  it('keeps saying a chat was not locked after it ended', () => {
+    expect(lockStatus({ lock: 'unlocked', phase: 'ended' })).toMatchObject({ text: 'Not locked, chat stopped', tone: 'block' })
+  })
+})
+
+describe('toolLabel', () => {
+  it("shortens Ink's own tools and leaves anything else in full", () => {
+    expect(toolLabel('mcp__ottopus-ink__get_accounts')).toBe('get_accounts')
+    expect(toolLabel('Bash')).toBe('Bash')
+    expect(toolLabel('mcp__ottopus-ink-evil__x')).toBe('mcp__ottopus-ink-evil__x')
+  })
+})
+
+describe('planHeadline', () => {
+  it('reads as one short line', () => {
+    expect(planHeadline(plan)).toBe('Send 1 NEAR')
+    expect(planHeadline({ ...plan, outcome: 'swap', amount: '0.1', asset: 'ETH', toAsset: 'USDC' })).toBe('Swap 0.1 ETH to USDC')
+    expect(planHeadline({ ...plan, outcome: 'stake', amount: '10' })).toBe('Stake 10 NEAR')
   })
 })
 

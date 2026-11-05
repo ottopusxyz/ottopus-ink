@@ -152,6 +152,31 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
   }
 }
 
+/** What the status area says about a chat's lock, and how much it should worry anyone. */
+export function lockStatus({ lock, phase }: Pick<Chat, 'lock' | 'phase'>): { text: string; hint: string; tone: 'ok' | 'plan' | 'block' | 'neutral' } {
+  if (lock === 'unlocked') {
+    return { text: 'Not locked, chat stopped', hint: 'The agent showed more than Ottopus tools, so Ink stopped the chat.', tone: 'block' }
+  }
+  if (phase === 'ended') return { text: 'Chat ended', hint: 'Nothing is running for this chat.', tone: 'neutral' }
+  if (lock === 'locked') {
+    return { text: 'Locked to Ottopus tools', hint: 'On its latest report, the agent had only Ottopus tools.', tone: 'ok' }
+  }
+  return { text: 'Lock not checked yet', hint: 'The agent reports its tools once it has your first message, and Ink checks them then.', tone: 'plan' }
+}
+
+const INK_TOOL_PREFIX = 'mcp__ottopus-ink__'
+
+/** A tool's name to show: Ink's own without the prefix, anything else in full so it stands out. */
+export function toolLabel(name: string): string {
+  return name.startsWith(INK_TOOL_PREFIX) ? name.slice(INK_TOOL_PREFIX.length) : name
+}
+
+/** A plan in one line, such as "Swap 0.1 ETH to USDC". */
+export function planHeadline({ outcome, amount, asset, toAsset }: ChatPlan): string {
+  const verb = `${outcome[0]?.toUpperCase() ?? ''}${outcome.slice(1)}`
+  return `${verb} ${amount} ${asset}${toAsset ? ` to ${toAsset}` : ''}`
+}
+
 /** A rejected IPC call's message without Electron's wrapping around it. */
 export function ipcErrorText(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)

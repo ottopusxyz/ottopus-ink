@@ -111,6 +111,28 @@ export function mergePaths(...lists: (string | null | undefined)[]): string {
 }
 
 /**
+ * The named variables from the person's shell, for an external tool they turned on
+ * that asks for them. Read only when needed and kept nowhere, so the rest of a
+ * shell's environment still stays out of the app. Falls back to this process's own.
+ */
+export async function readNamedShellEnv(names: readonly string[]): Promise<Record<string, string>> {
+  const safe = names.filter((name) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+  const fromProcess = Object.fromEntries(safe.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]])))
+  if (safe.length === 0) return {}
+  const shell = process.env.SHELL || userInfo().shell || '/bin/sh'
+  const command = [...safe.flatMap((name) => [`printf '%s' ${MARK}`, `printenv ${name}`]), `printf '%s' ${MARK}`].join('; ')
+  const { stdout } = await run(shell, ['-ilc', command], { env: { ...process.env, DISABLE_AUTO_UPDATE: 'true' }, timeoutMs: 5000 })
+  const parts = stdout.split(MARK)
+  if (parts.length < safe.length + 2) return fromProcess
+  const env: Record<string, string> = { ...fromProcess }
+  safe.forEach((name, index) => {
+    const value = parts[index + 1]?.trim()
+    if (value) env[name] = value
+  })
+  return env
+}
+
+/**
  * Runs the person's shell as an interactive login shell and reads the variables.
  * Null if it blocks past the deadline, or fails before printing them; an rc file
  * that exits non-zero may still have printed them first.

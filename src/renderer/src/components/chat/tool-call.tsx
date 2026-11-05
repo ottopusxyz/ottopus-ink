@@ -3,8 +3,9 @@ import { ChevronDownIcon, PlugIcon } from '@/components/shell/icons'
 import { toolLabel, type ChatItem } from '@/lib/chats'
 
 /**
- * A tool the agent called, closed to a line by default. Opening it shows exactly
- * what was sent and what came back, so a person can check an agent's claim.
+ * A tool the agent called, closed to a line by default. All of this comes from the
+ * agent's own output, not from Ink's server, so it's the agent's account of the call
+ * and worded that way. Only a plan card comes from Ink itself.
  */
 export function ToolCall({ name, input, result }: Extract<ChatItem, { kind: 'tool' }>) {
   return (
@@ -21,11 +22,11 @@ export function ToolCall({ name, input, result }: Extract<ChatItem, { kind: 'too
         )}
         <ChevronDownIcon size={12} />
       </summary>
-      <span className="ink-eyebrow">Sent</span>
+      <span className="ink-eyebrow">Your agent says it sent</span>
       <pre>{input || 'Nothing'}</pre>
       {result ? (
         <>
-          <span className="ink-eyebrow">Came back</span>
+          <span className="ink-eyebrow">Your agent says it got back</span>
           <pre>{result.text || 'Nothing'}</pre>
         </>
       ) : null}

@@ -78,22 +78,28 @@ describe('handleMcpMessage', () => {
       expect(result.content[0]?.text).toContain("can't be reviewed or signed")
     })
 
+    it('takes a stake with no target', () => {
+      expect(propose({ outcome: 'stake', asset: 'NEAR', amount: '10' }).plans).toHaveLength(1)
+    })
+
     it.each([
       ['nothing', undefined],
       ['no arguments', {}],
-      ['a missing amount', { outcome: 'send', asset: 'NEAR' }],
-      ['an empty asset', { outcome: 'send', asset: '', amount: '1' }],
-      ['an unknown outcome', { outcome: 'sign', asset: 'NEAR', amount: '1' }],
-      ['an outcome from the object prototype', { outcome: 'constructor', asset: 'NEAR', amount: '1' }],
-      ['a field that is not text', { outcome: 'send', asset: 'NEAR', amount: 1 }],
-      ['a field outside the schema', { outcome: 'send', asset: 'NEAR', amount: '1', route: 'x' }],
+      ['a send with nobody to send to', { outcome: 'send', asset: 'NEAR', amount: '1' }],
+      ['a swap with nothing to swap to', { outcome: 'swap', asset: 'ETH', amount: '1' }],
+      ['a missing amount', { outcome: 'send', asset: 'NEAR', to: 'alice.near' }],
+      ['an empty asset', { outcome: 'send', asset: '', amount: '1', to: 'alice.near' }],
+      ['an unknown outcome', { outcome: 'sign', asset: 'NEAR', amount: '1', to: 'alice.near' }],
+      ['an outcome from the object prototype', { outcome: 'constructor', asset: 'NEAR', amount: '1', to: 'alice.near' }],
+      ['a field that is not text', { outcome: 'send', asset: 'NEAR', amount: 1, to: 'alice.near' }],
+      ['a field outside the schema', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice.near', route: 'x' }],
       ['an overlong field', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'x'.repeat(257) }],
-      ['a value with spaces that reads as more', { outcome: 'send', asset: 'NEAR', amount: '1 ETH to 0xEVIL and' }],
+      ['a value with spaces that reads as more', { outcome: 'send', asset: 'NEAR', amount: '1 ETH to 0xEVIL and', to: 'alice.near' }],
       ['a line break', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice.near\nTo: mallory.near' }],
       ['a unicode line separator', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice mallory' }],
       ['a bidi override that reorders an address', { outcome: 'send', asset: 'NEAR', amount: '1', to: '‮raen.ecila' }],
       ['a zero-width character', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice​.near' }],
-      ['a control character', { outcome: 'send', asset: 'NEAR\u0007', amount: '1' }],
+      ['a control character', { outcome: 'send', asset: 'NEAR\u0007', amount: '1', to: 'alice.near' }],
     ])('refuses %s and hands over no plan', (_name, args) => {
       const { plans, result } = propose(args)
       expect(plans).toEqual([])

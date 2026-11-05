@@ -75,7 +75,7 @@ describe('startMcpBridge plans', () => {
     const session = bridge.addSession({ onPlan: mine })
     bridge.addSession({ onPlan: theirs })
     const state = client()
-    const params = { name: 'create_plan', arguments: { outcome: 'send', asset: 'NEAR', amount: '1' } }
+    const params = { name: 'create_plan', arguments: { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice.near' } }
     state.socket.write(`${hello(session.token)}${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params })}\n`)
     await answered(state)
     expect(mine).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outcome: 'send', asset: 'NEAR' }))

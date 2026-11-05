@@ -93,6 +93,8 @@ function planFrom(args: unknown): ChatPlan | null {
   const asset = field('asset')
   const amount = field('amount')
   if (!outcome || !asset || !amount) return null
+  // "Send 1 NEAR" with nobody to send it to would still read as a whole plan.
+  if ((outcome === 'send' && !field('to')) || (outcome === 'swap' && !field('to_asset'))) return null
   return {
     id: randomUUID(),
     status: 'draft',
@@ -156,7 +158,7 @@ export function handleMcpMessage(message: unknown, version: string, onPlan?: (pl
       }
       if (params.name === 'create_plan') {
         const plan = planFrom(params.arguments)
-        if (!plan) return result(toolAnswer('Those plan details do not match the schema. Each value must be one word with no spaces.', true))
+        if (!plan) return result(toolAnswer('Those plan details do not match the schema. Each value must be one word with no spaces, a send needs to, and a swap needs to_asset.', true))
         onPlan?.(plan)
         return result(toolAnswer(`Plan ${plan.id} is a placeholder. The wallet is not set up yet, so it can't be reviewed or signed.`))
       }

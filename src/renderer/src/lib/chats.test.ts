@@ -237,6 +237,7 @@ describe('planHeadline', () => {
     expect(planHeadline(plan)).toBe('Send 1 NEAR')
     expect(planHeadline({ ...plan, outcome: 'swap', amount: '0.1', asset: 'ETH', toAsset: 'USDC' })).toBe('Swap 0.1 ETH to USDC')
     expect(planHeadline({ ...plan, outcome: 'stake', amount: '10' })).toBe('Stake 10 NEAR')
+    expect(toolLabel('mcp__ottopus-ink__sign_transaction')).toBe('mcp__ottopus-ink__sign_transaction')
   })
 })
 

@@ -1,4 +1,4 @@
-import type { AgentId, ChatEvent, ChatPlan } from '../../../shared/ipc'
+import { INK_TOOLS, type AgentId, type ChatEvent, type ChatPlan } from '../../../shared/ipc'
 
 export type ChatStatus = 'idle' | 'live' | 'settled'
 
@@ -175,7 +175,8 @@ const INK_TOOL_PREFIX = 'mcp__ottopus-ink__'
 
 /** A tool's name to show: Ink's own without the prefix, anything else in full so it stands out. */
 export function toolLabel(name: string): string {
-  return name.startsWith(INK_TOOL_PREFIX) ? name.slice(INK_TOOL_PREFIX.length) : name
+  const short = name.slice(INK_TOOL_PREFIX.length)
+  return name.startsWith(INK_TOOL_PREFIX) && INK_TOOLS.some((tool) => tool === short) ? short : name
 }
 
 /** A plan in one line, such as "Swap 0.1 ETH to USDC". */

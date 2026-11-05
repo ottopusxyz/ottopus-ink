@@ -52,6 +52,9 @@ export interface AgentStatus {
   signedIn: boolean | null
 }
 
+/** The tools of Ink's MCP server. The server has exactly these, and the page shortens only these names. */
+export const INK_TOOLS = ['get_accounts', 'get_portfolio', 'get_quote', 'create_plan', 'get_plan', 'cancel_plan'] as const
+
 /**
  * A plan an agent proposed. Until the wallet exists it's a placeholder that can't
  * be reviewed or signed. The agent wrote every value here, so show them as text.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatPlan } from '../../shared/ipc'
+import { INK_TOOLS, type ChatPlan } from '../../shared/ipc'
 import { handleMcpMessage } from './protocol'
 
 const ask = (method: string, params?: unknown, id: unknown = 1) =>
@@ -36,6 +36,11 @@ describe('handleMcpMessage', () => {
     for (const { inputSchema } of tools) {
       expect(inputSchema).toMatchObject({ type: 'object', additionalProperties: false })
     }
+  })
+
+  it('has exactly the tools the page knows by name', () => {
+    const { tools } = ask('tools/list').result as { tools: { name: string }[] }
+    expect(tools.map((tool) => tool.name).sort()).toEqual([...INK_TOOLS].sort())
   })
 
   it('offers nothing that signs or sends', () => {

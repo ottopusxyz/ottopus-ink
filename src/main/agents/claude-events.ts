@@ -19,6 +19,19 @@ function resultText(content: unknown): string {
     .join('\n')
 }
 
+/** The names in a report's list, or null if it isn't one: a report that can't be read mustn't look like an empty one. */
+function namesOf(value: unknown, keep: (entry: Fields) => boolean = () => true): string[] | null {
+  if (!Array.isArray(value)) return null
+  const entries = value.filter(isFields)
+  if (entries.length !== value.length) return null
+  const names: string[] = []
+  for (const entry of entries) {
+    if (typeof entry.name !== 'string') return null
+    if (keep(entry)) names.push(entry.name)
+  }
+  return names
+}
+
 /**
  * Reads Claude Code's `--output-format stream-json` output, one line at a time,
  * into chat events. The agent is untrusted and the format isn't a stable API, so
@@ -48,8 +61,17 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
     if (typeof event.parent_tool_use_id === 'string') return []
 
     if (event.type === 'system' && event.subtype === 'init') {
-      const tools = Array.isArray(event.tools) ? event.tools.filter((tool) => typeof tool === 'string') : []
-      return [{ type: 'session', tools, model: typeof event.model === 'string' ? event.model : null }]
+      const { tools } = event
+      return [
+        {
+          type: 'session',
+          tools: Array.isArray(tools) && tools.every((tool) => typeof tool === 'string') ? tools : null,
+          servers: namesOf(event.mcp_servers),
+          // Every session lists Claude Code's own plugins, whatever its settings say.
+          plugins: namesOf(event.plugins, (plugin) => plugin.path !== 'builtin'),
+          model: typeof event.model === 'string' ? event.model : null,
+        },
+      ]
     }
 
     if (event.type === 'stream_event' && isFields(event.event) && event.event.type === 'content_block_delta') {

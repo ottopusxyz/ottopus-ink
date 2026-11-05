@@ -25,7 +25,7 @@ const tool = 'mcp__ottopus-ink__get_accounts'
 
 describe('claudeEventReader on recorded sessions', () => {
   it('follows a tool call, an interrupted turn and a follow-up', () => {
-    const session = { type: 'session', tools: [tool], model: 'claude-haiku-5-5' }
+    const session = { type: 'session', tools: [tool], servers: ['ottopus-ink'], plugins: [], model: 'claude-haiku-5-5' }
     expect(joined(replay('claude-session.ndjson'))).toEqual([
       session,
       { type: 'tool-call', id: 'toolu_fixture1', name: tool, input: {} },
@@ -66,12 +66,36 @@ describe('claudeEventReader on anything else', () => {
 
   it('skips fields of the wrong type rather than passing them on', () => {
     const read = claudeEventReader()
-    expect(read(line({ type: 'system', subtype: 'init', tools: ['Bash', 7], model: 7 }))).toEqual([
-      { type: 'session', tools: ['Bash'], model: null },
-    ])
     expect(read(line({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 1, name: 'x' }] } }))).toEqual([])
     expect(read(line({ type: 'assistant', message: { content: 'text' } }))).toEqual([])
     expect(read(line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 1 } } }))).toEqual([])
+  })
+
+  it('passes on what a session reports, leaving out only built-in plugins', () => {
+    const read = claudeEventReader()
+    const init = {
+      type: 'system',
+      subtype: 'init',
+      tools: ['Bash'],
+      mcp_servers: [{ name: 'ottopus-ink', status: 'connected' }, { name: 'other', status: 'failed' }],
+      plugins: [
+        { name: 'cc-plugin-privacy', path: 'builtin', source: 'cc-plugin-privacy@builtin' },
+        { name: 'dropped-in', path: '/home/someone/plugin', source: 'dropped-in@inline' },
+      ],
+      model: 7,
+    }
+    expect(read(line(init))).toEqual([
+      { type: 'session', tools: ['Bash'], servers: ['ottopus-ink', 'other'], plugins: ['dropped-in'], model: null },
+    ])
+  })
+
+  it('marks a list it cannot read as null, so it never looks empty', () => {
+    const read = claudeEventReader()
+    const lists = (fields: object) => read(line({ type: 'system', subtype: 'init', ...fields }))
+    expect(lists({})).toEqual([{ type: 'session', tools: null, servers: null, plugins: null, model: null }])
+    expect(lists({ tools: ['Bash', 7], mcp_servers: ['ottopus-ink'], plugins: [{ path: '/x' }] })).toEqual([
+      { type: 'session', tools: null, servers: null, plugins: null, model: null },
+    ])
   })
 
   it('gives a tool call with no input a null input', () => {

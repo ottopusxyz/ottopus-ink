@@ -54,8 +54,13 @@ export interface AgentStatus {
 
 /** What happens in a chat, whichever agent is driving it. */
 export type ChatEvent =
-  /** The agent's session as it reports it, at the start of each turn. */
-  | { type: 'session'; tools: string[]; model: string | null }
+  /**
+   * The agent's session as it reports it, at the start of each turn. A list is
+   * null when the report couldn't be read. Plugins leaves out the agent's built-in ones.
+   */
+  | { type: 'session'; tools: string[] | null; servers: string[] | null; plugins: string[] | null; model: string | null }
+  /** Whether a report showed only Ink's tools. If not, found says what else, and the chat is being stopped. */
+  | { type: 'lock'; locked: boolean; found: string[] }
   /** The next piece of the reply. */
   | { type: 'text'; text: string }
   | { type: 'tool-call'; id: string; name: string; input: unknown }

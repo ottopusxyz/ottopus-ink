@@ -52,6 +52,22 @@ export interface AgentStatus {
   signedIn: boolean | null
 }
 
+/**
+ * A plan an agent proposed. Until the wallet exists it's a placeholder that can't
+ * be reviewed or signed. The agent wrote every value here, so show them as text.
+ */
+export interface ChatPlan {
+  id: string
+  status: 'draft'
+  outcome: 'send' | 'swap' | 'stake'
+  asset: string
+  amount: string
+  chain: string | null
+  to: string | null
+  toAsset: string | null
+  toChain: string | null
+}
+
 /** What happens in a chat, whichever agent is driving it. */
 export type ChatEvent =
   /**
@@ -65,6 +81,8 @@ export type ChatEvent =
   | { type: 'text'; text: string }
   | { type: 'tool-call'; id: string; name: string; input: unknown }
   | { type: 'tool-result'; id: string; text: string; isError: boolean }
+  /** From Ink's own server, not the agent's output, so an agent can't forge one by printing it. */
+  | { type: 'plan'; plan: ChatPlan }
   | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
   /** The agent's process is gone and the chat can't continue. Error is null when Ink closed it. */
   | { type: 'ended'; error: string | null }

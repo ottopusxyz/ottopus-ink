@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto'
+import type { ChatPlan } from '../../shared/ipc'
+
 /** The server's name in the agent's tool names (`mcp__ottopus-ink__*`). Not `ottopus`: that's another product's connector. */
 export const MCP_SERVER_NAME = 'ottopus-ink'
 
@@ -56,11 +59,44 @@ const TOOLS = [
   { name: 'cancel_plan', description: 'Withdraws a plan that has not been signed.', inputSchema: planId },
 ]
 
+const toolAnswer = (answer: string, isError = false) => ({ content: [{ type: 'text', text: answer }], isError })
+
 /** Every tool's answer until the wallet exists. */
-const NOT_SET_UP = { content: [{ type: 'text', text: 'The wallet is not set up yet.' }], isError: false }
+const NOT_SET_UP = toolAnswer('The wallet is not set up yet.')
+
+/** Longer than any asset, amount or address. */
+const MAX_PLAN_FIELD_CHARS = 256
+
+const PLAN_FIELDS = ['outcome', 'asset', 'chain', 'amount', 'to', 'to_asset', 'to_chain']
+const PLAN_OUTCOMES = ['send', 'swap', 'stake'] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** A placeholder plan from create_plan's arguments, or null if they break its schema. */
+function planFrom(args: unknown): ChatPlan | null {
+  if (!isRecord(args)) return null
+  const entries = Object.entries(args)
+  if (entries.some(([key, value]) => !PLAN_FIELDS.includes(key) || typeof value !== 'string' || value.length > MAX_PLAN_FIELD_CHARS)) {
+    return null
+  }
+  const field = (key: string) => (typeof args[key] === 'string' ? args[key] : null)
+  const outcome = PLAN_OUTCOMES.find((known) => known === args.outcome)
+  const asset = field('asset')
+  const amount = field('amount')
+  if (!outcome || !asset || !amount) return null
+  return {
+    id: randomUUID(),
+    status: 'draft',
+    outcome,
+    asset,
+    amount,
+    chain: field('chain'),
+    to: field('to'),
+    toAsset: field('to_asset'),
+    toChain: field('to_chain'),
+  }
 }
 
 export type RpcId = string | number | null
@@ -80,7 +116,7 @@ export function parseErrorResponse(): object {
  * server doesn't have gets a proper error rather than silence: Claude Code opens
  * with `server/discover` and falls back to `initialize` only when told no.
  */
-export function handleMcpMessage(message: unknown, version: string): object | null {
+export function handleMcpMessage(message: unknown, version: string, onPlan?: (plan: ChatPlan) => void): object | null {
   if (!isRecord(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     const id = isRecord(message) && (typeof message.id === 'string' || typeof message.id === 'number') ? message.id : null
     return rpcError(id, INVALID_REQUEST, 'Not a JSON-RPC 2.0 request')
@@ -110,6 +146,12 @@ export function handleMcpMessage(message: unknown, version: string): object | nu
       }
       if (params.arguments !== undefined && !isRecord(params.arguments)) {
         return rpcError(id, INVALID_PARAMS, 'Arguments must be an object')
+      }
+      if (params.name === 'create_plan') {
+        const plan = planFrom(params.arguments)
+        if (!plan) return result(toolAnswer('Those plan details do not match the schema.', true))
+        onPlan?.(plan)
+        return result(toolAnswer(`Plan ${plan.id} is a placeholder. The wallet is not set up yet, so it can't be reviewed or signed.`))
       }
       return result(NOT_SET_UP)
     }

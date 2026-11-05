@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentStatus, ChatEvent } from '../../shared/ipc'
+import type { AgentStatus, ChatEvent, ChatPlan } from '../../shared/ipc'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './chats'
 import { startClaudeSession, type ChatSession, type ClaudeSessionOptions } from './claude-session'
 
@@ -19,9 +19,13 @@ const tools = {
   shim: '/app/shim.js',
   bridge: {
     socketPath: '/run/ink/mcp.sock',
-    addSession: () => ({ token: 'token-for-this-chat', connected: () => shimConnected, remove: removeTools }),
+    addSession: (handlers?: { onPlan?: (plan: ChatPlan) => void }) => {
+      proposePlan = handlers?.onPlan
+      return { token: 'token-for-this-chat', connected: () => shimConnected, remove: removeTools }
+    },
   },
 }
+let proposePlan: ((plan: ChatPlan) => void) | undefined
 let shimConnected = true
 const inkTool = 'mcp__ottopus-ink__get_accounts'
 const report = (extra: string[] = []): ChatEvent => ({
@@ -137,6 +141,27 @@ describe('a running chat', () => {
     const chatId = startChat(ready, env, tools, (id, event) => seen.push([id, event]))
     launched?.onEvent({ type: 'text', text: 'hi' })
     expect(seen).toEqual([[chatId, { type: 'text', text: 'hi' }]])
+  })
+
+  it('passes on plans from the server until the chat ends', () => {
+    const plan: ChatPlan = {
+      id: 'p',
+      status: 'draft',
+      outcome: 'send',
+      asset: 'NEAR',
+      amount: '1',
+      chain: null,
+      to: null,
+      toAsset: null,
+      toChain: null,
+    }
+    const seen: ChatEvent[] = []
+    startChat(ready, env, tools, (_id, event) => seen.push(event))
+    proposePlan?.(plan)
+    expect(seen).toEqual([{ type: 'plan', plan }])
+    launched?.onEvent({ type: 'ended', error: null })
+    proposePlan?.(plan)
+    expect(seen).toHaveLength(2)
   })
 
   it('reaches only the chat it names', () => {

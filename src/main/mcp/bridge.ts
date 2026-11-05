@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
+import type { ChatPlan } from '../../shared/ipc'
 import { handleMcpMessage, parseErrorResponse } from './protocol'
 
 export interface McpBridgeOptions {
@@ -23,7 +24,8 @@ export interface McpSession {
 
 export interface McpBridge {
   socketPath: string
-  addSession(): McpSession
+  /** onPlan gets each plan the session's agent proposes. */
+  addSession(handlers?: { onPlan?: (plan: ChatPlan) => void }): McpSession
   close(): void
 }
 
@@ -34,6 +36,12 @@ const MAX_LINE_CHARS = 1024 * 1024
 const MAX_UNREAD_CHARS = 1024 * 1024
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex')
+
+interface BridgeSession {
+  connection: Socket | null
+  everConnected: boolean
+  onPlan: ((plan: ChatPlan) => void) | undefined
+}
 
 /**
  * The agent side of the app: a Unix socket the MCP shim connects to. A connection
@@ -49,7 +57,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
   const socketPath = join(dir, 'mcp.sock')
 
   /** Each live session's connection, by the hash of its token. */
-  const sessions = new Map<string, { connection: Socket | null; everConnected: boolean }>()
+  const sessions = new Map<string, BridgeSession>()
   const connections = new Set<Socket>()
 
   const server = createServer((connection) => {
@@ -60,7 +68,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
 
     const helloTimer = setTimeout(() => connection.destroy(), helloTimeoutMs)
     connection.once('close', () => clearTimeout(helloTimer))
-    let helloed = false
+    let helloed: BridgeSession | null = null
     let buffer = ''
 
     const onHello = (line: string) => {
@@ -70,7 +78,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
         return
       }
       clearTimeout(helloTimer)
-      helloed = true
+      helloed = session
       // One at a time for each session: a shim that restarts takes over from the old one.
       session.connection?.destroy()
       session.connection = connection
@@ -80,10 +88,10 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
       })
     }
 
-    const onRequest = (line: string) => {
+    const onRequest = (session: BridgeSession, line: string) => {
       let response: object | null
       try {
-        response = handleMcpMessage(JSON.parse(line), version)
+        response = handleMcpMessage(JSON.parse(line), version, session.onPlan)
       } catch {
         response = parseErrorResponse()
       }
@@ -100,7 +108,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
         for (const line of lines) {
           if (connection.destroyed) return
           if (!helloed) onHello(line)
-          else if (line) onRequest(line)
+          else if (line) onRequest(helloed, line)
         }
       }
       if (buffer.length > MAX_LINE_CHARS) connection.destroy()
@@ -117,10 +125,10 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
       chmodSync(socketPath, 0o600)
       resolve({
         socketPath,
-        addSession() {
+        addSession(handlers) {
           const token = randomBytes(32).toString('hex')
           const key = hash(token)
-          const session = { connection: null as Socket | null, everConnected: false }
+          const session: BridgeSession = { connection: null, everConnected: false, onPlan: handlers?.onPlan }
           sessions.set(key, session)
           return {
             token,

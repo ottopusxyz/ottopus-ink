@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { ChatPlan } from '../../shared/ipc'
 import { handleMcpMessage } from './protocol'
 
 const ask = (method: string, params?: unknown, id: unknown = 1) =>
@@ -42,10 +43,55 @@ describe('handleMcpMessage', () => {
     expect(tools.filter((tool) => /sign|send|broadcast|transfer|key|seed/i.test(tool.name))).toEqual([])
   })
 
-  it.each(['get_accounts', 'get_portfolio', 'get_quote', 'create_plan', 'get_plan', 'cancel_plan'])('%s responds', (name) => {
+  it.each(['get_accounts', 'get_portfolio', 'get_quote', 'get_plan', 'cancel_plan'])('%s responds', (name) => {
     expect(ask('tools/call', { name, arguments: {} }).result).toEqual({
       content: [{ type: 'text', text: 'The wallet is not set up yet.' }],
       isError: false,
+    })
+  })
+
+  describe('create_plan', () => {
+    const propose = (args: unknown) => {
+      const plans: ChatPlan[] = []
+      const message = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_plan', arguments: args } }
+      const { result } = handleMcpMessage(message, '1', (plan) => plans.push(plan)) as { result: { content: { text: string }[]; isError: boolean } }
+      return { plans, result }
+    }
+
+    it('hands over a draft plan and tells the agent it is a placeholder', () => {
+      const { plans, result } = propose({ outcome: 'swap', asset: 'ETH', amount: '0.1', to_asset: 'USDC', to_chain: 'base' })
+      expect(plans).toEqual([
+        {
+          id: expect.any(String) as string,
+          status: 'draft',
+          outcome: 'swap',
+          asset: 'ETH',
+          amount: '0.1',
+          chain: null,
+          to: null,
+          toAsset: 'USDC',
+          toChain: 'base',
+        },
+      ])
+      expect(result.isError).toBe(false)
+      expect(result.content[0]?.text).toContain(plans[0]?.id)
+      expect(result.content[0]?.text).toContain("can't be reviewed or signed")
+    })
+
+    it.each([
+      ['nothing', undefined],
+      ['no arguments', {}],
+      ['a missing amount', { outcome: 'send', asset: 'NEAR' }],
+      ['an empty asset', { outcome: 'send', asset: '', amount: '1' }],
+      ['an unknown outcome', { outcome: 'sign', asset: 'NEAR', amount: '1' }],
+      ['an outcome from the object prototype', { outcome: 'constructor', asset: 'NEAR', amount: '1' }],
+      ['a field that is not text', { outcome: 'send', asset: 'NEAR', amount: 1 }],
+      ['a field outside the schema', { outcome: 'send', asset: 'NEAR', amount: '1', route: 'x' }],
+      ['an overlong field', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'x'.repeat(257) }],
+    ])('refuses %s and hands over no plan', (_name, args) => {
+      const { plans, result } = propose(args)
+      expect(plans).toEqual([])
+      expect(result.isError).toBe(true)
     })
   })
 

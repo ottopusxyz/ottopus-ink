@@ -37,9 +37,13 @@ export function startChat(
 
   const chatId = randomUUID()
   // One token for each chat, gone with it.
-  const tools = bridge.addSession()
-  const watchLock = lockWatcher(tools.connected)
   let over = false
+  const tools = bridge.addSession({
+    onPlan: (plan) => {
+      if (!over) onEvent(chatId, { type: 'plan', plan })
+    },
+  })
+  const watchLock = lockWatcher(tools.connected)
   const session = startClaudeSession({
     binary: agent.path,
     env: { ...process.env, ...agentEnv },

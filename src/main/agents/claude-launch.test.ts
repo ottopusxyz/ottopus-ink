@@ -17,6 +17,10 @@ describe('claudeMcpServers', () => {
     })
   })
 
+  it('refuses a shim path that is not absolute', () => {
+    expect(() => claudeMcpServers({ shim: 'shim.js', socketPath: '/run/ink/mcp.sock' })).toThrow(/absolute/)
+  })
+
   it('names the token rather than holding it', () => {
     expect(servers['ottopus-ink']).toMatchObject({ env: { OTTOPUS_INK_TOKEN: '${OTTOPUS_INK_TOKEN}' } })
   })

@@ -1,11 +1,12 @@
 import { useMemo, useState, type Ref } from 'react'
 import type { SignerStatus } from '../../../../shared/ipc'
 import { Badge } from '@/components/ui'
-import { filterChats, type Chat } from '@/lib/chats'
+import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
 import {
   ActivityIcon,
   ChatIcon,
   CheckIcon,
+  PlugIcon,
   PlusIcon,
   SearchIcon,
   ShieldIcon,
@@ -51,6 +52,7 @@ export function Sidebar({
 }: SidebarProps) {
   const [query, setQuery] = useState('')
   const shown = useMemo(() => filterChats(chats, query), [chats, query])
+  const openChat = view.kind === 'chat' ? chats.find((chat) => chat.id === view.chatId) : undefined
 
   return (
     <nav className="ink-sidebar" aria-label="Chats and pages">
@@ -124,6 +126,7 @@ export function Sidebar({
         <kbd className="ink-kbd">{shortcutLabel('settings', mac)}</kbd>
       </button>
 
+      {openChat ? <LockIndicator chat={openChat} /> : null}
       <SignerIndicator status={signer} version={version} />
     </nav>
   )
@@ -131,10 +134,31 @@ export function Sidebar({
 
 function ChatStatusMark({ chat }: { chat: Chat }) {
   if (chat.status === 'live') return <span className="ink-live-dot" role="img" aria-label="In progress" />
+  if (isWorking(chat)) return <span className="ink-live-dot" role="img" aria-label="Your agent is working" />
   if (chat.status === 'settled') {
     return <CheckIcon aria-label="Settled" style={{ color: 'var(--ot-ok)' }} />
   }
   return <ChatIcon />
+}
+
+const LOCK_COLOURS = {
+  ok: 'var(--ot-ok)',
+  plan: 'var(--ot-plan)',
+  block: 'var(--ot-block-solid)',
+  neutral: 'var(--ot-text-3)',
+} as const
+
+/** Whether the open chat's agent is held to Ottopus tools. Each chat has its own session, so each has its own answer. */
+function LockIndicator({ chat }: { chat: Chat }) {
+  const { text, hint, tone } = lockStatus(chat)
+  return (
+    <div className="ink-signer" role="status" title={hint}>
+      <span style={{ color: LOCK_COLOURS[tone] }}>
+        <PlugIcon />
+      </span>
+      <span className="flex-1">{text}</span>
+    </div>
+  )
 }
 
 /**

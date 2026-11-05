@@ -19,6 +19,45 @@ function resultText(content: unknown): string {
     .join('\n')
 }
 
+/** Past what anyone reads in a tool call's details. */
+const MAX_TOOL_INPUT_CHARS = 20_000
+
+/** A line can be 16 MiB, and all of what's kept from it has to be sent to the page. */
+const MAX_TEXT_CHARS = 200_000
+const MAX_NAME_CHARS = 1000
+
+/** Far more tools, servers or plugins than a session has. A longer list reads as unreadable, which stops the chat. */
+const MAX_LIST_ITEMS = 200
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text)
+
+/**
+ * A tool call's input as text. Made here because the agent chooses its shape: nested
+ * deep enough it can't be serialized or sent to the page, which would hide the call
+ * from the person. Hence a string that always crosses, whatever came in.
+ */
+function inputText(input: unknown): string {
+  if (input === undefined || input === null) return ''
+  try {
+    return clip(JSON.stringify(input, null, 2), MAX_TOOL_INPUT_CHARS)
+  } catch {
+    return 'Ink could not show this input: it is nested too deeply.'
+  }
+}
+
+/** The names in a report's list, or null if it isn't one: a report that can't be read mustn't look like an empty one. */
+function namesOf(value: unknown, keep: (entry: Fields) => boolean = () => true): string[] | null {
+  if (!Array.isArray(value) || value.length > MAX_LIST_ITEMS) return null
+  const entries = value.filter(isFields)
+  if (entries.length !== value.length) return null
+  const names: string[] = []
+  for (const entry of entries) {
+    if (typeof entry.name !== 'string') return null
+    if (keep(entry)) names.push(clip(entry.name, MAX_NAME_CHARS))
+  }
+  return names
+}
+
 /**
  * Reads Claude Code's `--output-format stream-json` output, one line at a time,
  * into chat events. The agent is untrusted and the format isn't a stable API, so
@@ -44,19 +83,31 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
     }
     if (!isFields(event)) return []
 
-    // A subagent's work, which a locked session can't start anyway.
-    if (typeof event.parent_tool_use_id === 'string') return []
+    // A locked session has no way to start a subagent, so one at work is for the lock check to see.
+    if (typeof event.parent_tool_use_id === 'string') return [{ type: 'subagent' }]
 
     if (event.type === 'system' && event.subtype === 'init') {
-      const tools = Array.isArray(event.tools) ? event.tools.filter((tool) => typeof tool === 'string') : []
-      return [{ type: 'session', tools, model: typeof event.model === 'string' ? event.model : null }]
+      const { tools } = event
+      return [
+        {
+          type: 'session',
+          tools:
+            Array.isArray(tools) && tools.length <= MAX_LIST_ITEMS && tools.every((tool) => typeof tool === 'string')
+              ? tools.map((tool: string) => clip(tool, MAX_NAME_CHARS))
+              : null,
+          servers: namesOf(event.mcp_servers),
+          // Every session lists Claude Code's own plugins, whatever its settings say.
+          plugins: namesOf(event.plugins, (plugin) => plugin.path !== 'builtin'),
+          model: typeof event.model === 'string' ? event.model : null,
+        },
+      ]
     }
 
     if (event.type === 'stream_event' && isFields(event.event) && event.event.type === 'content_block_delta') {
       const { delta } = event.event
       if (isFields(delta) && delta.type === 'text_delta' && typeof delta.text === 'string') {
         textInTurn = true
-        return [{ type: 'text', text: delta.text }]
+        return [{ type: 'text', text: clip(delta.text, MAX_TEXT_CHARS) }]
       }
       return []
     }
@@ -64,7 +115,7 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
     if (event.type === 'assistant' && isFields(event.message)) {
       return blocksOf(event.message.content).flatMap((block): ChatEvent[] =>
         block.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string'
-          ? [{ type: 'tool-call', id: block.id, name: block.name, input: block.input ?? null }]
+          ? [{ type: 'tool-call', id: clip(block.id, MAX_NAME_CHARS), name: clip(block.name, MAX_NAME_CHARS), input: inputText(block.input) }]
           : [],
       )
     }
@@ -75,8 +126,8 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
           ? [
               {
                 type: 'tool-result',
-                id: block.tool_use_id,
-                text: resultText(block.content),
+                id: clip(block.tool_use_id, MAX_NAME_CHARS),
+                text: clip(resultText(block.content), MAX_TEXT_CHARS),
                 isError: block.is_error === true,
               },
             ]
@@ -85,7 +136,7 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
     }
 
     if (event.type === 'result') {
-      const said = typeof event.result === 'string' ? event.result : ''
+      const said = typeof event.result === 'string' ? clip(event.result, MAX_TEXT_CHARS) : ''
       // The reply, should a version ever finish a turn without streaming it.
       const missedText: ChatEvent[] = event.is_error !== true && !textInTurn && said ? [{ type: 'text', text: said }] : []
       textInTurn = false

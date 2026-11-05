@@ -1,6 +1,6 @@
 import { useId, type ReactNode, type Ref } from 'react'
 import { cn } from '@/lib/cn'
-import { ArrowUpIcon, ChevronDownIcon, PlugIcon, PlusIcon } from '@/components/shell/icons'
+import { ArrowUpIcon, ChevronDownIcon, PlugIcon, PlusIcon, StopIcon } from '@/components/shell/icons'
 
 export interface ComposerProps {
   value: string
@@ -11,11 +11,19 @@ export interface ComposerProps {
   textareaRef?: Ref<HTMLTextAreaElement>
   /** The agent picker, shown in the full composer's toolbar. */
   agentPicker?: ReactNode
+  /** Off when there's no agent to send to, or a chat isn't ready for a message. */
+  canSend?: boolean
+  /** Whether a chat has ended, so nothing more can be written. */
+  disabled?: boolean
+  /** Set while a turn runs: the send button becomes this stop button. */
+  onStop?: (() => void) | undefined
+  /** Whether the running turn has already been asked to stop. */
+  stopping?: boolean
 }
 
 /**
  * Where a person tells their agent what to do. Enter sends and Shift+Enter
- * breaks the line.
+ * breaks the line. While a turn runs, writing still works and only sending waits.
  *
  * The Skills picker is drawn but off until the skills bundle (issue #11).
  */
@@ -27,16 +35,20 @@ export function Composer({
   compact = false,
   textareaRef,
   agentPicker,
+  canSend = true,
+  disabled = false,
+  onStop,
+  stopping = false,
 }: ComposerProps) {
   const id = useId()
-  const empty = value.trim().length === 0
+  const sendable = canSend && !disabled && !onStop && value.trim().length > 0
 
   return (
     <form
       className={cn('ink-composer', compact && 'ink-composer--compact')}
       onSubmit={(event) => {
         event.preventDefault()
-        if (!empty) onSubmit()
+        if (sendable) onSubmit()
       }}
     >
       <label htmlFor={id} className="sr-only">
@@ -47,11 +59,12 @@ export function Composer({
         ref={textareaRef}
         value={value}
         placeholder={placeholder}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault()
-            if (!empty) onSubmit()
+            if (sendable) onSubmit()
           }
         }}
       />
@@ -77,9 +90,15 @@ export function Composer({
             Ottopus tools only
           </span>
         )}
-        <button type="submit" className="ink-send" aria-label="Send" disabled={empty}>
-          <ArrowUpIcon />
-        </button>
+        {onStop ? (
+          <button type="button" className="ink-send" aria-label="Stop" disabled={stopping} onClick={onStop}>
+            <StopIcon />
+          </button>
+        ) : (
+          <button type="submit" className="ink-send" aria-label="Send" disabled={!sendable}>
+            <ArrowUpIcon />
+          </button>
+        )}
       </div>
     </form>
   )

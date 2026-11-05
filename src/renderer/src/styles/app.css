@@ -30,6 +30,13 @@
   :root:not([data-theme="light"]) { --ot-coral-shade: #E0714F; }
 }
 
+/* Scrollbars and other native parts follow the theme too. */
+:root { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+}
+
 /* Tailwind cannot infer font-[var(--x)] as a family, so map the three. Colours
    are deliberately not mapped: components use var(--ot-*) directly, so the
    token name is the one vocabulary. */

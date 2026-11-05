@@ -22,6 +22,8 @@ export interface HomeViewProps {
   onPortfolio: () => void
   composerRef?: Ref<HTMLTextAreaElement>
   agentPicker: ReactNode
+  /** Off until there's a ready agent to send to. */
+  canSend: boolean
 }
 
 /**
@@ -37,6 +39,7 @@ export function HomeView({
   onPortfolio,
   composerRef,
   agentPicker,
+  canSend,
 }: HomeViewProps) {
   const running = live[0]
 
@@ -58,6 +61,7 @@ export function HomeView({
             onSubmit={onSubmit}
             textareaRef={composerRef}
             agentPicker={agentPicker}
+            canSend={canSend}
             placeholder="Tell your agent what to do: swap, send, bridge or stake."
           />
 
@@ -81,7 +85,7 @@ export function HomeView({
               >
                 <span className="ink-eyebrow">In progress</span>
                 <span className="text-[14px] font-semibold">{running.title}</span>
-                <span className="text-[12px] text-[var(--ot-text-2)]">{running.step ?? 'Waiting on a step'}</span>
+                <span className="text-[12px] text-[var(--ot-text-2)]">{running.step ?? 'Your agent is working'}</span>
               </button>
             ) : (
               <div className="ink-glance">

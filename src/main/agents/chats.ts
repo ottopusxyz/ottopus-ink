@@ -3,6 +3,7 @@ import type { AgentStatus, ChatEvent } from '../../shared/ipc'
 import type { McpBridge } from '../mcp/bridge'
 import { claudeMcpServers, MCP_TOKEN_ENV } from './claude-launch'
 import { startClaudeSession, type ChatSession } from './claude-session'
+import { lockWatcher } from './lockdown'
 import type { AgentEnv } from './login-env'
 
 /** What a chat needs to reach Ink's tools. */
@@ -32,22 +33,38 @@ export function startChat(
 ): string {
   if (agent.state !== 'ready' || !agent.path) throw new Error(`${agent.id} is not ready`)
   if (agent.id !== 'claude-code') throw new Error(`Chat with ${agent.id} isn't built yet`)
-  if (chats.size >= MAX_OPEN_CHATS) throw new Error('Too many chats are open. Close one first.')
+  if (chats.size >= MAX_OPEN_CHATS) throw new Error('Too many chats are open. End one first.')
 
   const chatId = randomUUID()
   // One token for each chat, gone with it.
-  const tools = bridge.addSession()
+  let over = false
+  // Nothing an unchecked session proposes reaches the person.
+  let locked = false
+  const tools = bridge.addSession({
+    onPlan: (plan) => {
+      if (!over && locked) onEvent(chatId, { type: 'plan', plan })
+    },
+  })
+  const watchLock = lockWatcher(tools.connected)
   const session = startClaudeSession({
     binary: agent.path,
     env: { ...process.env, ...agentEnv },
     mcpServers: claudeMcpServers({ shim, socketPath: bridge.socketPath }),
     sessionEnv: { [MCP_TOKEN_ENV]: tools.token },
     onEvent: (event) => {
+      // Stopping a session mid-line leaves the rest of that line still to arrive.
+      if (over) return
       if (event.type === 'ended') {
+        over = true
         chats.delete(chatId)
         tools.remove()
       }
       onEvent(chatId, event)
+      const found = watchLock(event)
+      if (found === null) return
+      locked = found.length === 0
+      onEvent(chatId, { type: 'lock', locked, found })
+      if (found.length > 0) session.kill(`Ink stopped this chat because the agent showed ${found.join(', ')}.`)
     },
   })
   chats.set(chatId, session)

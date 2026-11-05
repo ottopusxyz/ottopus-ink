@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path'
 import { MCP_SERVER_NAME } from '../mcp/protocol'
 
 /** The MCP tools a locked session may call without asking. Everything else is denied. */
@@ -25,6 +26,8 @@ export interface InkMcpServer {
  * fills it in from its environment, so it stays out of the file and off argv.
  */
 export function claudeMcpServers({ shim, socketPath }: InkMcpServer): Record<string, unknown> {
+  // A relative path would mean whatever sits at that path in the session's folder.
+  if (!isAbsolute(shim)) throw new Error('The MCP shim needs an absolute path')
   return {
     [MCP_SERVER_NAME]: {
       type: 'stdio',

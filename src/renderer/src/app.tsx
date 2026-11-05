@@ -9,8 +9,9 @@ import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
 import { chooseAgent } from '@/lib/agents'
-import { chatTitle, HOME_DRAFT, withDraft, type Chat, type Drafts } from '@/lib/chats'
+import { HOME_DRAFT, isWorking, withDraft, type Drafts } from '@/lib/chats'
 import { latestOnly } from '@/lib/latest'
+import { useChats } from '@/lib/use-chats'
 
 const mac = navigator.userAgent.includes('Mac')
 
@@ -18,8 +19,8 @@ export function App() {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [signer, setSigner] = useState<SignerStatus | null>(null)
   const [view, setView] = useState<View>({ kind: 'home' })
-  // Chats live in memory until the chat store arrives with the drivers.
-  const [chats, setChats] = useState<Chat[]>([])
+  const [chats, chatActions] = useChats()
+  const current = view.kind === 'chat' ? chats.find((chat) => chat.id === view.chatId) : undefined
   // Unsent text for each chat and one for home, so moving between them, or
   // pressing New chat, loses nothing.
   const [drafts, setDrafts] = useState<Drafts>({})
@@ -98,15 +99,12 @@ export function App() {
   const send = () => {
     const text = draft.trim()
     if (!text) return
-    const message = { id: crypto.randomUUID(), role: 'user' as const, text }
-    if (view.kind === 'chat') {
-      setChats((all) =>
-        all.map((chat) => (chat.id === view.chatId ? { ...chat, messages: [...chat.messages, message] } : chat)),
-      )
+    if (current) {
+      if (current.phase !== 'ready') return
+      chatActions.send(current, text)
     } else {
-      const chat: Chat = { id: crypto.randomUUID(), title: chatTitle(text), status: 'idle', messages: [message] }
-      setChats((all) => [chat, ...all])
-      setView({ kind: 'chat', chatId: chat.id })
+      if (!selectedAgent) return
+      setView({ kind: 'chat', chatId: chatActions.start(selectedAgent, text) })
     }
     setDraft('')
   }
@@ -114,8 +112,6 @@ export function App() {
   const openChat = (chatId: string) => setView({ kind: 'chat', chatId })
 
   const agentPicker = <AgentPicker agents={agents} selected={selectedAgent} onSelect={setAgentPick} />
-
-  const current = view.kind === 'chat' ? chats.find((chat) => chat.id === view.chatId) : undefined
 
   return (
     <AppShell
@@ -138,17 +134,25 @@ export function App() {
       {view.kind === 'page' ? (
         <PageView page={view.page} />
       ) : current ? (
-        <ChatView chat={current} draft={draft} onDraft={setDraft} onSubmit={send} agentPicker={agentPicker} />
+        <ChatView
+          chat={current}
+          draft={draft}
+          onDraft={setDraft}
+          onSubmit={send}
+          onStop={() => chatActions.stop(current)}
+          onEnd={() => chatActions.end(current)}
+        />
       ) : (
         <HomeView
           draft={draft}
           onDraft={setDraft}
           onSubmit={send}
-          live={chats.filter((chat) => chat.status === 'live')}
+          live={chats.filter((chat) => chat.status === 'live' || isWorking(chat))}
           onOpenChat={openChat}
           onPortfolio={() => setView({ kind: 'page', page: 'portfolio' })}
           composerRef={composerRef}
           agentPicker={agentPicker}
+          canSend={selectedAgent !== null}
         />
       )}
       <SettingsDialog

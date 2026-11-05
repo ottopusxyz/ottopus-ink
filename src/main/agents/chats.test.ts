@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentStatus, ChatEvent } from '../../shared/ipc'
+import type { AgentStatus, ChatEvent, ChatPlan } from '../../shared/ipc'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './chats'
 import { startClaudeSession, type ChatSession, type ClaudeSessionOptions } from './claude-session'
 
@@ -17,8 +17,24 @@ const env = { PATH: '/bin' }
 const removeTools = vi.fn<() => void>()
 const tools = {
   shim: '/app/shim.js',
-  bridge: { socketPath: '/run/ink/mcp.sock', addSession: () => ({ token: 'token-for-this-chat', remove: removeTools }) },
+  bridge: {
+    socketPath: '/run/ink/mcp.sock',
+    addSession: (handlers?: { onPlan?: (plan: ChatPlan) => void }) => {
+      proposePlan = handlers?.onPlan
+      return { token: 'token-for-this-chat', connected: () => shimConnected, remove: removeTools }
+    },
+  },
 }
+let proposePlan: ((plan: ChatPlan) => void) | undefined
+let shimConnected = true
+const inkTool = 'mcp__ottopus-ink__get_accounts'
+const report = (extra: string[] = []): ChatEvent => ({
+  type: 'session',
+  tools: [inkTool, ...extra],
+  servers: ['ottopus-ink'],
+  plugins: [],
+  model: null,
+})
 
 function fakeSession() {
   return {
@@ -35,6 +51,7 @@ const launches: ClaudeSessionOptions[] = []
 
 beforeEach(() => {
   session = fakeSession()
+  shimConnected = true
   vi.mocked(startClaudeSession).mockImplementation((options) => {
     launched = options
     launches.push(options)
@@ -82,12 +99,83 @@ describe('startChat', () => {
   })
 })
 
+describe('the lock on a chat', () => {
+  const eventsOf = () => {
+    const seen: ChatEvent[] = []
+    startChat(ready, env, tools, (_id, event) => seen.push(event))
+    return seen
+  }
+
+  it('says a session with only Ink tools is locked, and leaves it running', () => {
+    const seen = eventsOf()
+    launched?.onEvent(report())
+    expect(seen).toEqual([report(), { type: 'lock', locked: true, found: [] }])
+    expect(session.kill).not.toHaveBeenCalled()
+  })
+
+  it('stops a session with an extra tool and says why', () => {
+    const seen = eventsOf()
+    launched?.onEvent(report(['Bash']))
+    expect(seen.at(-1)).toEqual({ type: 'lock', locked: false, found: ['the tool Bash'] })
+    expect(session.kill).toHaveBeenCalledExactlyOnceWith('Ink stopped this chat because the agent showed the tool Bash.')
+  })
+
+  it('stops a session whose Ink tools never came through the shim', () => {
+    shimConnected = false
+    eventsOf()
+    launched?.onEvent(report())
+    expect(session.kill).toHaveBeenCalledOnce()
+  })
+
+  it('passes on nothing after a chat has ended', () => {
+    const seen = eventsOf()
+    launched?.onEvent({ type: 'ended', error: 'gone' })
+    launched?.onEvent({ type: 'text', text: 'late' })
+    expect(seen).toEqual([{ type: 'ended', error: 'gone' }])
+  })
+})
+
 describe('a running chat', () => {
   it('passes events on, marked with the chat they belong to', () => {
     const seen: [string, ChatEvent][] = []
     const chatId = startChat(ready, env, tools, (id, event) => seen.push([id, event]))
     launched?.onEvent({ type: 'text', text: 'hi' })
     expect(seen).toEqual([[chatId, { type: 'text', text: 'hi' }]])
+  })
+
+  it('passes on plans from the server until the chat ends', () => {
+    const plan: ChatPlan = {
+      id: 'p',
+      status: 'draft',
+      outcome: 'send',
+      asset: 'NEAR',
+      amount: '1',
+      chain: null,
+      to: null,
+      toAsset: null,
+      toChain: null,
+    }
+    const seen: ChatEvent[] = []
+    startChat(ready, env, tools, (_id, event) => seen.push(event))
+    proposePlan?.(plan)
+    expect(seen).toEqual([])
+
+    launched?.onEvent(report())
+    proposePlan?.(plan)
+    expect(seen.at(-1)).toEqual({ type: 'plan', plan })
+
+    const before = seen.length
+    launched?.onEvent({ type: 'ended', error: null })
+    proposePlan?.(plan)
+    expect(seen).toHaveLength(before + 1)
+  })
+
+  it('passes on no plan once a session has broken the lock', () => {
+    const seen: ChatEvent[] = []
+    startChat(ready, env, tools, (_id, event) => seen.push(event))
+    launched?.onEvent(report(['Bash']))
+    proposePlan?.({ id: 'p', status: 'draft', outcome: 'send', asset: 'NEAR', amount: '1', chain: null, to: null, toAsset: null, toChain: null })
+    expect(seen.some((event) => event.type === 'plan')).toBe(false)
   })
 
   it('reaches only the chat it names', () => {

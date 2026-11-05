@@ -52,14 +52,43 @@ export interface AgentStatus {
   signedIn: boolean | null
 }
 
+/** The tools of Ink's MCP server. The server has exactly these, and the page shortens only these names. */
+export const INK_TOOLS = ['get_accounts', 'get_portfolio', 'get_quote', 'create_plan', 'get_plan', 'cancel_plan'] as const
+
+/**
+ * A plan an agent proposed. Until the wallet exists it's a placeholder that can't
+ * be reviewed or signed. The agent wrote every value here, so show them as text.
+ */
+export interface ChatPlan {
+  id: string
+  status: 'draft'
+  outcome: 'send' | 'swap' | 'stake'
+  asset: string
+  amount: string
+  chain: string | null
+  to: string | null
+  toAsset: string | null
+  toChain: string | null
+}
+
 /** What happens in a chat, whichever agent is driving it. */
 export type ChatEvent =
-  /** The agent's session as it reports it, at the start of each turn. */
-  | { type: 'session'; tools: string[]; model: string | null }
+  /**
+   * The agent's session as it reports it, at the start of each turn. A list is
+   * null when the report couldn't be read. Plugins leaves out the agent's built-in ones.
+   */
+  | { type: 'session'; tools: string[] | null; servers: string[] | null; plugins: string[] | null; model: string | null }
+  /** Whether a report showed only Ink's tools. If not, found says what else, and the chat is being stopped. */
+  | { type: 'lock'; locked: boolean; found: string[] }
   /** The next piece of the reply. */
   | { type: 'text'; text: string }
-  | { type: 'tool-call'; id: string; name: string; input: unknown }
+  /** Input is already text, as an agent can shape its own so it won't cross IPC. */
+  | { type: 'tool-call'; id: string; name: string; input: string }
+  /** The session is running a subagent, which a locked one can't do. */
+  | { type: 'subagent' }
   | { type: 'tool-result'; id: string; text: string; isError: boolean }
+  /** From Ink's own server, not the agent's output, so an agent can't forge one by printing it. */
+  | { type: 'plan'; plan: ChatPlan }
   | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
   /** The agent's process is gone and the chat can't continue. Error is null when Ink closed it. */
   | { type: 'ended'; error: string | null }

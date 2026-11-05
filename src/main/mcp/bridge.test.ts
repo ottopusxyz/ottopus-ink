@@ -69,7 +69,41 @@ describe('startMcpBridge socket', () => {
   })
 })
 
+describe('startMcpBridge plans', () => {
+  it('hands a plan only to the session whose token proposed it', async () => {
+    const [mine, theirs] = [vi.fn(), vi.fn()]
+    const session = bridge.addSession({ onPlan: mine })
+    bridge.addSession({ onPlan: theirs })
+    const state = client()
+    const params = { name: 'create_plan', arguments: { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice.near' } }
+    state.socket.write(`${hello(session.token)}${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params })}\n`)
+    await answered(state)
+    expect(mine).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outcome: 'send', asset: 'NEAR' }))
+    expect(theirs).not.toHaveBeenCalled()
+  })
+})
+
 describe('startMcpBridge tokens', () => {
+  it('remembers that a token connected, but not for a bad hello or another token', async () => {
+    const [session, other] = [bridge.addSession(), bridge.addSession()]
+    expect(session.connected()).toBe(false)
+
+    const stranger = client()
+    stranger.socket.write(hello('wrong'))
+    await closed(stranger)
+    expect(session.connected()).toBe(false)
+
+    const state = client()
+    state.socket.write(hello(session.token) + ping(1))
+    await answered(state)
+    expect(session.connected()).toBe(true)
+    expect(other.connected()).toBe(false)
+
+    state.socket.destroy()
+    await closed(state)
+    expect(session.connected()).toBe(true)
+  })
+
   it('answers requests after a good hello, even split across chunks', async () => {
     const { token } = bridge.addSession()
     const state = client()

@@ -37,8 +37,13 @@ export function useChats(): [Chat[], ChatActions] {
     for (const entry of queue.current) {
       const [sessionId, event] = entry
       const id = chatIds.current.get(sessionId)
-      if (!id) waiting.push(entry)
-      else ready.set(id, [...(ready.get(id) ?? []), event])
+      if (!id) {
+        waiting.push(entry)
+        continue
+      }
+      const events = ready.get(id)
+      if (events) events.push(event)
+      else ready.set(id, [event])
     }
     queue.current = waiting.slice(-MAX_WAITING_EVENTS)
     if (ready.size === 0) return

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { memo, useEffect, useRef, type ReactNode } from 'react'
 import { Callout } from '@/components/ui'
 import { PANE_LIFE, Sea } from '@/components/motion/sea'
 import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
@@ -134,7 +134,8 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
   )
 }
 
-function ConversationItem({ item }: { item: ChatItem }): ReactNode {
+/** Memoised because a long chat redraws on every batch, and only its newest row has changed. */
+const ConversationItem = memo(function ConversationItem({ item }: { item: ChatItem }): ReactNode {
   switch (item.kind) {
     case 'user':
       return <div className="ink-bubble">{item.text}</div>
@@ -151,4 +152,4 @@ function ConversationItem({ item }: { item: ChatItem }): ReactNode {
     case 'plan':
       return <PlanCard plan={item.plan} />
   }
-}
+})

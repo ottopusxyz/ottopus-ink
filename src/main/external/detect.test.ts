@@ -86,6 +86,23 @@ describe('Claude Code servers', () => {
     expect((await detect())[0]?.unavailable).toMatch(/Ink's token/)
   })
 
+  it.each([
+    ['its command', { command: '${MCP_BIN}' }],
+    ['its arguments', { command: '/bin/x', args: ['--config', '${MCP_CONFIG}'] }],
+    ['its address', { url: 'https://${MCP_HOST}/mcp' }],
+    ['NODE_OPTIONS', { command: '/usr/bin/node', env: { NODE_OPTIONS: '${SOMETHING}' } }],
+    ['LD_PRELOAD', { command: '/bin/x', env: { LD_PRELOAD: '${SOMETHING}' } }],
+    ['PATH', { command: 'tool', env: { PATH: '${SOMETHING}' } }],
+  ])('marks a server unavailable if a shell variable sets %s', async (_where, server) => {
+    claudeServers({ movable: server })
+    expect((await detect())[0]?.unavailable).toMatch(/choose what it runs/)
+  })
+
+  it('allows a plain value for those, which the fingerprint watches', async () => {
+    claudeServers({ fine: { command: '/usr/bin/node', args: ['/bin/app.js'], env: { NODE_OPTIONS: '--max-old-space-size=512' } } })
+    expect((await detect())[0]?.unavailable).toBeNull()
+  })
+
   it('allows a server that asks for its own key', async () => {
     claudeServers({ fine: { command: '/bin/x', env: { KEY: '${MY_OWN_KEY}' } } })
     expect((await detect())[0]?.unavailable).toBeNull()
@@ -104,6 +121,11 @@ describe('Codex servers', () => {
     expect(entries[0]?.origin).toBe('codex')
     expect(entries[0]?.servers.local).toEqual({ transport: 'stdio', command: '/bin/tool', args: ['--a'], env: { A: 'b' }, envNames: ['NEAR_KEY'] })
     expect(entries[1]?.servers.remote).toEqual({ transport: 'http', url: 'https://example.test/', headers: { Authorization: 'Bearer ${TOKEN}' } })
+  })
+
+  it('marks a Codex server unavailable if a variable it wants chooses what runs', async () => {
+    const [entry] = await detect(async () => [{ name: 'movable', transport: { type: 'stdio', command: '/bin/x', env_vars: ['LD_PRELOAD'] } }])
+    expect(entry?.unavailable).toMatch(/choose what it runs/)
   })
 
   it('marks a Codex server unavailable if a variable it wants is a secret', async () => {

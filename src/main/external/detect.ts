@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentId } from '../../shared/ipc'
 import { MCP_SERVER_NAME } from '../mcp/protocol'
-import { asksForSecrets, referencesIn, expandableValues, type CatalogEntry, type ServerDef, type SkillDef } from './catalog'
+import { asksForSecrets, expandableValues, letsVariableChooseWhatRuns, referencesIn, type CatalogEntry, type ServerDef, type SkillDef } from './catalog'
 
 type Fields = Record<string, unknown>
 
@@ -22,6 +22,7 @@ const MAX_SKILL_CHARS = 64 * 1024
 const NEEDS_SHELL = 'Needs a shell, which an Ink chat does not have'
 const ASKS_FOR_SECRETS = "Asks for Ink's token or your agent's sign-in"
 const NEEDS_SETUP = 'Needs setup Ink cannot fill in'
+const VARIABLE_CHOOSES = 'Uses a variable to choose what it runs or connects to, which could change after you agree'
 const NOTHING_TO_LOAD = 'Has nothing Ink can load: only hooks, commands or skills that need a shell'
 
 function isFields(value: unknown): value is Fields {
@@ -83,7 +84,7 @@ function problemWith(server: ServerDef): string | null {
   if (asksForSecrets(server)) return ASKS_FOR_SECRETS
   // Filled in by Claude Code from a plugin's settings, which Ink doesn't have.
   if (expandableValues(server).flatMap(referencesIn).some((name) => name.includes('.'))) return NEEDS_SETUP
-  return null
+  return letsVariableChooseWhatRuns(server) ? VARIABLE_CHOOSES : null
 }
 
 function mcpEntry(origin: AgentId, name: string, server: ServerDef): CatalogEntry {

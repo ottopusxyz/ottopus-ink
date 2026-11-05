@@ -73,6 +73,26 @@ export function asksForSecrets(server: ServerDef): boolean {
 }
 
 /**
+ * Variables that decide what a program runs or loads. A fingerprint can't watch a
+ * value that lives in the shell, so these may not be filled in from there. This list
+ * can't be complete, which is why a variable may never choose the command or address.
+ */
+const CHOOSES_WHAT_RUNS = /^(?:PATH|NODE_OPTIONS|NODE_PATH|LD_[A-Z_]+|DYLD_[A-Z_]+|PYTHON(?:PATH|HOME|STARTUP)|RUBY(?:OPT|LIB)|PERL5(?:OPT|LIB)|BASH_ENV|ENV|JAVA_TOOL_OPTIONS|CLASSPATH)$/
+
+/**
+ * Whether a shell variable could change what runs or who gets the data after someone
+ * agreed. What's written in the config is in the fingerprint; what a `${NAME}` holds
+ * isn't, so a `${NAME}` is only for what a key is for: env values and headers.
+ */
+export function letsVariableChooseWhatRuns(server: ServerDef): boolean {
+  if (server.transport !== 'stdio') return referencesIn(server.url).length > 0
+  if ([server.command, ...server.args].flatMap(referencesIn).length > 0) return true
+  if (server.envNames.some((name) => CHOOSES_WHAT_RUNS.test(name))) return true
+  const { env } = server
+  return Object.keys(env).some((name) => CHOOSES_WHAT_RUNS.test(name) && referencesIn(env[name] ?? '').length > 0)
+}
+
+/**
  * Identifies what would run. If this changes after someone turned an item on, it
  * goes back to off: they agreed to the old command, not the new one. Env and header
  * values are in it because they can decide what runs (NODE_OPTIONS can load another

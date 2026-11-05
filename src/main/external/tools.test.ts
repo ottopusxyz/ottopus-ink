@@ -263,6 +263,10 @@ describe('parseNewServer', () => {
     ["Ink's token as a variable", { name: 'a', command: 'x', envNames: ['OTTOPUS_INK_TOKEN'] }],
     ['the sign-in as a variable', { name: 'a', command: 'x', envNames: ['ANTHROPIC_API_KEY'] }],
     ["Ink's token in an argument", { name: 'a', command: 'x', args: ['${OTTOPUS_INK_TOKEN}'] }],
+    ['a variable as the command', { name: 'a', command: '${MCP_BIN}' }],
+    ['a variable in an argument', { name: 'a', command: 'x', args: ['${MCP_CONFIG}'] }],
+    ['a variable in an address', { name: 'a', url: 'https://${MCP_HOST}/mcp' }],
+    ['a variable that chooses what loads', { name: 'a', command: 'x', envNames: ['LD_PRELOAD'] }],
   ])('refuses %s', (_name, input) => {
     expect(parseNewServer(input)).toBeNull()
   })
@@ -299,6 +303,11 @@ describe('the file', () => {
     const tools = setup(() => [detected('one')])
     expect((await tools.list())[0]?.enabled).toBe(false)
     expect((await tools.forNewChat()).serverNames).toEqual([])
+  })
+
+  it('refuses a hand-added server edited into the file to run a variable', async () => {
+    writeFileSync(file, JSON.stringify({ added: [{ id: 'added:x', name: 'x', server: server('${MCP_BIN}') }], enabled: {}, off: [] }))
+    expect((await setup(() => []).list())[0]?.unavailable).toMatch(/choose what it runs/)
   })
 
   it('refuses a hand-added server edited into the file to ask for a secret', async () => {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { asksForSecrets, fingerprint, looksLikeItMovesFunds, summaryOf, type CatalogEntry, type ServerDef } from './catalog'
+import { asksForSecrets, fingerprint, letsVariableChooseWhatRuns, looksLikeItMovesFunds, summaryOf, type CatalogEntry, type ServerDef } from './catalog'
 import { buildSessionExternal, type SessionExternal } from './session'
 import type { ExternalItem, NewExternalServer } from '../../shared/ipc'
 
@@ -66,7 +66,8 @@ export function parseNewServer(input: unknown): { name: string; server: ServerDe
   if (typeof name !== 'string' || !NAME.test(name)) return null
   if (url !== undefined && url !== null && url !== '') {
     if (command || !isVisibleText(url) || !isSafeUrl(url)) return null
-    return { name, server: { transport: 'http', url, headers: {} } }
+    const remote: ServerDef = { transport: 'http', url, headers: {} }
+    return letsVariableChooseWhatRuns(remote) ? null : { name, server: remote }
   }
   if (!isVisibleText(command)) return null
   const argList = args ?? []
@@ -74,7 +75,7 @@ export function parseNewServer(input: unknown): { name: string; server: ServerDe
   if (!Array.isArray(argList) || argList.length > MAX_ARGS || !argList.every(isVisibleText)) return null
   if (!Array.isArray(names) || names.length > MAX_ARGS || !names.every((item) => typeof item === 'string' && ENV_NAME.test(item))) return null
   const server: ServerDef = { transport: 'stdio', command, args: argList, env: {}, envNames: names }
-  return asksForSecrets(server) ? null : { name, server }
+  return asksForSecrets(server) || letsVariableChooseWhatRuns(server) ? null : { name, server }
 }
 
 function load(file: string): Saved {
@@ -108,7 +109,11 @@ function addedEntry({ id, name, server }: Saved['added'][number]): CatalogEntry 
     skills: [],
     description: null,
     // Checked again here: the file could have been changed since it was added.
-    unavailable: asksForSecrets(server) ? "Asks for Ink's token or your agent's sign-in" : null,
+    unavailable: asksForSecrets(server)
+      ? "Asks for Ink's token or your agent's sign-in"
+      : letsVariableChooseWhatRuns(server)
+        ? 'Uses a variable to choose what it runs or connects to, which could change after you agree'
+        : null,
   }
 }
 

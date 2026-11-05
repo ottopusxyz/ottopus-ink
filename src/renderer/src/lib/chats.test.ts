@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatEvent, ChatPlan } from '../../../shared/ipc'
+import { NOTHING_SIGNED } from '@/components/ui/copy'
 import {
   applyChatEvent,
   chatFailedToStart,
@@ -51,7 +52,7 @@ describe('a chat starting', () => {
   it('ends with the reason when it cannot start', () => {
     const chat = chatFailedToStart(newChat('c', 'codex', 'hi'), 'not built yet')
     expect(chat.phase).toBe('ended')
-    expect(chat.items.at(-1)).toMatchObject({ kind: 'notice', severity: 'block', text: 'not built yet' })
+    expect(chat.items.at(-1)).toMatchObject({ kind: 'notice', severity: 'block', text: `not built yet. ${NOTHING_SIGNED}`, ends: true })
   })
 })
 
@@ -109,7 +110,8 @@ describe('applyChatEvent', () => {
   })
 
   it('says why a chat ended, but not when Ink closed it', () => {
-    expect(after([{ type: 'ended', error: 'exited with code 1' }]).items.at(-1)).toMatchObject({ kind: 'notice', text: 'exited with code 1' })
+    // Not "nothing was signed": a chat can end after a plan it proposed was signed.
+    expect(after([{ type: 'ended', error: 'exited with code 1' }]).items.at(-1)).toMatchObject({ kind: 'notice', text: 'exited with code 1', ends: true })
     expect(after([{ type: 'ended', error: null }]).items).toHaveLength(1)
   })
 
@@ -200,7 +202,9 @@ describe('sending another message', () => {
   it('goes back to ready with the reason if it fails', () => {
     const chat = messageFailed(started(), 'That message is too long')
     expect(chat.phase).toBe('ready')
-    expect(chat.items.at(-1)).toMatchObject({ kind: 'notice', text: 'That message is too long' })
+    expect(chat.items.at(-1)).toMatchObject({ kind: 'notice', text: `That message is too long. ${NOTHING_SIGNED}` })
+    expect(chat.items.at(-1)).not.toHaveProperty('ends')
+    expect(messageFailed(started(), 'Too long.').items.at(-1)).toMatchObject({ text: `Too long. ${NOTHING_SIGNED}` })
   })
 
   it('adds nothing if the chat has already ended', () => {

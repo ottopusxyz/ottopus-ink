@@ -81,9 +81,12 @@ const LINK_SIZES: Record<Size, string> = {
  * Disabled goes neutral rather than transparent. Fading a coral button leaves a
  * washed coral that still reads as the primary action; the design system drops
  * it to a plain surface so it reads as unavailable instead of merely faint.
+ *
+ * aria-disabled looks the same, for a button that has to stay focusable so a
+ * keyboard can reach its tooltip.
  */
 const DISABLED =
-  'disabled:cursor-not-allowed disabled:border-[var(--ot-border)] disabled:bg-[var(--ot-surface-2)] disabled:text-[var(--ot-text-4)] disabled:hover:bg-[var(--ot-surface-2)] disabled:hover:brightness-100'
+  'disabled:cursor-not-allowed disabled:border-[var(--ot-border)] disabled:bg-[var(--ot-surface-2)] disabled:text-[var(--ot-text-4)] disabled:hover:bg-[var(--ot-surface-2)] disabled:hover:brightness-100 aria-disabled:cursor-not-allowed aria-disabled:border-[var(--ot-border)] aria-disabled:bg-[var(--ot-surface-2)] aria-disabled:text-[var(--ot-text-4)] aria-disabled:hover:bg-[var(--ot-surface-2)] aria-disabled:hover:brightness-100'
 
 /**
  * The button's own classes, for the cases where the element has to be an anchor

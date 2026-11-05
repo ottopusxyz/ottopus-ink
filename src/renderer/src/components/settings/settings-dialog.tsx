@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { AgentId, AgentState, AgentStatus } from '../../../../shared/ipc'
 import { AgentMark } from '@/components/chat/agent-picker'
-import { Badge, Button, Callout, Dialog, type Tone } from '@/components/ui'
+import { Badge, Button, Callout, Dialog, Tooltip, type Tone } from '@/components/ui'
 import { CloseIcon } from '@/components/shell/icons'
 import { agentInfo, describeAgent, LATER_AGENTS } from '@/lib/agents'
 import { stepIndex } from '@/lib/roving'
@@ -186,13 +186,17 @@ function AgentTab({
         title="Use Ink from my terminal too"
         description="Adds the ottopus-ink server to your agent's own config, so you can ask from any project. Off until you turn it on."
       >
-        <Button size="sm" disabled>
-          Set up
-        </Button>
+        <Tooltip text="This isn't available yet.">
+          <Button size="sm" aria-disabled>
+            Set up
+          </Button>
+        </Tooltip>
       </Setting>
     </>
   )
 }
+
+const NEEDS_WALLET = 'This works once wallets are set up in Ink.'
 
 function WalletTab() {
   const [confirm, setConfirm] = useState('above')
@@ -208,17 +212,21 @@ function WalletTab() {
         title="Back up your recovery phrase"
         description="Twelve words. You write them down, then pick three back to check."
       >
-        <Button size="sm" variant="primary" disabled>
-          Back up now
-        </Button>
+        <Tooltip text={NEEDS_WALLET}>
+          <Button size="sm" variant="primary" aria-disabled>
+            Back up now
+          </Button>
+        </Tooltip>
       </Setting>
       <Setting
         title="Restore a different wallet"
         description="Replace this wallet with one from a 12 or 24 word recovery phrase."
       >
-        <Button size="sm" disabled>
-          Restore
-        </Button>
+        <Tooltip text={NEEDS_WALLET}>
+          <Button size="sm" aria-disabled>
+            Restore
+          </Button>
+        </Tooltip>
       </Setting>
       <Setting title="Ledger, Trezor or Safe" description="Connected wallets come after the hackathon build.">
         <Badge>Later</Badge>

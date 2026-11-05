@@ -28,6 +28,11 @@ describe('isSafeExternalUrl', () => {
     expect(isSafeExternalUrl('ms-settings:privacy')).toBe(false)
     expect(isSafeExternalUrl('not a url')).toBe(false)
   })
+
+  it('refuses a URL carrying credentials, which can read as the wrong site', () => {
+    expect(isSafeExternalUrl('https://app.ottopus.xyz@evil.example/')).toBe(false)
+    expect(isSafeExternalUrl('https://user:pass@evil.example/')).toBe(false)
+  })
 })
 
 describe('isAppUrl', () => {

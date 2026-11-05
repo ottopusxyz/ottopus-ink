@@ -1,4 +1,5 @@
 import type { WebPreferences } from 'electron'
+import { safeExternalUrl } from '../shared/external-url'
 
 /**
  * The web preferences every app window uses. The renderer is treated as
@@ -21,16 +22,9 @@ export function secureWebPreferences(preload: string, { devTools }: { devTools: 
   }
 }
 
-/**
- * Links the renderer may hand to the OS browser. Only https; never file:,
- * javascript: or custom schemes that could launch another app.
- */
+/** Links the renderer may hand to the OS browser. */
 export function isSafeExternalUrl(raw: string): boolean {
-  try {
-    return new URL(raw).protocol === 'https:'
-  } catch {
-    return false
-  }
+  return safeExternalUrl(raw) !== null
 }
 
 /**

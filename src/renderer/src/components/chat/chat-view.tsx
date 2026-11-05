@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, type ReactNode } from 'react'
-import { Callout } from '@/components/ui'
+import { Otto } from '@/components/brand/otto'
+import { Callout, ErrorState, Tooltip } from '@/components/ui'
 import { PANE_LIFE, Sea } from '@/components/motion/sea'
 import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
@@ -8,7 +9,8 @@ import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { ComposerLoader } from '@/vendor/boardui/composer-loader'
 import { AgentMark } from './agent-picker'
-import { Composer } from './composer'
+import { Composer, SKILLS_HINT, TOOLS_HINT } from './composer'
+import { Markdown } from './markdown'
 import { PlanCard } from './plan-card'
 import { ToolCall } from './tool-call'
 
@@ -38,8 +40,9 @@ const COMPOSER_LIGHT: [string, string, string, string] = ['var(--ot-plan-border)
  * water, so a transaction in flight reads as something happening rather than
  * as a row in a wallet.
  *
- * Everything an agent sends is drawn as plain text. Its replies aren't rendered
- * as Markdown, so it has no way to put links or images in front of the person.
+ * An agent's replies get the formatting `Markdown` allows, and the rest of what
+ * it sends is drawn as plain text, so it has no way to load an image or disguise
+ * where a link goes.
  */
 export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: ChatViewProps) {
   const scroller = useRef<HTMLDivElement>(null)
@@ -69,14 +72,18 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
             {agent.name}
           </span>
           <span className="flex-1" />
-          <button type="button" className="ink-picker" disabled>
-            Skills
-            <ChevronDownIcon size={12} />
-          </button>
-          <span className="ink-connector">
-            <PlugIcon size={13} />
-            ottopus-ink
-          </span>
+          <Tooltip text={SKILLS_HINT}>
+            <button type="button" className="ink-picker" aria-disabled>
+              Skills
+              <ChevronDownIcon size={12} />
+            </button>
+          </Tooltip>
+          <Tooltip text={TOOLS_HINT}>
+            <span className="ink-connector" tabIndex={0}>
+              <PlugIcon size={13} />
+              ottopus-ink
+            </span>
+          </Tooltip>
           <button type="button" className="ink-picker" disabled={chat.phase === 'ended' || !chat.sessionId} onClick={onEnd}>
             End chat
           </button>
@@ -150,10 +157,19 @@ const ConversationItem = memo(function ConversationItem({ item }: { item: ChatIt
     case 'user':
       return <div className="ink-bubble">{item.text}</div>
     case 'agent':
-      return <p className="selectable m-0 max-w-[94%] text-[14px] leading-[1.6] whitespace-pre-wrap">{item.text}</p>
+      return <Markdown text={item.text} />
     case 'notice':
+      // Errors hold still, so Otto isn't animated in either of these.
+      if (item.ends) {
+        return <ErrorState title={item.title} description={item.text ?? undefined} illustration={<Otto pose="ink" size={150} />} />
+      }
       return (
-        <Callout severity={item.severity} title={item.title} compact>
+        <Callout
+          severity={item.severity}
+          title={item.title}
+          icon={item.severity === 'block' ? <Otto pose="ink" size={44} /> : undefined}
+          compact
+        >
           {item.text}
         </Callout>
       )

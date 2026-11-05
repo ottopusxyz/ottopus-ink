@@ -256,10 +256,11 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.ink-picker:hover:not(:disabled) {
+.ink-picker:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--ot-surface-3);
 }
-.ink-picker:disabled {
+.ink-picker:disabled,
+.ink-picker[aria-disabled="true"] {
   color: var(--ot-text-3);
   cursor: default;
 }
@@ -276,7 +277,8 @@
   color: var(--ot-text-2);
   cursor: pointer;
 }
-.ink-round:disabled {
+.ink-round:disabled,
+.ink-round[aria-disabled="true"] {
   cursor: default;
   opacity: 0.6;
 }
@@ -375,6 +377,145 @@
   user-select: text;
 }
 
+/* An agent's reply. Headings stay near body size, so a reply can't pass for Ink's own interface. */
+.ink-md {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 94%;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.ink-md p,
+.ink-md h3,
+.ink-md h4 {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.ink-md h3,
+.ink-md h4 {
+  font-family: var(--ot-font-ui);
+  font-weight: 600;
+}
+.ink-md h3 {
+  margin-top: 4px;
+  font-size: 15.5px;
+  line-height: 1.4;
+}
+.ink-md h4 {
+  font-size: 14px;
+}
+.ink-md ul,
+.ink-md ol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 22px;
+}
+.ink-md ul {
+  list-style: disc;
+}
+.ink-md ol {
+  list-style: decimal;
+}
+.ink-md li > * + * {
+  margin-top: 4px;
+}
+.ink-md li::marker {
+  color: var(--ot-text-3);
+}
+.ink-md blockquote {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--ot-border);
+  color: var(--ot-text-2);
+}
+.ink-md code {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: var(--ot-surface-3);
+  box-decoration-break: clone;
+  font: 12.5px/1.45 var(--ot-font-mono);
+}
+.ink-md .ink-md__lang {
+  margin-bottom: -4px;
+  color: var(--ot-text-3);
+  font: 11.5px/1.45 var(--ot-font-mono);
+}
+.ink-md pre {
+  flex: none;
+  margin: 0;
+  overflow-x: auto;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--ot-surface-3);
+  font: 12px/1.5 var(--ot-font-mono);
+  overflow-wrap: normal;
+  scrollbar-color: var(--ot-text-3) transparent;
+  scrollbar-width: thin;
+}
+.ink-md pre code {
+  padding: 0;
+  background: none;
+  font: inherit;
+}
+.ink-md a {
+  color: var(--ot-plan);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ink-md a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--ot-plan);
+  outline-offset: 2px;
+}
+.ink-md__url {
+  overflow-wrap: anywhere;
+}
+.ink-md__table {
+  flex: none;
+  overflow-x: auto;
+  border: 1px solid var(--ot-border);
+  border-radius: 8px;
+  scrollbar-color: var(--ot-text-3) transparent;
+  scrollbar-width: thin;
+}
+.ink-md table {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+}
+.ink-md th,
+.ink-md td {
+  max-width: 320px;
+  padding: 6px 10px;
+  text-align: left;
+}
+.ink-md th {
+  background: var(--ot-surface-3);
+  font-weight: 600;
+}
+.ink-md td {
+  border-top: 1px solid var(--ot-border);
+}
+.ink-md [data-align="center"] {
+  text-align: center;
+}
+.ink-md [data-align="right"] {
+  text-align: right;
+}
+
 /* A tool call: one quiet line that opens to show what was sent and returned. */
 .ink-tool {
   align-self: flex-start;
@@ -433,6 +574,42 @@
 
 /* The agent picker's list: a native popover, placed under its button with
    CSS anchor positioning and flipped above when there's no room below. */
+.ink-tip {
+  display: inline-flex;
+}
+.ink-tip--block {
+  display: block;
+}
+/* The text colours flipped, so it reads as a layer over either theme. */
+.ink-tooltip {
+  inset: auto;
+  width: max-content;
+  max-width: 260px;
+  margin: 6px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--ot-radius-sm);
+  background: var(--ot-text);
+  color: var(--ot-surface);
+  font: 500 12px/1.4 var(--ot-font-ui);
+  white-space: normal;
+  box-shadow: var(--ot-shadow-card);
+  position-area: top;
+  position-try-fallbacks: flip-block, top span-right, top span-left, bottom span-right, bottom span-left;
+  transition: opacity var(--ot-dur-fast) var(--ot-ease-out), translate var(--ot-dur-fast) var(--ot-ease-out);
+}
+@starting-style {
+  .ink-tooltip:popover-open {
+    opacity: 0;
+    translate: 0 2px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-tooltip {
+    transition: none;
+  }
+}
+
 .ink-popover {
   inset: auto;
   margin: 6px 0;
@@ -592,4 +769,41 @@ button.ink-agent-option:hover {
   place-items: center;
   border-radius: 6px;
   font: 700 10px var(--ot-font-ui);
+}
+.ink-agent-mark--logo {
+  background: var(--ot-cream);
+  box-shadow: 0 0 0 1px var(--ot-border);
+}
+.ink-agent-mark--logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* A recent chat's agent, with what it's doing on the corner. */
+.ink-chat-mark {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.ink-chat-mark .ink-live-dot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  margin: 0;
+  box-shadow: 0 0 0 2px var(--ot-surface);
+}
+.ink-chat-mark__settled {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 12px;
+  height: 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ot-ok);
+  color: var(--ot-on-state);
+  box-shadow: 0 0 0 2px var(--ot-surface);
 }

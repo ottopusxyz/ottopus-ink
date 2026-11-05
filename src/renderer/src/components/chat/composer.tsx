@@ -1,6 +1,10 @@
 import { useId, type ReactNode, type Ref } from 'react'
 import { cn } from '@/lib/cn'
 import { ArrowUpIcon, ChevronDownIcon, PlugIcon, PlusIcon, StopIcon } from '@/components/shell/icons'
+import { Tooltip } from '@/components/ui'
+
+export const SKILLS_HINT = "Skills aren't available yet. Ink's own skills are on the way."
+export const TOOLS_HINT = 'Ink starts chats with only its own tools: reading balances and proposing plans. No shell, file or web access.'
 
 export interface ComposerProps {
   value: string
@@ -69,26 +73,32 @@ export function Composer({
         }}
       />
       <div className="ink-composer__row">
-        <button type="button" className="ink-round" aria-label="Add files or context" disabled>
-          <PlusIcon />
-        </button>
+        <Tooltip text="Adding files or context isn't available yet.">
+          <button type="button" className="ink-round" aria-label="Add files or context" aria-disabled>
+            <PlusIcon />
+          </button>
+        </Tooltip>
         {compact ? null : (
           <>
             <span className="ml-1">{agentPicker}</span>
-            <button type="button" className="ink-picker" disabled>
-              Skills
-              <ChevronDownIcon size={12} />
-            </button>
+            <Tooltip text={SKILLS_HINT}>
+              <button type="button" className="ink-picker" aria-disabled>
+                Skills
+                <ChevronDownIcon size={12} />
+              </button>
+            </Tooltip>
           </>
         )}
         <span className="flex-1" />
         {compact ? (
           <span className="mr-2 text-[12px] text-[var(--ot-text-3)]">Enter sends · Shift+Enter for a new line</span>
         ) : (
-          <span className="ink-connector" title="In Ink chats the agent sees only Ottopus Ink's tools">
-            <PlugIcon size={13} />
-            Ottopus tools only
-          </span>
+          <Tooltip text={TOOLS_HINT}>
+            <span className="ink-connector" tabIndex={0}>
+              <PlugIcon size={13} />
+              Ottopus tools only
+            </span>
+          </Tooltip>
         )}
         {onStop ? (
           <button type="button" className="ink-send" aria-label="Stop" disabled={stopping} onClick={onStop}>

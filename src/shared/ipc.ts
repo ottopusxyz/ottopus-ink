@@ -79,7 +79,10 @@ export type ChatEvent =
   | { type: 'lock'; locked: boolean; found: string[] }
   /** The next piece of the reply. */
   | { type: 'text'; text: string }
-  | { type: 'tool-call'; id: string; name: string; input: unknown }
+  /** Input is already text, as an agent can shape its own so it won't cross IPC. */
+  | { type: 'tool-call'; id: string; name: string; input: string }
+  /** The session is running a subagent, which a locked one can't do. */
+  | { type: 'subagent' }
   | { type: 'tool-result'; id: string; text: string; isError: boolean }
   /** From Ink's own server, not the agent's output, so an agent can't forge one by printing it. */
   | { type: 'plan'; plan: ChatPlan }

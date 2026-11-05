@@ -48,6 +48,8 @@ export function lockWatcher(shimConnected: () => boolean): (event: ChatEvent) =>
         }
         return found
       }
+      case 'subagent':
+        return ['a subagent at work']
       case 'tool-call':
         if (!reportedThisTurn) return [`a call to ${event.name} before the agent reported its tools`]
         return event.name.startsWith(TOOL_PREFIX) ? null : [`a call to ${event.name}`]

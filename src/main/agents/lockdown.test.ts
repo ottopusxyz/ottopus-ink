@@ -46,7 +46,7 @@ describe('lockWatcher on a report', () => {
 describe('lockWatcher across a turn', () => {
   it('stays quiet through a normal turn, on every turn', () => {
     const watch = lockWatcher(() => true)
-    const call: ChatEvent = { type: 'tool-call', id: 'a', name: ours, input: {} }
+    const call: ChatEvent = { type: 'tool-call', id: 'a', name: ours, input: '{}' }
     for (let turn = 0; turn < 2; turn++) {
       expect(watch(report())).toEqual([])
       expect(watch(call)).toBeNull()
@@ -65,12 +65,18 @@ describe('lockWatcher across a turn', () => {
   it('finds a call to a tool the report left out', () => {
     const watch = lockWatcher(() => true)
     watch(report())
-    expect(watch({ type: 'tool-call', id: 'a', name: 'Bash', input: {} })).toEqual(['a call to Bash'])
+    expect(watch({ type: 'tool-call', id: 'a', name: 'Bash', input: '{}' })).toEqual(['a call to Bash'])
+  })
+
+  it('finds a subagent at work', () => {
+    const watch = lockWatcher(() => true)
+    watch(report())
+    expect(watch({ type: 'subagent' })).toEqual(['a subagent at work'])
   })
 
   it('finds a call before any report', () => {
     const watch = lockWatcher(() => true)
-    expect(watch({ type: 'tool-call', id: 'a', name: ours, input: {} })).toEqual([
+    expect(watch({ type: 'tool-call', id: 'a', name: ours, input: '{}' })).toEqual([
       `a call to ${ours} before the agent reported its tools`,
     ])
   })

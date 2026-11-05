@@ -28,7 +28,7 @@ describe('claudeEventReader on recorded sessions', () => {
     const session = { type: 'session', tools: [tool], servers: ['ottopus-ink'], plugins: [], model: 'claude-haiku-5-5' }
     expect(joined(replay('claude-session.ndjson'))).toEqual([
       session,
-      { type: 'tool-call', id: 'toolu_fixture1', name: tool, input: {} },
+      { type: 'tool-call', id: 'toolu_fixture1', name: tool, input: '{}' },
       { type: 'tool-result', id: 'toolu_fixture1', text: 'near: probe.near', isError: false },
       { type: 'text', text: 'get_accounts returned one account: `near: probe.near`.' },
       { type: 'turn-end', outcome: 'done', error: null },
@@ -98,18 +98,33 @@ describe('claudeEventReader on anything else', () => {
     ])
   })
 
-  it('gives a tool call with no input a null input', () => {
+  it('gives a tool call with no input an empty input', () => {
     const read = claudeEventReader()
     expect(read(line({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'x' }] } }))).toEqual([
-      { type: 'tool-call', id: 'a', name: 'x', input: null },
+      { type: 'tool-call', id: 'a', name: 'x', input: '' },
     ])
   })
 
-  it('skips the work of a subagent', () => {
+  it('reports the work of a subagent instead of reading it as the reply', () => {
     const read = claudeEventReader()
     const delta = { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hidden' } }
-    expect(read(line({ type: 'stream_event', parent_tool_use_id: 'toolu_1', event: delta }))).toEqual([])
+    expect(read(line({ type: 'stream_event', parent_tool_use_id: 'toolu_1', event: delta }))).toEqual([{ type: 'subagent' }])
     expect(read(line({ type: 'stream_event', parent_tool_use_id: null, event: delta }))).toEqual([{ type: 'text', text: 'hidden' }])
+  })
+
+  it('reports a tool call made by a subagent, which would otherwise go unseen', () => {
+    const read = claudeEventReader()
+    const call = { type: 'assistant', parent_tool_use_id: 'toolu_1', message: { content: [{ type: 'tool_use', id: 'a', name: 'Bash', input: {} }] } }
+    expect(read(line(call))).toEqual([{ type: 'subagent' }])
+  })
+
+  it('turns any tool input into text that is safe to send to the page', () => {
+    const called = (input: string) => claudeEventReader()(`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"a","name":"x","input":${input}}]}}`)
+    expect(called('{"to":"alice.near"}')).toEqual([{ type: 'tool-call', id: 'a', name: 'x', input: '{\n  "to": "alice.near"\n}' }])
+    expect(called(`"${'x'.repeat(30_000)}"`)).toEqual([{ type: 'tool-call', id: 'a', name: 'x', input: `"${'x'.repeat(19_999)}…` }])
+
+    const deep = `${'{"x":'.repeat(10_000)}0${'}'.repeat(10_000)}`
+    expect(called(deep)).toEqual([{ type: 'tool-call', id: 'a', name: 'x', input: expect.any(String) as string }])
   })
 
   it('takes the reply from the result only when the turn streamed none', () => {

@@ -19,6 +19,24 @@ function resultText(content: unknown): string {
     .join('\n')
 }
 
+/** Past what anyone reads in a tool call's details. */
+const MAX_TOOL_INPUT_CHARS = 20_000
+
+/**
+ * A tool call's input as text. Made here because the agent chooses its shape: nested
+ * deep enough it can't be serialized or sent to the page, which would hide the call
+ * from the person. Hence a string that always crosses, whatever came in.
+ */
+function inputText(input: unknown): string {
+  if (input === undefined || input === null) return ''
+  try {
+    const text = JSON.stringify(input, null, 2)
+    return text.length > MAX_TOOL_INPUT_CHARS ? `${text.slice(0, MAX_TOOL_INPUT_CHARS)}…` : text
+  } catch {
+    return 'Ink could not show this input: it is nested too deeply.'
+  }
+}
+
 /** The names in a report's list, or null if it isn't one: a report that can't be read mustn't look like an empty one. */
 function namesOf(value: unknown, keep: (entry: Fields) => boolean = () => true): string[] | null {
   if (!Array.isArray(value)) return null
@@ -57,8 +75,8 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
     }
     if (!isFields(event)) return []
 
-    // A subagent's work, which a locked session can't start anyway.
-    if (typeof event.parent_tool_use_id === 'string') return []
+    // A locked session has no way to start a subagent, so one at work is for the lock check to see.
+    if (typeof event.parent_tool_use_id === 'string') return [{ type: 'subagent' }]
 
     if (event.type === 'system' && event.subtype === 'init') {
       const { tools } = event
@@ -86,7 +104,7 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
     if (event.type === 'assistant' && isFields(event.message)) {
       return blocksOf(event.message.content).flatMap((block): ChatEvent[] =>
         block.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string'
-          ? [{ type: 'tool-call', id: block.id, name: block.name, input: block.input ?? null }]
+          ? [{ type: 'tool-call', id: block.id, name: block.name, input: inputText(block.input) }]
           : [],
       )
     }

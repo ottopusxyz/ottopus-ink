@@ -59,7 +59,7 @@ describe('applyChatEvent', () => {
     const chat = after([
       { type: 'text', text: 'one ' },
       { type: 'text', text: 'two' },
-      { type: 'tool-call', id: 't', name: 'x', input: {} },
+      { type: 'tool-call', id: 't', name: 'x', input: '{}' },
       { type: 'text', text: 'three' },
     ])
     expect(texts(chat)).toEqual(['hello', 'one two', 'tool', 'three'])
@@ -67,7 +67,7 @@ describe('applyChatEvent', () => {
 
   it('fills in a tool call when its result arrives, and ignores a result for nothing', () => {
     const chat = after([
-      { type: 'tool-call', id: 't', name: 'mcp__ottopus-ink__get_accounts', input: { a: 1 } },
+      { type: 'tool-call', id: 't', name: 'mcp__ottopus-ink__get_accounts', input: '{}' },
       { type: 'tool-result', id: 'other', text: 'stray', isError: false },
     ])
     expect(chat.items.at(-1)).toMatchObject({ kind: 'tool', result: null })
@@ -77,7 +77,7 @@ describe('applyChatEvent', () => {
   })
 
   it('shows a tool call with no input', () => {
-    expect(after([{ type: 'tool-call', id: 't', name: 'x', input: undefined }]).items.at(-1)).toMatchObject({ input: '' })
+    expect(after([{ type: 'tool-call', id: 't', name: 'x', input: '' }]).items.at(-1)).toMatchObject({ input: '' })
   })
 
   it('keeps the newest plan and puts it in the conversation', () => {
@@ -133,14 +133,14 @@ describe('applyChatEvent', () => {
 
 describe('limits on what an agent can fill', () => {
   it('drops the oldest items, says so, and keeps ids unique', () => {
-    const chat = after(Array.from({ length: MAX_ITEMS + 5 }, (_, i): ChatEvent => ({ type: 'tool-call', id: `${i}`, name: 'x', input: {} })))
+    const chat = after(Array.from({ length: MAX_ITEMS + 5 }, (_, i): ChatEvent => ({ type: 'tool-call', id: `${i}`, name: 'x', input: '{}' })))
     expect(chat.items).toHaveLength(MAX_ITEMS)
     expect(chat.trimmed).toBe(true)
     expect(new Set(chat.items.map((item) => item.id)).size).toBe(MAX_ITEMS)
   })
 
   it('keeps the newest plan after its row is dropped', () => {
-    const chat = after([{ type: 'plan', plan }, ...Array.from({ length: MAX_ITEMS }, (_, i): ChatEvent => ({ type: 'tool-call', id: `${i}`, name: 'x', input: {} }))])
+    const chat = after([{ type: 'plan', plan }, ...Array.from({ length: MAX_ITEMS }, (_, i): ChatEvent => ({ type: 'tool-call', id: `${i}`, name: 'x', input: '{}' }))])
     expect(chat.items.some((item) => item.kind === 'plan')).toBe(false)
     expect(chat.plan).toBe(plan)
   })

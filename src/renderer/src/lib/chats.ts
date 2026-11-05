@@ -99,6 +99,7 @@ export function messageFailed(chat: Chat, error: string): Chat {
 export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
   switch (event.type) {
     case 'session':
+    case 'subagent':
       return chat
     case 'lock':
       if (event.locked) return { ...chat, lock: chat.lock === 'unlocked' ? 'unlocked' : 'locked' }
@@ -122,7 +123,7 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
         kind: 'tool',
         toolId: event.id,
         name: event.name,
-        input: clipped(JSON.stringify(event.input, null, 2) ?? '', MAX_TOOL_CHARS),
+        input: clipped(event.input, MAX_TOOL_CHARS),
         result: null,
       })
     case 'tool-result':

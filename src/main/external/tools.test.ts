@@ -139,12 +139,29 @@ describe('what it agreed to', () => {
     expect((await tools.list())[0]?.enabled).toBe(false)
   })
 
-  it('stays on if only the value of a secret changes, since that value is never stored', async () => {
-    let def: ServerDef = { ...server(), env: { KEY: 'old' } }
+  it('goes off if an env value changes, because one can decide what runs', async () => {
+    let def: ServerDef = { ...server('/usr/bin/node', ['/bin/app.js']), env: { NODE_OPTIONS: '' } }
+    const tools = setup(() => [detected('one', def)])
+    const confirm = vi.fn(yes)
+    await tools.setEnabled(idOf, true, confirm)
+    def = { ...server('/usr/bin/node', ['/bin/app.js']), env: { NODE_OPTIONS: '--require=/tmp/other.js' } }
+    expect((await tools.list())[0]).toMatchObject({ enabled: false, changed: true })
+    expect((await tools.forNewChat()).serverNames).toEqual([])
+    expect(confirm).toHaveBeenCalledOnce()
+  })
+
+  it('goes off if a header changes', async () => {
+    let def: ServerDef = { transport: 'http', url: 'https://example.test/', headers: { Host: 'a.test' } }
     const tools = setup(() => [detected('one', def)])
     await tools.setEnabled(idOf, true, yes)
-    def = { ...server(), env: { KEY: 'new' } }
-    expect((await tools.list())[0]?.enabled).toBe(true)
+    def = { transport: 'http', url: 'https://example.test/', headers: { Host: 'b.test' } }
+    expect((await tools.list())[0]?.enabled).toBe(false)
+  })
+
+  it('stores a hash of those values, never the values', async () => {
+    const tools = setup(() => [detected('one', { ...server(), env: { KEY: 'env-secret' } })])
+    await tools.setEnabled(idOf, true, yes)
+    expect(readFileSync(file, 'utf8')).not.toContain('env-secret')
   })
 
   it('goes off if a skill it agreed to is rewritten', async () => {

@@ -74,16 +74,19 @@ export function asksForSecrets(server: ServerDef): boolean {
 
 /**
  * Identifies what would run. If this changes after someone turned an item on, it
- * goes back to off: they agreed to the old command, not the new one. Holds only the
- * names of env variables and headers, so no secret value is hashed and stored.
+ * goes back to off: they agreed to the old command, not the new one. Env and header
+ * values are in it because they can decide what runs (NODE_OPTIONS can load another
+ * program), so a rotated key means agreeing again. Only this hash is stored, and
+ * anyone who could read it could read the value from the agent's own config.
  */
 export function fingerprint({ servers, skills }: Pick<CatalogEntry, 'servers' | 'skills'>): string {
+  const sorted = (map: Record<string, string>) => Object.entries(map).sort(([a], [b]) => a.localeCompare(b))
   const shape = Object.entries(servers)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, server]) =>
       server.transport === 'stdio'
-        ? [name, server.command, server.args, Object.keys(server.env).sort(), [...server.envNames].sort()]
-        : [name, server.transport, server.url, Object.keys(server.headers).sort()],
+        ? [name, server.command, server.args, sorted(server.env), [...server.envNames].sort()]
+        : [name, server.transport, server.url, sorted(server.headers)],
     )
   const texts = skills.map(({ name, text }) => [name, text]).sort(([a], [b]) => (a ?? '').localeCompare(b ?? ''))
   return createHash('sha256').update(JSON.stringify([shape, texts])).digest('hex')

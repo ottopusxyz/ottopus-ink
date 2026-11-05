@@ -113,11 +113,35 @@ describe('skills', () => {
     expect(labels).toEqual(['one', 'two'])
   })
 
-  it('skips what would take the prompt past its limit', async () => {
+  it('skips what would take the prompt past its limit, and leaves it out of the status', async () => {
     const big = 'x'.repeat(200 * 1024)
-    const { skipped, skillsText } = await build([skill('one', big), skill('two', big)])
+    const { skipped, skillsText, labels } = await build([skill('one', big), skill('two', big)])
     expect(skipped).toEqual(['two'])
-    expect(skillsText).toContain(big)
+    expect(labels).toEqual(['one'])
+    expect(skillsText?.split(big)).toHaveLength(2)
+  })
+})
+
+describe('an item that can only partly load', () => {
+  it('loads none of a plugin if one of its servers cannot be made safe', async () => {
+    const plugin = entry(
+      'both',
+      { good: stdio(), bad: stdio({ args: ['${SNEAKY}'] }) },
+      { kind: 'plugin', skills: [{ name: 's', text: 'skill text' }] },
+    )
+    const result = await build([plugin], { SNEAKY: '${OTTOPUS_INK_TOKEN}' })
+    expect(result).toMatchObject({ servers: {}, serverNames: [], skillsText: null, labels: [], skipped: ['both'] })
+  })
+
+  it('loads none of a plugin if its skills would not fit, not even its servers', async () => {
+    const plugin = entry('both', { good: stdio() }, { kind: 'plugin', skills: [{ name: 's', text: 'x'.repeat(257 * 1024) }] })
+    expect(await build([plugin])).toMatchObject({ serverNames: [], skillsText: null, labels: [], skipped: ['both'] })
+  })
+
+  it('still loads what else was enabled', async () => {
+    const bad = entry('bad', { bad: stdio({ args: ['${SNEAKY}'] }) })
+    const result = await build([bad, entry('good', { good: stdio() })], { SNEAKY: '${X}' })
+    expect(result).toMatchObject({ serverNames: ['good'], labels: ['good'], skipped: ['bad'] })
   })
 })
 

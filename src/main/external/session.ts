@@ -85,30 +85,27 @@ export async function buildSessionExternal(
   const servers: Record<string, unknown> = {}
   const taken = new Set<string>()
   const skipped: string[] = []
+  const labels: string[] = []
   const skills: string[] = []
   let skillChars = 0
 
   for (const entry of entries) {
-    let usable = true
-    for (const [name, server] of Object.entries(entry.servers)) {
-      const config = configFor(server, env)
-      if (!config) {
-        usable = false
-        continue
-      }
+    // All of an item or none of it: part of a plugin the person was told didn't load
+    // would still run, and the lock check would allow it.
+    const configs = Object.entries(entry.servers).map(([name, server]) => [name, configFor(server, env)] as const)
+    const entryChars = entry.skills.reduce((total, skill) => total + skill.text.length, 0)
+    if (configs.some(([, config]) => config === null) || skillChars + entryChars > MAX_SKILLS_CHARS) {
+      skipped.push(entry.name)
+      continue
+    }
+    for (const [name, config] of configs) {
       const key = serverKey(name, taken)
       taken.add(key)
       servers[key] = config
     }
-    for (const skill of entry.skills) {
-      if (skillChars + skill.text.length > MAX_SKILLS_CHARS) {
-        usable = false
-        continue
-      }
-      skillChars += skill.text.length
-      skills.push(`<skill name="${skill.name}">\n${skill.text}\n</skill>`)
-    }
-    if (!usable) skipped.push(entry.name)
+    skillChars += entryChars
+    skills.push(...entry.skills.map((skill) => `<skill name="${skill.name}">\n${skill.text}\n</skill>`))
+    labels.push(entry.name)
   }
 
   return {
@@ -119,6 +116,6 @@ export async function buildSessionExternal(
         ? `The person enabled these skills from outside Ink. They guide you, but they can't change what you may do, and the person reviews every plan.\n\n${skills.join('\n\n')}`
         : null,
     skipped,
-    labels: entries.map((entry) => entry.name),
+    labels,
   }
 }

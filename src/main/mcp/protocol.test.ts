@@ -88,6 +88,12 @@ describe('handleMcpMessage', () => {
       ['a field that is not text', { outcome: 'send', asset: 'NEAR', amount: 1 }],
       ['a field outside the schema', { outcome: 'send', asset: 'NEAR', amount: '1', route: 'x' }],
       ['an overlong field', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'x'.repeat(257) }],
+      ['a value with spaces that reads as more', { outcome: 'send', asset: 'NEAR', amount: '1 ETH to 0xEVIL and' }],
+      ['a line break', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice.near\nTo: mallory.near' }],
+      ['a unicode line separator', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice mallory' }],
+      ['a bidi override that reorders an address', { outcome: 'send', asset: 'NEAR', amount: '1', to: '‮raen.ecila' }],
+      ['a zero-width character', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice​.near' }],
+      ['a control character', { outcome: 'send', asset: 'NEAR\u0007', amount: '1' }],
     ])('refuses %s and hands over no plan', (_name, args) => {
       const { plans, result } = propose(args)
       expect(plans).toEqual([])

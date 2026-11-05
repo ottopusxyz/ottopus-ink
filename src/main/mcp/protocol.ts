@@ -67,6 +67,13 @@ const NOT_SET_UP = toolAnswer('The wallet is not set up yet.')
 /** Longer than any asset, amount or address. */
 const MAX_PLAN_FIELD_CHARS = 256
 
+/**
+ * One word with nothing hidden in it. A card shows an agent's values as written, so
+ * spaces and line breaks could make one field read as a whole other instruction,
+ * and control and format characters (U+202E, say) could reorder an address.
+ */
+const PLAN_FIELD = /^[^\s\p{Cc}\p{Cf}]+$/u
+
 const PLAN_FIELDS = ['outcome', 'asset', 'chain', 'amount', 'to', 'to_asset', 'to_chain']
 const PLAN_OUTCOMES = ['send', 'swap', 'stake'] as const
 
@@ -78,9 +85,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function planFrom(args: unknown): ChatPlan | null {
   if (!isRecord(args)) return null
   const entries = Object.entries(args)
-  if (entries.some(([key, value]) => !PLAN_FIELDS.includes(key) || typeof value !== 'string' || value.length > MAX_PLAN_FIELD_CHARS)) {
-    return null
-  }
+  const fits = ([key, value]: [string, unknown]) =>
+    PLAN_FIELDS.includes(key) && typeof value === 'string' && value.length <= MAX_PLAN_FIELD_CHARS && PLAN_FIELD.test(value)
+  if (!entries.every(fits)) return null
   const field = (key: string) => (typeof args[key] === 'string' ? args[key] : null)
   const outcome = PLAN_OUTCOMES.find((known) => known === args.outcome)
   const asset = field('asset')
@@ -149,7 +156,7 @@ export function handleMcpMessage(message: unknown, version: string, onPlan?: (pl
       }
       if (params.name === 'create_plan') {
         const plan = planFrom(params.arguments)
-        if (!plan) return result(toolAnswer('Those plan details do not match the schema.', true))
+        if (!plan) return result(toolAnswer('Those plan details do not match the schema. Each value must be one word with no spaces.', true))
         onPlan?.(plan)
         return result(toolAnswer(`Plan ${plan.id} is a placeholder. The wallet is not set up yet, so it can't be reviewed or signed.`))
       }

@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, type ReactNode } from 'react'
-import { Callout } from '@/components/ui'
+import { Otto } from '@/components/brand/otto'
+import { Callout, ErrorState } from '@/components/ui'
 import { PANE_LIFE, Sea } from '@/components/motion/sea'
 import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
@@ -152,8 +153,17 @@ const ConversationItem = memo(function ConversationItem({ item }: { item: ChatIt
     case 'agent':
       return <p className="selectable m-0 max-w-[94%] text-[14px] leading-[1.6] whitespace-pre-wrap">{item.text}</p>
     case 'notice':
+      // Errors hold still, so Otto isn't animated in either of these.
+      if (item.ends) {
+        return <ErrorState title={item.title} description={item.text ?? undefined} illustration={<Otto pose="ink" size={150} />} />
+      }
       return (
-        <Callout severity={item.severity} title={item.title} compact>
+        <Callout
+          severity={item.severity}
+          title={item.title}
+          icon={item.severity === 'block' ? <Otto pose="ink" size={44} /> : undefined}
+          compact
+        >
           {item.text}
         </Callout>
       )

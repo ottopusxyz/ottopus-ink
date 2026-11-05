@@ -1,4 +1,5 @@
 import { INK_TOOLS, type AgentId, type ChatEvent, type ChatPlan } from '../../../shared/ipc'
+import { NOTHING_SIGNED } from '@/components/ui/copy'
 
 export type ChatStatus = 'idle' | 'live' | 'settled'
 
@@ -8,7 +9,8 @@ export type ChatItem =
   | { kind: 'agent'; id: string; text: string }
   | { kind: 'tool'; id: string; toolId: string; name: string; input: string; result: { text: string; isError: boolean } | null }
   | { kind: 'plan'; id: string; plan: ChatPlan }
-  | { kind: 'notice'; id: string; severity: 'info' | 'block'; title: string; text: string | null }
+  /** `ends` marks the failure that finished a chat, which gets more room than one it can carry on from. */
+  | { kind: 'notice'; id: string; severity: 'info' | 'block'; title: string; text: string | null; ends?: true }
 
 /**
  * Where a chat's session is: starting up, waiting for the person, running a turn,
@@ -85,14 +87,19 @@ export function messageSent(chat: Chat, text: string): Chat {
   return { ...withItem(chat, { kind: 'user', text }), phase: 'answering' }
 }
 
+/** An error, which often has no full stop, followed by what didn't happen. */
+function withNothingSigned(error: string): string {
+  return `${error}${/[.!?]$/.test(error) ? '' : '.'} ${NOTHING_SIGNED}`
+}
+
 export function chatFailedToStart(chat: Chat, error: string): Chat {
-  return { ...withItem(chat, { kind: 'notice', severity: 'block', title: "Couldn't start the chat", text: error }), phase: 'ended' }
+  return { ...withItem(chat, { kind: 'notice', severity: 'block', title: "Couldn't start the chat", text: withNothingSigned(error), ends: true }), phase: 'ended' }
 }
 
 /** A message didn't go through. If the chat has ended, its own event already said so. */
 export function messageFailed(chat: Chat, error: string): Chat {
   if (chat.phase === 'ended') return chat
-  return { ...withItem(chat, { kind: 'notice', severity: 'block', title: "Your message wasn't sent", text: error }), phase: 'ready' }
+  return { ...withItem(chat, { kind: 'notice', severity: 'block', title: "Your message wasn't sent", text: withNothingSigned(error) }), phase: 'ready' }
 }
 
 /** What one event from the chat's session does to it. */
@@ -154,7 +161,7 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
     case 'ended': {
       // Being stopped for the lock already has its own notice.
       if (event.error === null || chat.lock === 'unlocked') return { ...chat, phase: 'ended' }
-      return { ...withItem(chat, { kind: 'notice', severity: 'block', title: 'The chat ended', text: event.error }), phase: 'ended' }
+      return { ...withItem(chat, { kind: 'notice', severity: 'block', title: 'The chat ended', text: event.error, ends: true }), phase: 'ended' }
     }
   }
 }

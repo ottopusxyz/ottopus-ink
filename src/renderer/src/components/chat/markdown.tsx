@@ -66,9 +66,12 @@ function block(token: MarkedToken, key: number, depth: number): ReactNode {
     }
     case 'code':
       return (
-        <pre key={key}>
-          <code>{token.text}</code>
-        </pre>
+        <Fragment key={key}>
+          {token.lang ? <p className="ink-md__lang">{token.lang}</p> : null}
+          <pre>
+            <code>{token.text}</code>
+          </pre>
+        </Fragment>
       )
     case 'blockquote':
       return <blockquote key={key}>{blocks(token.tokens, depth + 1)}</blockquote>

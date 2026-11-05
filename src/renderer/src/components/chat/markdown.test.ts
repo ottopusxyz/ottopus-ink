@@ -27,7 +27,13 @@ describe('Markdown: the safe list', () => {
 
   it('formats quotes and code blocks, leaving what is in the code alone', () => {
     expect(body('> **a**')).toBe('<blockquote><p><strong>a</strong></p></blockquote>')
-    expect(body('```js\n**a** <b>\n```')).toBe('<pre><code>**a** &lt;b&gt;</code></pre>')
+    expect(body('```\n**a** <b>\n```')).toBe('<pre><code>**a** &lt;b&gt;</code></pre>')
+  })
+
+  it('shows what follows the opening of a code block', () => {
+    expect(body('```js\na\n```')).toBe('<p class="ink-md__lang">js</p><pre><code>a</code></pre>')
+    expect(body('```WARNING: sends entire balance\na\n```')).toContain('WARNING: sends entire balance')
+    expect(body('~~~WARNING\na\n~~~')).toContain('WARNING')
   })
 
   it('keeps line breaks within a paragraph, for the stylesheet to show', () => {
@@ -58,6 +64,34 @@ describe('Markdown: everything else stays text', () => {
     expect(body('---')).toBe('<p>---</p>')
   })
 
+  it('shows every word the agent wrote, wherever it puts it', () => {
+    const shown = html(
+      [
+        '# heading HEADING #',
+        '[a](https://x.example "LINKTITLE")',
+        '[b](http://x.example "PLAINTITLE")',
+        '[c][r]',
+        '[r]: https://x.example "DEFINITIONTITLE"',
+        '[DEFINITIONLABEL]: https://x.example',
+        '![IMAGEALT](https://x.example "IMAGETITLE")',
+        '<!-- COMMENT -->',
+        '<div title="ATTRIBUTE"></div>',
+        '<span data-x="INLINEATTRIBUTE"></span>',
+        '```FENCEINFO more words\ncode\n```',
+        '| a |\n|---|\n| b | SURPLUSCELL |',
+        '- [x] TASK',
+        '~~STRIKETHROUGH~~',
+        '> QUOTE',
+      ].join('\n\n'),
+    )
+    for (const word of [
+      'HEADING', 'LINKTITLE', 'PLAINTITLE', 'DEFINITIONTITLE', 'DEFINITIONLABEL', 'IMAGEALT', 'IMAGETITLE', 'COMMENT',
+      'ATTRIBUTE', 'INLINEATTRIBUTE', 'FENCEINFO more words', 'SURPLUSCELL', 'TASK', 'STRIKETHROUGH', 'QUOTE',
+    ]) {
+      expect(shown).toContain(word)
+    }
+  })
+
   it('only ever draws the approved tags and attributes', () => {
     const shown = html(
       [
@@ -75,6 +109,7 @@ describe('Markdown: everything else stays text', () => {
         ' class="ink-md"',
         ' class="ink-md__url"',
         ' class="ink-md__table"',
+        ' class="ink-md__lang"',
         ' start="2"',
         ' data-align="center"',
         ' href="https://x.example/" target="_blank" rel="noopener noreferrer"',

@@ -444,6 +444,11 @@
   box-decoration-break: clone;
   font: 12.5px/1.45 var(--ot-font-mono);
 }
+.ink-md .ink-md__lang {
+  margin-bottom: -4px;
+  color: var(--ot-text-3);
+  font: 11.5px/1.45 var(--ot-font-mono);
+}
 .ink-md pre {
   flex: none;
   margin: 0;

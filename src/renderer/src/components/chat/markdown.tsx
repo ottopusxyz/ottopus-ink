@@ -83,6 +83,7 @@ function block(token: MarkedToken, key: number, depth: number): ReactNode {
       )
     }
     case 'table':
+      if (!keptEveryCell(token)) return <p key={key}>{token.raw.trimEnd()}</p>
       return (
         <div key={key} className="ink-md__table">
           <table>
@@ -100,6 +101,17 @@ function block(token: MarkedToken, key: number, depth: number): ReactNode {
     default:
       return <p key={key}>{token.raw.trimEnd()}</p>
   }
+}
+
+/**
+ * The parser drops a row's cells past its header's width, which would hide them,
+ * so this compares what it kept with the source, leaving out the separators.
+ */
+function keptEveryCell({ raw, header, rows }: Tokens.Table): boolean {
+  const squeezed = (text: string) => text.replace(/[\s|\\]/g, '')
+  const [head = '', , ...body] = raw.split('\n')
+  const kept = [header, ...rows].flat().map((cell) => cell.text)
+  return squeezed([head, ...body].join('')) === squeezed(kept.join(''))
 }
 
 function cells(row: Tokens.TableCell[], Cell: 'th' | 'td', depth: number): ReactNode {

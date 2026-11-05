@@ -160,6 +160,35 @@ describe('Markdown: tables', () => {
   it('leaves pipes with no header line as text', () => {
     expect(body('| a |\n| b |')).toBe('<p>| a |\n| b |</p>')
   })
+
+  it('shows the source of a table with more cells in a row than its header', () => {
+    const text = '| Asset |\n|---|\n| ETH | WARNING: sends entire balance |'
+    expect(body(text)).toBe(`<p>${text}</p>`)
+  })
+
+  it('catches extra cells that look escaped, or in a quote or a list', () => {
+    expect(body('| a |\n|---|\n| b \\\\| WARNING |')).toContain('WARNING')
+    expect(body('> | a |\n> |---|\n> | b | WARNING |')).toContain('WARNING')
+    expect(body('- | a |\n  |---|\n  | b | WARNING |')).toContain('WARNING')
+  })
+
+  it('keeps every other row of a table with one row too wide in its source', () => {
+    const shown = body('| a |\n|---|\n| b |\n| c | WARNING |\n| d |')
+    expect(shown).not.toContain('<table>')
+    for (const word of ['| b |', '| c | WARNING |', '| d |']) expect(shown).toContain(word)
+  })
+
+  it('still draws a table whose rows are short, or end in an empty cell', () => {
+    expect(body('| a | b |\n|---|---|\n| c |')).toContain('<td>c</td><td></td>')
+    expect(body('| a |\n|---|\n| b ||')).toContain('<td>b</td>')
+  })
+
+  it('still draws a table with formatting, entities and escapes in its cells', () => {
+    const shown = body('| **a** | `b` |\n|---|:-:|\n| c \\| d | &amp; [e](https://f.example "g") |\n| \\*h\\* | <i> |')
+    expect(shown).toContain('<table>')
+    expect(shown).toContain('<td>c | d</td>')
+    expect(shown).toContain('&amp;amp; ')
+  })
 })
 
 describe('Markdown: replies built to break it', () => {

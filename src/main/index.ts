@@ -1,11 +1,14 @@
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, Menu, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
 import { detectAgents } from './agents/detect'
-import { agentEnv } from './agents/login-env'
-import { stopRuns } from './agents/run'
+import { agentEnv, readNamedShellEnv } from './agents/login-env'
+import { run, stopRuns } from './agents/run'
+import { detectEntries } from './external/detect'
+import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
 import { appMenuTemplate } from './menu'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
@@ -107,6 +110,49 @@ function getMcpBridge(): Promise<McpBridge> {
   return mcpBridge
 }
 
+let externalTools: ExternalTools | null = null
+
+function getExternalTools(): ExternalTools {
+  externalTools ??= createExternalTools({
+    file: join(app.getPath('userData'), 'external-tools.json'),
+    // Nothing ships yet. Issue #11 chooses what does.
+    bundled: [],
+    readEnv: readNamedShellEnv,
+    detect: async () => {
+      const env = await agentEnv()
+      agents ??= agentEnv().then(detectAgents)
+      const codex = (await agents).find(({ id }) => id === 'codex')?.path
+      // This process's own if the login shell couldn't be read.
+      const claudeConfig = env.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR
+      return detectEntries({
+        claudeDir: claudeConfig ?? join(homedir(), '.claude'),
+        claudeJson: claudeConfig ? join(claudeConfig, '.claude.json') : join(homedir(), '.claude.json'),
+        codexDir: env.CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
+        codexServers: async () => {
+          if (!codex) return null
+          const { stdout } = await run(codex, ['mcp', 'list', '--json'], { env: { ...process.env, ...env }, timeoutMs: 5000 })
+          return JSON.parse(stdout) as unknown
+        },
+      })
+    },
+  })
+  return externalTools
+}
+
+/**
+ * Asks in a native dialog, drawn by the OS and answered by the person. The page
+ * asked for this but can't see or click it, which is the point: anything running
+ * in the page could otherwise switch on a tool that can move funds.
+ */
+function nativeConfirm(event: IpcMainInvokeEvent): Confirm {
+  return async ({ message, detail, confirm }) => {
+    const options = { type: 'warning' as const, buttons: ['Cancel', confirm], defaultId: 0, cancelId: 0, noLink: true, message, detail }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { response } = await (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options))
+    return response === 1
+  }
+}
+
 function registerIpc(): void {
   ipcMain.handle(IPC.appInfo, (event): AppInfo => {
     assertAppFrame(event)
@@ -133,9 +179,30 @@ function registerIpc(): void {
     if (!status) throw new Error('Unknown agent')
     const tools = { bridge: await getMcpBridge(), shim: join(import.meta.dirname, 'shim.js') }
     const env = await agentEnv()
+    const external = await getExternalTools().forNewChat()
     // Nothing is left to show or close a chat for a page that went away during those waits.
     if (askedIn !== pageGeneration) throw new Error('The page that asked for this chat has gone')
-    return startChat(status, env, tools, (chatId, chatEvent) => sendToWindows(IPC.chatEvent, chatId, chatEvent))
+    return startChat(status, env, tools, external, (chatId, chatEvent) => sendToWindows(IPC.chatEvent, chatId, chatEvent))
+  })
+
+  ipcMain.handle(IPC.listExternalTools, (event) => {
+    assertAppFrame(event)
+    return getExternalTools().list()
+  })
+
+  ipcMain.handle(IPC.addExternalServer, (event, server: unknown) => {
+    assertAppFrame(event)
+    return getExternalTools().add(server, nativeConfirm(event))
+  })
+
+  ipcMain.handle(IPC.removeExternalServer, (event, id: unknown) => {
+    assertAppFrame(event)
+    return getExternalTools().remove(id)
+  })
+
+  ipcMain.handle(IPC.setExternalEnabled, (event, id: unknown, enabled: unknown) => {
+    assertAppFrame(event)
+    return getExternalTools().setEnabled(id, enabled, nativeConfirm(event))
   })
 
   ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {

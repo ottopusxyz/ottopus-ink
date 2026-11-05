@@ -12,6 +12,10 @@ export interface ClaudeLaunch {
   mcpConfig: string
   /** The Ink skills, loaded as a plugin for this session only. */
   pluginDir: string | null
+  /** External MCP servers the person enabled, as the session's config names them. */
+  externalServers?: readonly string[]
+  /** A file of skill text for the system prompt. Skills can't load the usual way: `--tools ""` removes `Skill`. */
+  skillsFile?: string | null
 }
 
 export interface InkMcpServer {
@@ -53,7 +57,7 @@ export function claudeMcpServers({ shim, socketPath }: InkMcpServer): Record<str
  *   not allowed below is denied.
  * - `--no-session-persistence`: no transcript under `~/.claude/projects`.
  */
-export function claudeArgs({ mcpConfig, pluginDir }: ClaudeLaunch): string[] {
+export function claudeArgs({ mcpConfig, pluginDir, externalServers = [], skillsFile = null }: ClaudeLaunch): string[] {
   return [
     '--print',
     '--input-format',
@@ -72,10 +76,11 @@ export function claudeArgs({ mcpConfig, pluginDir }: ClaudeLaunch): string[] {
     '--setting-sources',
     '',
     '--allowedTools',
-    ALLOWED_TOOLS,
+    [ALLOWED_TOOLS, ...externalServers.map((server) => `mcp__${server}__*`)].join(','),
     '--permission-mode',
     'dontAsk',
     ...(pluginDir ? ['--plugin-dir', pluginDir] : []),
+    ...(skillsFile ? ['--append-system-prompt-file', skillsFile] : []),
   ]
 }
 

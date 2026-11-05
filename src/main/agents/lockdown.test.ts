@@ -49,6 +49,33 @@ describe('lockWatcher on a report', () => {
   })
 })
 
+describe('lockWatcher with external servers on', () => {
+  const watch = () => lockWatcher(() => true, ['other'])
+  const servers = ['ottopus-ink', 'other']
+
+  it('allows them, and their tools and calls', () => {
+    const check = watch()
+    expect(check(report({ tools: [ours, 'mcp__other__read'], servers }))).toEqual([])
+    expect(check({ type: 'tool-call', id: 'a', name: 'mcp__other__read', input: '{}' })).toBeNull()
+  })
+
+  it.each([
+    ['a server not on the list', { servers: [...servers, 'third'] }, 'the MCP server third'],
+    ['a tool of a server not on the list', { tools: [ours, 'mcp__third__x'], servers }, 'the tool mcp__third__x'],
+    ['a look-alike server', { tools: [ours, 'mcp__other-evil__x'], servers }, 'the tool mcp__other-evil__x'],
+    ['a built-in tool', { tools: [ours, 'Bash'], servers }, 'the tool Bash'],
+    ['a plugin, which is never allowed', { plugins: ['dropped-in'], servers }, 'the plugin dropped-in'],
+  ])('still finds %s', (_name, fields, expected) => {
+    expect(watch()(report(fields))).toContain(expected)
+  })
+
+  it('still finds a call to anything else', () => {
+    const check = watch()
+    check(report({ servers }))
+    expect(check({ type: 'tool-call', id: 'a', name: 'mcp__third__x', input: '{}' })).toEqual(['a call to mcp__third__x'])
+  })
+})
+
 describe('lockWatcher across a turn', () => {
   it('stays quiet through a normal turn, on every turn', () => {
     const watch = lockWatcher(() => true)

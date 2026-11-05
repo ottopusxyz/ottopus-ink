@@ -63,6 +63,21 @@ describe('claudeArgs', () => {
   })
 })
 
+describe('claudeArgs with external tools', () => {
+  it('allows only the servers named, and adds skills as a file', () => {
+    const args = claudeArgs({ mcpConfig: '/x', pluginDir: null, externalServers: ['one', 'two'], skillsFile: '/x/skills.md' })
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe('mcp__ottopus-ink__*,mcp__one__*,mcp__two__*')
+    expect(args[args.indexOf('--append-system-prompt-file') + 1]).toBe('/x/skills.md')
+  })
+
+  it('keeps every lockdown flag and never loads a plugin folder', () => {
+    const args = claudeArgs({ mcpConfig: '/x', pluginDir: null, externalServers: ['one'], skillsFile: '/x/skills.md' })
+    expect(args).toEqual(expect.arrayContaining(['--strict-mcp-config', '--no-session-persistence', '--permission-mode', 'dontAsk']))
+    expect(args[args.indexOf('--tools') + 1]).toBe('')
+    expect(args).not.toContain('--plugin-dir')
+  })
+})
+
 describe('claudeEnv', () => {
   it('keeps what the CLI needs to run, reach the network and sign in', () => {
     const env = {

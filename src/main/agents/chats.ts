@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentStatus, ChatEvent } from '../../shared/ipc'
+import { looksLikeItMovesFunds } from '../external/catalog'
+import type { SessionExternal } from '../external/session'
 import type { McpBridge } from '../mcp/bridge'
+import { MCP_SERVER_NAME } from '../mcp/protocol'
 import { claudeMcpServers, MCP_TOKEN_ENV } from './claude-launch'
 import { startClaudeSession, type ChatSession } from './claude-session'
 import { lockWatcher } from './lockdown'
@@ -29,6 +32,7 @@ export function startChat(
   agent: AgentStatus,
   agentEnv: AgentEnv,
   { bridge, shim }: ChatTools,
+  external: SessionExternal,
   onEvent: (chatId: string, event: ChatEvent) => void,
 ): string {
   if (agent.state !== 'ready' || !agent.path) throw new Error(`${agent.id} is not ready`)
@@ -45,11 +49,14 @@ export function startChat(
       if (!over && locked) onEvent(chatId, { type: 'plan', plan })
     },
   })
-  const watchLock = lockWatcher(tools.connected)
+  const watchLock = lockWatcher(tools.connected, external.serverNames)
+  let externalTools: string[] = []
   const session = startClaudeSession({
     binary: agent.path,
     env: { ...process.env, ...agentEnv },
-    mcpServers: claudeMcpServers({ shim, socketPath: bridge.socketPath }),
+    mcpServers: { ...claudeMcpServers({ shim, socketPath: bridge.socketPath }), ...external.servers },
+    externalServers: external.serverNames,
+    skillsText: external.skillsText,
     sessionEnv: { [MCP_TOKEN_ENV]: tools.token },
     onEvent: (event) => {
       // Stopping a session mid-line leaves the rest of that line still to arrive.
@@ -60,14 +67,17 @@ export function startChat(
         tools.remove()
       }
       onEvent(chatId, event)
+      if (event.type === 'session') externalTools = (event.tools ?? []).filter((tool) => !tool.startsWith(`mcp__${MCP_SERVER_NAME}__`))
       const found = watchLock(event)
       if (found === null) return
       locked = found.length === 0
-      onEvent(chatId, { type: 'lock', locked, found })
+      const mayMoveFunds = externalTools.filter((tool) => looksLikeItMovesFunds(tool.split('__').at(-1) ?? tool))
+      onEvent(chatId, { type: 'lock', locked, found, external: external.labels, mayMoveFunds })
       if (found.length > 0) session.kill(`Ink stopped this chat because the agent showed ${found.join(', ')}.`)
     },
   })
   chats.set(chatId, session)
+  if (external.skipped.length > 0) onEvent(chatId, { type: 'external-skipped', names: external.skipped })
   return chatId
 }
 

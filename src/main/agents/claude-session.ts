@@ -27,6 +27,10 @@ export interface ClaudeSessionOptions {
   /** Variables for this session alone, set after env has been filtered. */
   sessionEnv?: Record<string, string>
   pluginDir?: string | null
+  /** External MCP servers in mcpServers, by name, which the session may call. */
+  externalServers?: readonly string[]
+  /** Text of enabled skills, added to the session's system prompt. */
+  skillsText?: string | null
   onEvent: (event: ChatEvent) => void
   /** How long a turn gets to stop before the whole session is ended. */
   stopTurnGraceMs?: number
@@ -46,13 +50,26 @@ const MAX_STDERR_CHARS = 4 * 1024
  * with the session, so it picks up no project and leaves none of Ink's files.
  */
 export function startClaudeSession(options: ClaudeSessionOptions): ChatSession {
-  const { binary, env, mcpServers, sessionEnv, pluginDir = null, onEvent, stopTurnGraceMs = 5000, closeGraceMs = 500 } = options
+  const {
+    binary,
+    env,
+    mcpServers,
+    sessionEnv,
+    pluginDir = null,
+    externalServers = [],
+    skillsText = null,
+    onEvent,
+    stopTurnGraceMs = 5000,
+    closeGraceMs = 500,
+  } = options
 
   const dir = mkdtempSync(join(tmpdir(), 'ink-chat-'))
   const mcpConfig = join(dir, 'mcp.json')
   writeFileSync(mcpConfig, JSON.stringify({ mcpServers }), { mode: 0o600 })
+  const skillsFile = skillsText === null ? null : join(dir, 'skills.md')
+  if (skillsFile !== null) writeFileSync(skillsFile, skillsText ?? '', { mode: 0o600 })
 
-  const child = spawn(binary, claudeArgs({ mcpConfig, pluginDir }), {
+  const child = spawn(binary, claudeArgs({ mcpConfig, pluginDir, externalServers, skillsFile }), {
     cwd: dir,
     env: { ...claudeEnv(env), ...sessionEnv },
     stdio: ['pipe', 'pipe', 'pipe'],

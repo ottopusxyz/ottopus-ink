@@ -30,6 +30,10 @@ export interface Chat {
   phase: ChatPhase
   /** Unchecked until the agent reports its tools, which it does only after the first message. */
   lock: 'unchecked' | 'locked' | 'unlocked'
+  /** What the person turned on for this chat beyond Ink's own tools, by name. */
+  external: string[]
+  /** Tools already pointed out as maybe moving funds, so each is mentioned once. */
+  warnedTools: string[]
   items: ChatItem[]
   /** The newest plan, which outlives its row being dropped from a long chat. */
   plan: ChatPlan | null
@@ -69,6 +73,8 @@ export function newChat(id: string, agent: AgentId, text: string): Chat {
     sessionId: null,
     phase: 'starting',
     lock: 'unchecked',
+    external: [],
+    warnedTools: [],
     items: [],
     plan: null,
     trimmed: false,
@@ -112,7 +118,20 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
     case 'subagent':
       return chat
     case 'lock':
-      if (event.locked) return { ...chat, lock: chat.lock === 'unlocked' ? 'unlocked' : 'locked' }
+      if (event.locked) {
+        const known = { ...chat, lock: chat.lock === 'unlocked' ? ('unlocked' as const) : ('locked' as const), external: event.external }
+        const fresh = event.mayMoveFunds.filter((tool) => !chat.warnedTools.includes(tool))
+        if (fresh.length === 0) return known
+        return {
+          ...withItem(known, {
+            kind: 'notice',
+            severity: 'info',
+            title: 'A tool you turned on may be able to move funds',
+            text: `Its name suggests so: ${fresh.join(', ')}. Anything it does happens outside Ink's review.`,
+          }),
+          warnedTools: [...chat.warnedTools, ...fresh],
+        }
+      }
       return {
         ...withItem(
           // What this agent proposed can't be left standing as if it were still good.
@@ -121,12 +140,19 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
             kind: 'notice',
             severity: 'block',
             title: 'Ink stopped this chat',
-            text: `The agent showed ${event.found.join(', ')}. Ink chats may only use Ottopus tools.${chat.plan ? ' Its plan was removed.' : ''}`,
+            text: `The agent showed ${event.found.join(', ')}. Ink chats may only use Ottopus tools and what you turned on.${chat.plan ? ' Its plan was removed.' : ''}`,
           },
         ),
         plan: null,
         lock: 'unlocked',
       }
+    case 'external-skipped':
+      return withItem(chat, {
+        kind: 'notice',
+        severity: 'info',
+        title: "Some of what you turned on isn't in this chat",
+        text: `Ink couldn't load ${event.names.join(', ')}.`,
+      })
     case 'text': {
       const last = chat.items.at(-1)
       if (last?.kind !== 'agent') return withItem(chat, { kind: 'agent', text: clipped(event.text, MAX_REPLY_CHARS) })
@@ -171,12 +197,28 @@ export function isWorking({ phase }: Pick<Chat, 'phase'>): boolean {
   return phase === 'starting' || phase === 'answering' || phase === 'stopping'
 }
 
+/** "1 external tool", "2 external tools". */
+export function externalCount(count: number): string {
+  return `${count} external ${count === 1 ? 'tool' : 'tools'}`
+}
+
 /** What the status area says about a chat's lock, and how much it should worry anyone. */
-export function lockStatus({ lock, phase }: Pick<Chat, 'lock' | 'phase'>): { text: string; hint: string; tone: 'ok' | 'plan' | 'block' | 'neutral' } {
+export function lockStatus({ lock, phase, external = [] }: Pick<Chat, 'lock' | 'phase'> & Partial<Pick<Chat, 'external'>>): {
+  text: string
+  hint: string
+  tone: 'ok' | 'plan' | 'block' | 'neutral'
+} {
   if (lock === 'unlocked') {
-    return { text: 'Not locked, chat stopped', hint: 'The agent showed more than Ottopus tools, so Ink stopped the chat.', tone: 'block' }
+    return { text: 'Not locked, chat stopped', hint: 'The agent showed more than you allowed, so Ink stopped the chat.', tone: 'block' }
   }
   if (phase === 'ended') return { text: 'Chat ended', hint: 'Nothing is running for this chat.', tone: 'neutral' }
+  if (lock === 'locked' && external.length > 0) {
+    return {
+      text: `Ottopus + ${externalCount(external.length)}`,
+      hint: `On its latest report, the agent had only Ottopus tools and what you turned on: ${external.join(', ')}. Those can act outside Ink's review.`,
+      tone: 'plan',
+    }
+  }
   if (lock === 'locked') {
     return { text: 'Locked to Ottopus tools', hint: 'On its latest report, the agent had only Ottopus tools.', tone: 'ok' }
   }

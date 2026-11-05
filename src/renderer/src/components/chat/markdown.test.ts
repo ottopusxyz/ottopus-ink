@@ -216,6 +216,23 @@ describe('Markdown: tables', () => {
     expect(body('- | a |\n  |---|\n  | b | WARNING |')).toContain('WARNING')
   })
 
+  it('catches an extra cell holding only an escaped pipe or backslashes', () => {
+    const pipe = '| a |\n|---|\n| b | \\| |'
+    const slashes = '| a |\n|---|\n| b | \\\\ |'
+    expect(body(pipe)).toBe(`<p>${pipe}</p>`)
+    expect(body(slashes)).toBe(`<p>${slashes}</p>`)
+    expect(body('> | a |\n> |---|\n> | b | \\| |')).toContain('| b | \\| |')
+    expect(body('- | a |\n  |---|\n  | b | \\| |')).toContain('| b | \\| |')
+  })
+
+  it('still draws a table with backslashes and escaped pipes in the cells it keeps', () => {
+    expect(body('| a |\n|---|\n| C:\\Users\\me |')).toContain('<td>C:\\Users\\me</td>')
+    expect(body('| a | b |\n|---|---|\n| c\\\\| d |')).toContain('<td>c\\</td><td>d</td>')
+    expect(body('| a |\n|---|\n| b\\\\\\| c |')).toContain('<td>b\\| c</td>')
+    expect(body('| a |\n|---|\n| b \\\n| c |')).toContain('<td>b \\</td></tr><tr><td>c</td>')
+    expect(body('| a \\| b | c |\n|---|---|\n| d | e |')).toContain('<th>a | b</th>')
+  })
+
   it('keeps every other row of a table with one row too wide in its source', () => {
     const shown = body('| a |\n|---|\n| b |\n| c | WARNING |\n| d |')
     expect(shown).not.toContain('<table>')

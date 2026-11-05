@@ -122,13 +122,19 @@ function block(token: MarkedToken, key: number, depth: number): ReactNode {
 
 /**
  * The parser drops a row's cells past its header's width, which would hide them,
- * so this compares what it kept with the source, leaving out the separators.
+ * so this compares what it kept with the source, leaving out the separators. A
+ * pipe after an even number of backslashes separates cells, and one after an odd
+ * number is text, which the parser keeps without its last backslash.
  */
 function keptEveryCell({ raw, header, rows }: Tokens.Table): boolean {
-  const squeezed = (text: string) => text.replace(/[\s|\\]/g, '')
+  const squeezed = (text: string) => text.replace(/\s/g, '')
   const [head = '', , ...body] = raw.split('\n')
+  const source = [head, ...body]
+    .join('\n')
+    .replace(/(?<!\\)((?:\\\\)*)\|/g, '$1')
+    .replace(/\\\|/g, '|')
   const kept = [header, ...rows].flat().map((cell) => cell.text)
-  return squeezed([head, ...body].join('')) === squeezed(kept.join(''))
+  return squeezed(source) === squeezed(kept.join(''))
 }
 
 function cells(row: Tokens.TableCell[], Cell: 'th' | 'td', depth: number): ReactNode {

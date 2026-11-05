@@ -32,6 +32,14 @@ app.enableSandbox()
 const primary = app.requestSingleInstanceLock()
 if (!primary) app.quit()
 
+/** Moves on when a page goes away, so a chat it asked for that's still starting is refused. */
+let pageGeneration = 0
+
+function endPageChats(): void {
+  pageGeneration++
+  killChats()
+}
+
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
@@ -52,9 +60,9 @@ function createMainWindow(): BrowserWindow {
   // A page that goes away takes what it knows about its chats with it, leaving
   // nothing that could ever close them.
   win.webContents.on('did-start-navigation', ({ isMainFrame, isSameDocument }) => {
-    if (isMainFrame && !isSameDocument) killChats()
+    if (isMainFrame && !isSameDocument) endPageChats()
   })
-  win.on('closed', killChats)
+  win.on('closed', endPageChats)
 
   // The renderer never opens windows or navigates away. Links go to the OS
   // browser, and only https ones.
@@ -119,11 +127,15 @@ function registerIpc(): void {
 
   ipcMain.handle(IPC.startChat, async (event, agent: unknown): Promise<string> => {
     assertAppFrame(event)
+    const askedIn = pageGeneration
     agents ??= agentEnv().then(detectAgents)
     const status = (await agents).find(({ id }) => id === agent)
     if (!status) throw new Error('Unknown agent')
     const tools = { bridge: await getMcpBridge(), shim: join(import.meta.dirname, 'shim.js') }
-    return startChat(status, await agentEnv(), tools, (chatId, chatEvent) => sendToWindows(IPC.chatEvent, chatId, chatEvent))
+    const env = await agentEnv()
+    // Nothing is left to show or close a chat for a page that went away during those waits.
+    if (askedIn !== pageGeneration) throw new Error('The page that asked for this chat has gone')
+    return startChat(status, env, tools, (chatId, chatEvent) => sendToWindows(IPC.chatEvent, chatId, chatEvent))
   })
 
   ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {

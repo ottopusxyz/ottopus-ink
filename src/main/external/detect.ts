@@ -22,7 +22,7 @@ const MAX_SKILL_CHARS = 64 * 1024
 const NEEDS_SHELL = 'Needs a shell, which an Ink chat does not have'
 const ASKS_FOR_SECRETS = "Asks for Ink's token or your agent's sign-in"
 const NEEDS_SETUP = 'Needs setup Ink cannot fill in'
-const VARIABLE_CHOOSES = 'Uses a variable to choose what it runs or connects to, which could change after you agree'
+const VARIABLE_CHOOSES = 'Uses a variable that can choose what it runs or connects to, so agreeing would not settle what runs'
 const NOTHING_TO_LOAD = 'Has nothing Ink can load: only hooks, commands or skills that need a shell'
 
 function isFields(value: unknown): value is Fields {

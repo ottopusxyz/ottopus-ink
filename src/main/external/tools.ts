@@ -136,18 +136,30 @@ function addedEntry({ id, name, server }: Saved['added'][number]): CatalogEntry 
     unavailable: asksForSecrets(server)
       ? "Asks for Ink's token or your agent's sign-in"
       : letsVariableChooseWhatRuns(server)
-        ? 'Uses a variable to choose what it runs or connects to, which could change after you agree'
+        ? 'Uses a variable that can choose what it runs or connects to, so agreeing would not settle what runs'
         : null,
   }
 }
 
-/** What would run, in full, for the native dialog. Never goes to the page. */
+/**
+ * What would run, in full, for the native dialog. Never goes to the page. Names of
+ * env variables and headers are listed too, since they're part of what's agreed to,
+ * but not their values, which are often keys and would be left on screen. PATH is
+ * the exception: it chooses the program, and it isn't secret.
+ */
 function describeRun(entry: CatalogEntry): string {
-  const lines = Object.entries(entry.servers).map(([name, server]) =>
-    server.transport === 'stdio'
-      ? `${name}: runs ${[server.command, ...server.args].join(' ')}`
-      : `${name}: connects to ${server.url}`,
-  )
+  const lines = Object.entries(entry.servers).flatMap(([name, server]) => {
+    if (server.transport !== 'stdio') {
+      const headers = Object.keys(server.headers)
+      return [`${name}: connects to ${server.url}`, ...(headers.length > 0 ? [`  Headers: ${headers.join(', ')}`] : [])]
+    }
+    const envNames = [...Object.keys(server.env), ...server.envNames]
+    return [
+      `${name}: runs ${[server.command, ...server.args].join(' ')}`,
+      ...(server.env.PATH ? [`  PATH=${server.env.PATH}`] : []),
+      ...(envNames.length > 0 ? [`  Environment variables: ${envNames.join(', ')}`] : []),
+    ]
+  })
   if (entry.skills.length > 0) lines.push(`Instructions for the agent: ${entry.skills.map((skill) => skill.name).join(', ')}`)
   return lines.join('\n')
 }

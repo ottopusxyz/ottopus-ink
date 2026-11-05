@@ -77,24 +77,27 @@ export function asksForSecrets(server: ServerDef): boolean {
   return server.transport === 'stdio' && server.envNames.some((name) => SECRETS.has(name))
 }
 
-/**
- * Variables that decide what a program runs or loads. A fingerprint can't watch a
- * value that lives in the shell, so these may not be filled in from there. This list
- * can't be complete, which is why a variable may never choose the command or address.
- */
-const CHOOSES_WHAT_RUNS = /^(?:PATH|NODE_OPTIONS|NODE_PATH|LD_[A-Z_]+|DYLD_[A-Z_]+|PYTHON(?:PATH|HOME|STARTUP)|RUBY(?:OPT|LIB)|PERL5(?:OPT|LIB)|BASH_ENV|ENV|JAVA_TOOL_OPTIONS|CLASSPATH)$/
+/** Variables that make a program load other code. Nobody reading a dialog could judge a value for one. */
+const LOADS_CODE = /^(?:NODE_OPTIONS|NODE_PATH|LD_[A-Z_]+|DYLD_[A-Z_]+|PYTHON(?:PATH|HOME|STARTUP)|RUBY(?:OPT|LIB)|PERL5(?:OPT|LIB)|BASH_ENV|ENV|JAVA_TOOL_OPTIONS|CLASSPATH)$/
+
+/** Also decides which program runs, but is too common to refuse. The dialog shows its value instead. */
+const CHOOSES_WHAT_RUNS = (name: string) => name === 'PATH' || LOADS_CODE.test(name)
 
 /**
- * Whether a shell variable could change what runs or who gets the data after someone
- * agreed. What's written in the config is in the fingerprint; what a `${NAME}` holds
- * isn't, so a `${NAME}` is only for what a key is for: env values and headers.
+ * Whether a variable could change what runs or who gets the data in a way the person
+ * can't judge. What a config says is in the fingerprint, but what a `${NAME}` holds
+ * isn't, so a `${NAME}` is only for what a key is for: env values and headers. These
+ * lists can't be complete, which is why a variable may never set the command or address.
  */
 export function letsVariableChooseWhatRuns(server: ServerDef): boolean {
   if (server.transport !== 'stdio') return referencesIn(server.url).length > 0
   if ([server.command, ...server.args].flatMap(referencesIn).length > 0) return true
-  if (server.envNames.some((name) => CHOOSES_WHAT_RUNS.test(name))) return true
+  if (server.envNames.some(CHOOSES_WHAT_RUNS)) return true
   const { env } = server
-  return Object.keys(env).some((name) => CHOOSES_WHAT_RUNS.test(name) && referencesIn(env[name] ?? '').length > 0)
+  return Object.keys(env).some((name) => {
+    const value = env[name] ?? ''
+    return (LOADS_CODE.test(name) && value !== '') || (CHOOSES_WHAT_RUNS(name) && referencesIn(value).length > 0)
+  })
 }
 
 /**

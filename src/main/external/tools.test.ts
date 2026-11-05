@@ -79,6 +79,26 @@ describe('turning something on', () => {
     expect(question?.detail).toContain('runs as you')
   })
 
+  it('names env variables and headers in the dialog, and shows PATH, but no other value', async () => {
+    const confirm = vi.fn(yes)
+    const def: ServerDef = { ...server(), env: { PATH: '/opt/odd/bin', API_KEY: 'env-secret' }, envNames: ['MY_KEY'] }
+    await setup(() => [detected('one', def)]).setEnabled(idOf, true, confirm)
+    const detail = confirm.mock.calls[0]?.[0].detail ?? ''
+    expect(detail).toContain('PATH=/opt/odd/bin')
+    expect(detail).toContain('API_KEY')
+    expect(detail).toContain('MY_KEY')
+    expect(detail).not.toContain('env-secret')
+  })
+
+  it('names the headers of a web server in the dialog, but not their values', async () => {
+    const confirm = vi.fn(yes)
+    const def: ServerDef = { transport: 'http', url: 'https://example.test/', headers: { Authorization: 'header-secret' } }
+    await setup(() => [detected('one', def)]).setEnabled(idOf, true, confirm)
+    const detail = confirm.mock.calls[0]?.[0].detail ?? ''
+    expect(detail).toContain('Headers: Authorization')
+    expect(detail).not.toContain('header-secret')
+  })
+
   it('warns harder if its name suggests it moves funds, and flags that in the list', async () => {
     const confirm = vi.fn(yes)
     const tools = setup(() => [detected('wallet-send')])

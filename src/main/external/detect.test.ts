@@ -98,8 +98,18 @@ describe('Claude Code servers', () => {
     expect((await detect())[0]?.unavailable).toMatch(/choose what it runs/)
   })
 
-  it('allows a plain value for those, which the fingerprint watches', async () => {
-    claudeServers({ fine: { command: '/usr/bin/node', args: ['/bin/app.js'], env: { NODE_OPTIONS: '--max-old-space-size=512' } } })
+  it.each([
+    ['LD_PRELOAD', '/tmp/evil.so'],
+    ['NODE_OPTIONS', '--require=/tmp/x.js'],
+    ['DYLD_INSERT_LIBRARIES', '/tmp/evil.dylib'],
+    ['PYTHONPATH', '/tmp/evil'],
+  ])('marks a server unavailable if it sets %s, even to a plain value', async (name, value) => {
+    claudeServers({ loader: { command: '/usr/bin/node', args: ['/bin/app.js'], env: { [name]: value } } })
+    expect((await detect())[0]?.unavailable).toMatch(/choose what it runs/)
+  })
+
+  it('allows PATH as a plain value, which the dialog shows, and a blank loader variable', async () => {
+    claudeServers({ fine: { command: 'tool', env: { PATH: '/usr/local/bin:/usr/bin', NODE_OPTIONS: '' } } })
     expect((await detect())[0]?.unavailable).toBeNull()
   })
 

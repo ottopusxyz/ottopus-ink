@@ -48,6 +48,11 @@ Ported from [ottopusxyz/ottopus](https://github.com/ottopusxyz/ottopus) (MIT, bu
 - Otto and his badge in `src/renderer/src/components/brand`
 - the bubbles, sea life and stillness in `src/renderer/src/components/motion` (everything there except `sea.tsx`)
 
+Copied from [BoardUI](https://github.com/BoardUI/boardui) 0.5.9 (MIT, Copyright (c) 2026 Mertcan Dundar Esmergul (BoardUI)):
+
+- Agent Thinking and Composer Loader in `src/renderer/src/vendor/boardui`, with their licence and the changes made
+- the keyframes and label shimmer in `src/renderer/src/styles/boardui-bridge.css`, which carries them over onto our tokens
+
 Everything else here is new.
 
 ## Licence

@@ -4,6 +4,9 @@ import { PANE_LIFE, Sea } from '@/components/motion/sea'
 import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
 import type { Chat, ChatItem } from '@/lib/chats'
+import { cn } from '@/lib/cn'
+import { AgentThinking } from '@/vendor/boardui/agent-thinking'
+import { ComposerLoader } from '@/vendor/boardui/composer-loader'
 import { AgentMark } from './agent-picker'
 import { Composer } from './composer'
 import { PlanCard } from './plan-card'
@@ -26,6 +29,9 @@ const WORKING: Partial<Record<Chat['phase'], string>> = {
   answering: 'Working…',
   stopping: 'Stopping…',
 }
+
+/** The water's blue into Otto's coral: brand colours, because the state colours mean something. */
+const COMPOSER_LIGHT: [string, string, string, string] = ['var(--ot-plan-border)', 'var(--ot-plan)', 'var(--ot-coral)', 'var(--ot-plan)']
 
 /**
  * One chat: the conversation on the left and the live plan on the right, over
@@ -90,25 +96,29 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
           {chat.items.map((item) => (
             <ConversationItem key={item.id} item={item} />
           ))}
-          {working ? (
-            <p role="status" className="m-0 text-[13px] text-[var(--ot-text-3)]">
-              {working}
-            </p>
-          ) : null}
+          {working ? <AgentThinking className="ink-thinking" variant="infinity" label={working} showTimer={false} /> : null}
         </div>
 
-        <Composer
-          compact
-          textareaRef={composer}
-          value={draft}
-          onChange={onDraft}
-          onSubmit={onSubmit}
-          onStop={running ? onStop : undefined}
-          stopping={chat.phase === 'stopping'}
-          canSend={chat.phase === 'ready'}
-          disabled={chat.phase === 'ended'}
-          placeholder={chat.phase === 'ended' ? 'This chat has ended. Start a new one to keep going.' : 'Reply to your agent'}
-        />
+        <ComposerLoader
+          className={cn('ink-composer-light', !working && 'ink-composer-light--off')}
+          active={working !== undefined}
+          colors={COMPOSER_LIGHT}
+          radius={18}
+          surface={false}
+        >
+          <Composer
+            compact
+            textareaRef={composer}
+            value={draft}
+            onChange={onDraft}
+            onSubmit={onSubmit}
+            onStop={running ? onStop : undefined}
+            stopping={chat.phase === 'stopping'}
+            canSend={chat.phase === 'ready'}
+            disabled={chat.phase === 'ended'}
+            placeholder={chat.phase === 'ended' ? 'This chat has ended. Start a new one to keep going.' : 'Reply to your agent'}
+          />
+        </ComposerLoader>
       </main>
 
       <aside className="ink-plan-pane" aria-label="Live plan">

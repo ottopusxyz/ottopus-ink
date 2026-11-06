@@ -24,6 +24,7 @@ export function ToolsTab({ onChange }: ToolsTabProps) {
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [signingIn, setSigningIn] = useState<string | null>(null)
 
   const accept = (next: ExternalItem[]) => {
     setItems(next)
@@ -61,6 +62,12 @@ export function ToolsTab({ onChange }: ToolsTabProps) {
       current = false
     }
   }, [onChange])
+
+  const signIn = async (id: string) => {
+    setSigningIn(id)
+    await request(() => window.ink.signInExternal(id))
+    setSigningIn(null)
+  }
 
   const groups = useMemo(() => groupExternal(filterExternal(items ?? [], query)), [items, query])
 
@@ -111,6 +118,10 @@ export function ToolsTab({ onChange }: ToolsTabProps) {
                     key={item.id}
                     item={item}
                     busy={busy}
+                    signingIn={signingIn === item.id}
+                    onSignIn={() => void signIn(item.id)}
+                    onCancelSignIn={() => void window.ink.cancelExternalSignIn()}
+                    onSignOut={() => void request(() => window.ink.signOutExternal(item.id))}
                     onToggle={() => void request(() => window.ink.setExternalEnabled(item.id, !item.enabled))}
                     onRemove={() => void request(() => window.ink.removeExternalServer(item.id))}
                   />
@@ -176,11 +187,19 @@ function FormField({
 function ExternalRow({
   item,
   busy,
+  signingIn,
+  onSignIn,
+  onCancelSignIn,
+  onSignOut,
   onToggle,
   onRemove,
 }: {
   item: ExternalItem
   busy: boolean
+  signingIn: boolean
+  onSignIn: () => void
+  onCancelSignIn: () => void
+  onSignOut: () => void
   onToggle: () => void
   onRemove: () => void
 }) {
@@ -202,6 +221,24 @@ function ExternalRow({
         ) : null}
         {item.unavailable ? <span className="mt-1 block text-[12.5px] leading-[1.45] text-[var(--ot-warn-text)]">{item.unavailable}</span> : null}
       </span>
+      {signingIn ? (
+        <>
+          <span className="self-center text-[12.5px] text-[var(--ot-text-2)]" role="status">
+            Waiting for your browser…
+          </span>
+          <Button size="sm" onClick={onCancelSignIn}>
+            Cancel
+          </Button>
+        </>
+      ) : item.needsSignIn ? (
+        <Button size="sm" disabled={busy} onClick={onSignIn} aria-label={`Sign in to ${item.name}`}>
+          Sign in
+        </Button>
+      ) : item.signedIn ? (
+        <Button size="sm" disabled={busy} onClick={onSignOut} aria-label={`Sign out of ${item.name}`}>
+          Sign out
+        </Button>
+      ) : null}
       {item.source === 'added' ? (
         <Button size="sm" disabled={busy} onClick={onRemove} aria-label={`Remove ${item.name}`}>
           Remove

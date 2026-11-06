@@ -8,14 +8,10 @@ const SOURCE_TITLES: Record<ExternalSource, string> = {
   added: 'Added by you',
 }
 
-/**
- * What to do about tools waiting for sign-in. Claude Code is the only agent with chats
- * so far. Its saved sign-ins go by name and address, so one made under another name,
- * as a plugin's is, or in another agent doesn't count.
- */
+/** What to do about tools waiting for sign-in. */
 export function signInHint(names: readonly string[]): string {
   const who = names.join(', ')
-  return `${who} ${names.length === 1 ? 'needs' : 'need'} sign-in, so chats don't get ${names.length === 1 ? 'its' : 'their'} tools. In Claude Code, run /mcp and sign in, using this same name and address, then start a new chat.`
+  return `${who} ${names.length === 1 ? 'needs' : 'need'} sign-in, so chats don't get ${names.length === 1 ? 'its' : 'their'} tools. Sign in under Settings, Tools and skills, then start a new chat.`
 }
 
 export interface ExternalGroup {

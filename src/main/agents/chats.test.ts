@@ -145,6 +145,7 @@ describe('a chat with external tools', () => {
     skipped: ['broken'],
     labels: ['other'],
     owners: new Map([['other', { id: 'other-id', name: 'other' }]]),
+    needsSignIn: [],
   }
   const withTools = (tools_: string[], needsSignIn: string[] = []): ChatEvent => ({
     type: 'session',

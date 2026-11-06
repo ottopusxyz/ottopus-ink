@@ -1,5 +1,6 @@
 import { MCP_SERVER_NAME } from '../mcp/protocol'
 import { expandableValues, referencesIn, SECRET_ENV_NAMES, type CatalogEntry, type ServerDef } from './catalog'
+import type { ServerAccess } from './sign-ins'
 
 /** What a new chat gets beyond Ink's own tools. */
 export interface SessionExternal {
@@ -15,9 +16,11 @@ export interface SessionExternal {
   labels: string[]
   /** Which enabled item each server name came from. */
   owners: ReadonlyMap<string, { id: string; name: string }>
+  /** Enabled items kept out of this chat because a server of theirs needs a sign-in. */
+  needsSignIn: { id: string; name: string }[]
 }
 
-export const NO_EXTERNAL: SessionExternal = { servers: {}, serverNames: [], skillsText: null, skipped: [], labels: [], owners: new Map() }
+export const NO_EXTERNAL: SessionExternal = { servers: {}, serverNames: [], skillsText: null, skipped: [], labels: [], owners: new Map(), needsSignIn: [] }
 
 /** The enabled items behind servers a session says are waiting for sign-in. Names the session made up are left out. */
 export function itemsNeedingSignIn({ owners }: SessionExternal, serverNames: readonly string[]): { id: string; name: string }[] {
@@ -62,7 +65,7 @@ const fillIn = (value: string, env: Record<string, string>) =>
  * from its own environment. A value that still has one after that came from outside
  * and would be expanded, so the server is refused.
  */
-function configFor(server: ServerDef, env: Record<string, string>): Record<string, unknown> | null {
+function configFor(server: ServerDef, env: Record<string, string>, token: string | null): Record<string, unknown> | null {
   const fill = (value: string) => fillIn(value, env)
   const fillMap = (map: Record<string, string>) => Object.fromEntries(Object.entries(map).map(([key, value]) => [key, fill(value)]))
   const entry: Record<string, unknown> =
@@ -77,34 +80,52 @@ function configFor(server: ServerDef, env: Record<string, string>): Record<strin
             ...BLANKED,
           },
         }
-      : { type: server.transport, url: fill(server.url), headers: fillMap(server.headers) }
+      : { type: server.transport, url: fill(server.url), headers: { ...fillMap(server.headers), ...(token ? { Authorization: `Bearer ${token}` } : {}) } }
   return JSON.stringify(entry).includes('${') ? null : entry
 }
 
 /**
  * Builds what a new chat gets from what's enabled. readEnv fetches the named
  * variables from the person's shell, and only those: nothing else from a shell
- * enters the app.
+ * enters the app. accessFor says what each remote server needs.
+ *
+ * A server that needs a sign-in stays out of the session rather than letting the agent
+ * find out. Claude Code remembers `needs-auth` by server name for a while, and goes on
+ * reporting it even when given a good token, so asking it would make signing in look
+ * like it hadn't worked. For the same reason, a server with Ink's token gets a name of
+ * its own: the person's own Claude Code may have a `needs-auth` on record for the plain one.
  */
 export async function buildSessionExternal(
   entries: readonly CatalogEntry[],
   readEnv: (names: string[]) => Promise<Record<string, string>>,
+  accessFor: (server: ServerDef) => Promise<ServerAccess> = async () => ({ kind: 'open' }),
 ): Promise<SessionExternal> {
   const needed = entries.flatMap((entry) => Object.values(entry.servers).flatMap(namesNeeded))
   const env = needed.length > 0 ? await readEnv([...new Set(needed)]) : {}
+  const allServers = entries.flatMap((entry) => Object.values(entry.servers))
+  const access = new Map(await Promise.all(allServers.map(async (server) => [server, await accessFor(server)] as const)))
+  const tokenOf = (server: ServerDef) => {
+    const found = access.get(server)
+    return found?.kind === 'token' ? found.token : null
+  }
 
   const servers: Record<string, unknown> = {}
   const taken = new Set<string>()
   const skipped: string[] = []
   const labels: string[] = []
   const owners = new Map<string, { id: string; name: string }>()
+  const needsSignIn: { id: string; name: string }[] = []
   const skills: string[] = []
   let skillChars = 0
 
   for (const entry of entries) {
     // All of an item or none of it: part of a plugin the person was told didn't load
     // would still run, and the lock check would allow it.
-    const configs = Object.entries(entry.servers).map(([name, server]) => [name, configFor(server, env)] as const)
+    if (Object.values(entry.servers).some((server) => access.get(server)?.kind === 'needs-sign-in')) {
+      needsSignIn.push({ id: entry.id, name: entry.name })
+      continue
+    }
+    const configs = Object.entries(entry.servers).map(([name, server]) => [tokenOf(server) ? `${name}-ink` : name, configFor(server, env, tokenOf(server))] as const)
     const entryChars = entry.skills.reduce((total, skill) => total + skill.text.length, 0)
     if (configs.some(([, config]) => config === null) || skillChars + entryChars > MAX_SKILLS_CHARS) {
       skipped.push(entry.name)
@@ -131,5 +152,6 @@ export async function buildSessionExternal(
     skipped,
     labels,
     owners,
+    needsSignIn,
   }
 }

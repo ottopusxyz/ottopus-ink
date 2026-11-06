@@ -111,6 +111,43 @@ describe('which item a waiting server belongs to', () => {
   })
 })
 
+describe('a server that needs a sign-in', () => {
+  const remote: ServerDef = { transport: 'http', url: 'https://near.test/mcp', headers: {} }
+
+  it('stays out of the session, with everything else of its item', async () => {
+    const plugin = entry('both', { tools: remote, local: stdio() }, { kind: 'plugin', skills: [{ name: 's', text: 'skill text' }] })
+    const result = await buildSessionExternal([plugin], async () => ({}), async () => ({ kind: 'needs-sign-in' }))
+    expect(result).toMatchObject({ servers: {}, serverNames: [], skillsText: null, labels: [], skipped: [] })
+    expect(result.needsSignIn).toEqual([{ id: 'both', name: 'both' }])
+  })
+
+  it('still loads what else was enabled', async () => {
+    const result = await buildSessionExternal(
+      [entry('waits', { waits: remote }), entry('good', { good: stdio() })],
+      async () => ({}),
+      async (server) => (server === remote ? { kind: 'needs-sign-in' } : { kind: 'open' }),
+    )
+    expect(result).toMatchObject({ serverNames: ['good'], labels: ['good'] })
+  })
+
+  it('gets its token as a header, under a name Claude Code has nothing remembered for', async () => {
+    const result = await buildSessionExternal([entry('near-tools', { 'near-tools': remote })], async () => ({}), async () => ({ kind: 'token', token: 'abc' }))
+    expect(result.serverNames).toEqual(['near-tools-ink'])
+    expect(result.servers['near-tools-ink']).toEqual({ type: 'http', url: 'https://near.test/mcp', headers: { Authorization: 'Bearer abc' } })
+    expect(result.labels).toEqual(['near-tools'])
+  })
+
+  it('keeps its plain name when it needs no sign-in', async () => {
+    const result = await buildSessionExternal([entry('near-tools', { 'near-tools': remote })], async () => ({}))
+    expect(result.serverNames).toEqual(['near-tools'])
+  })
+
+  it('refuses a token the CLI would try to expand', async () => {
+    const result = await buildSessionExternal([entry('one', { one: remote })], async () => ({}), async () => ({ kind: 'token', token: '${OTTOPUS_INK_TOKEN}' }))
+    expect(result).toMatchObject({ serverNames: [], skipped: ['one'] })
+  })
+})
+
 describe('skills', () => {
   const skill = (name: string, text: string) => entry(name, {}, { kind: 'skill', skills: [{ name, text }] })
 

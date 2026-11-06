@@ -14,6 +14,9 @@ export const IPC = {
   addExternalServer: 'external:add',
   removeExternalServer: 'external:remove',
   setExternalEnabled: 'external:set-enabled',
+  signInExternal: 'external:sign-in',
+  cancelExternalSignIn: 'external:cancel-sign-in',
+  signOutExternal: 'external:sign-out',
   /** Main to renderer: what happened in a chat. */
   chatEvent: 'chat:event',
   /** Main to renderer: the signer's status, sent on every change. */
@@ -101,8 +104,10 @@ export interface ExternalItem {
   changed: boolean
   /** Its name suggests it can send, sign or trade. Only a hint. */
   mayMoveFunds: boolean
-  /** The latest chat that had it found a server waiting for sign-in. Unknown until a chat has tried. */
+  /** A server of its turned the app away for want of a sign-in, when last asked. Unknown until then. */
   needsSignIn: boolean
+  /** Ink holds a sign-in for it. The token itself stays in the main process. */
+  signedIn: boolean
 }
 
 /** A server someone is adding by hand: a command, or a URL. Keys go in env vars, by name. */
@@ -166,6 +171,11 @@ export interface InkBridge {
   removeExternalServer(id: string): Promise<ExternalItem[]>
   /** Turning one on asks the person in a native dialog, so a page can't do it alone. */
   setExternalEnabled(id: string, enabled: boolean): Promise<ExternalItem[]>
+  /** Asks in a native dialog, then waits for the person in their browser, for as long as that takes. */
+  signInExternal(id: string): Promise<ExternalItem[]>
+  /** Gives up on a sign-in that's waiting. */
+  cancelExternalSignIn(): Promise<void>
+  signOutExternal(id: string): Promise<ExternalItem[]>
   /** Calls listener on everything that happens in any chat; returns an unsubscribe. */
   onChatEvent(listener: (chatId: string, event: ChatEvent) => void): () => void
   /** Calls listener on every signer status change; returns an unsubscribe. */

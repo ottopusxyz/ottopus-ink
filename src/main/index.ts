@@ -1,13 +1,14 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
 import { detectAgents } from './agents/detect'
 import { agentEnv, readNamedShellEnv } from './agents/login-env'
 import { run, stopRuns } from './agents/run'
 import { detectEntries } from './external/detect'
+import { createSignIns } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
 import { appMenuTemplate } from './menu'
@@ -118,6 +119,17 @@ function getExternalTools(): ExternalTools {
     // Nothing ships yet. Issue #11 chooses what does.
     bundled: [],
     readEnv: readNamedShellEnv,
+    signIns: createSignIns({
+      file: join(app.getPath('userData'), 'external-sign-ins.bin'),
+      box: {
+        // Without a keyring, Linux "encrypts" with a key anyone can look up.
+        canKeep: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
+        seal: (text) => safeStorage.encryptString(text),
+        open: (data) => safeStorage.decryptString(data),
+      },
+      // oauth.ts has checked the address: https, or this computer for a server that's here too.
+      openBrowser: (url) => shell.openExternal(url),
+    }),
     detect: async () => {
       const env = await agentEnv()
       agents ??= agentEnv().then(detectAgents)
@@ -206,6 +218,21 @@ function registerIpc(): void {
   ipcMain.handle(IPC.setExternalEnabled, (event, id: unknown, enabled: unknown) => {
     assertAppFrame(event)
     return getExternalTools().setEnabled(id, enabled, nativeConfirm(event))
+  })
+
+  ipcMain.handle(IPC.signInExternal, (event, id: unknown) => {
+    assertAppFrame(event)
+    return getExternalTools().signIn(id, nativeConfirm(event))
+  })
+
+  ipcMain.handle(IPC.cancelExternalSignIn, (event) => {
+    assertAppFrame(event)
+    getExternalTools().cancelSignIn()
+  })
+
+  ipcMain.handle(IPC.signOutExternal, (event, id: unknown) => {
+    assertAppFrame(event)
+    return getExternalTools().signOut(id)
   })
 
   ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {

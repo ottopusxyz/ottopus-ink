@@ -101,6 +101,8 @@ export interface ExternalItem {
   changed: boolean
   /** Its name suggests it can send, sign or trade. Only a hint. */
   mayMoveFunds: boolean
+  /** The latest chat that had it found a server waiting for sign-in. Unknown until a chat has tried. */
+  needsSignIn: boolean
 }
 
 /** A server someone is adding by hand: a command, or a URL. Keys go in env vars, by name. */
@@ -117,14 +119,16 @@ export type ChatEvent =
   /**
    * The agent's session as it reports it, at the start of each turn. A list is
    * null when the report couldn't be read. Plugins leaves out the agent's built-in ones.
+   * NeedsSignIn names the servers waiting for someone to sign in, which gave it no tools.
    */
-  | { type: 'session'; tools: string[] | null; servers: string[] | null; plugins: string[] | null; model: string | null }
+  | { type: 'session'; tools: string[] | null; servers: string[] | null; plugins: string[] | null; needsSignIn: string[]; model: string | null }
   /**
    * Whether a report showed only Ink's tools and what the person enabled. If not,
    * found says what else, and the chat is being stopped. External names what they
-   * enabled, and mayMoveFunds any of its tools whose names suggest they send or sign.
+   * enabled that's working, needsSignIn what they enabled that's waiting for sign-in,
+   * and mayMoveFunds any of its tools whose names suggest they send or sign.
    */
-  | { type: 'lock'; locked: boolean; found: string[]; external: string[]; mayMoveFunds: string[] }
+  | { type: 'lock'; locked: boolean; found: string[]; external: string[]; needsSignIn: string[]; mayMoveFunds: string[] }
   /** External items that were enabled but couldn't be loaded into this chat. */
   | { type: 'external-skipped'; names: string[] }
   /** The next piece of the reply. */

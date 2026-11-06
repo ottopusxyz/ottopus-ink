@@ -134,6 +134,42 @@ describe('turning something on', () => {
   })
 })
 
+describe('whether an item is waiting for sign-in', () => {
+  const itemOf = async (tools: ReturnType<typeof setup>) => (await tools.list())[0]
+
+  it('is unknown, so not shown, until a chat has reported it', async () => {
+    const tools = setup(() => [detected('one')])
+    await tools.setEnabled(idOf, true, yes)
+    expect((await itemOf(tools))?.needsSignIn).toBe(false)
+  })
+
+  it('goes by the latest chat that had it', async () => {
+    const tools = setup(() => [detected('one')])
+    await tools.setEnabled(idOf, true, yes)
+    const external = await tools.forNewChat()
+    tools.noteSignIn(external, ['one'])
+    expect((await itemOf(tools))?.needsSignIn).toBe(true)
+    tools.noteSignIn(external, [])
+    expect((await itemOf(tools))?.needsSignIn).toBe(false)
+  })
+
+  it('is not shown once it is turned off', async () => {
+    const tools = setup(() => [detected('one')])
+    await tools.setEnabled(idOf, true, yes)
+    tools.noteSignIn(await tools.forNewChat(), ['one'])
+    await tools.setEnabled(idOf, false, yes)
+    expect((await itemOf(tools))?.needsSignIn).toBe(false)
+  })
+
+  it('leaves alone an item that chat did not have', async () => {
+    const tools = setup(() => [detected('one')])
+    await tools.setEnabled(idOf, true, yes)
+    tools.noteSignIn(await tools.forNewChat(), ['one'])
+    tools.noteSignIn(await setup(() => []).forNewChat(), [])
+    expect((await itemOf(tools))?.needsSignIn).toBe(true)
+  })
+})
+
 describe('what it agreed to', () => {
   it('goes back to off if what would run changes, and says so', async () => {
     let def = server('/bin/tool')

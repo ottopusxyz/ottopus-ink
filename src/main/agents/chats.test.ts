@@ -34,6 +34,7 @@ const report = (extra: string[] = []): ChatEvent => ({
   tools: [inkTool, ...extra],
   servers: ['ottopus-ink'],
   plugins: [],
+  needsSignIn: [],
   model: null,
 })
 
@@ -110,14 +111,14 @@ describe('the lock on a chat', () => {
   it('says a session with only Ink tools is locked, and leaves it running', () => {
     const seen = eventsOf()
     launched?.onEvent(report())
-    expect(seen).toEqual([report(), { type: 'lock', locked: true, found: [], external: [], mayMoveFunds: [] }])
+    expect(seen).toEqual([report(), { type: 'lock', locked: true, found: [], external: [], needsSignIn: [], mayMoveFunds: [] }])
     expect(session.kill).not.toHaveBeenCalled()
   })
 
   it('stops a session with an extra tool and says why', () => {
     const seen = eventsOf()
     launched?.onEvent(report(['Bash']))
-    expect(seen.at(-1)).toEqual({ type: 'lock', locked: false, found: ['the tool Bash'], external: [], mayMoveFunds: [] })
+    expect(seen.at(-1)).toEqual({ type: 'lock', locked: false, found: ['the tool Bash'], external: [], needsSignIn: [], mayMoveFunds: [] })
     expect(session.kill).toHaveBeenCalledExactlyOnceWith('Ink stopped this chat because the agent showed the tool Bash.')
   })
 
@@ -143,12 +144,14 @@ describe('a chat with external tools', () => {
     skillsText: 'skill text',
     skipped: ['broken'],
     labels: ['other'],
+    owners: new Map([['other', { id: 'other-id', name: 'other' }]]),
   }
-  const withTools = (tools_: string[]): ChatEvent => ({
+  const withTools = (tools_: string[], needsSignIn: string[] = []): ChatEvent => ({
     type: 'session',
     tools: [inkTool, ...tools_],
     servers: ['ottopus-ink', 'other'],
     plugins: [],
+    needsSignIn,
     model: null,
   })
 
@@ -169,7 +172,7 @@ describe('a chat with external tools', () => {
     const seen: ChatEvent[] = []
     startChat(ready, env, tools, external, (_id, event) => seen.push(event))
     launched?.onEvent(withTools(['mcp__other__read']))
-    expect(seen.at(-1)).toEqual({ type: 'lock', locked: true, found: [], external: ['other'], mayMoveFunds: [] })
+    expect(seen.at(-1)).toEqual({ type: 'lock', locked: true, found: [], external: ['other'], needsSignIn: [], mayMoveFunds: [] })
     expect(session.kill).not.toHaveBeenCalled()
   })
 
@@ -178,6 +181,29 @@ describe('a chat with external tools', () => {
     startChat(ready, env, tools, external, (_id, event) => seen.push(event))
     launched?.onEvent(withTools(['mcp__other__send_token', 'mcp__other__get_balance']))
     expect(seen.at(-1)).toMatchObject({ mayMoveFunds: ['mcp__other__send_token'] })
+  })
+
+  it('counts a server waiting for sign-in apart from what works, and keeps the chat open', () => {
+    const seen: ChatEvent[] = []
+    startChat(ready, env, tools, external, (_id, event) => seen.push(event))
+    launched?.onEvent(withTools([], ['other']))
+    expect(seen.at(-1)).toMatchObject({ locked: true, external: [], needsSignIn: ['other'] })
+    expect(session.kill).not.toHaveBeenCalled()
+  })
+
+  it('goes by the latest report, so signing in on the way clears it', () => {
+    const seen: ChatEvent[] = []
+    startChat(ready, env, tools, external, (_id, event) => seen.push(event))
+    launched?.onEvent(withTools([], ['other']))
+    launched?.onEvent(withTools(['mcp__other__read']))
+    expect(seen.at(-1)).toMatchObject({ external: ['other'], needsSignIn: [] })
+  })
+
+  it('ignores a claim about a server the person did not enable', () => {
+    const seen: ChatEvent[] = []
+    startChat(ready, env, tools, external, (_id, event) => seen.push(event))
+    launched?.onEvent(withTools([], ['made-up', '__proto__']))
+    expect(seen.at(-1)).toMatchObject({ external: ['other'], needsSignIn: [] })
   })
 
   it('still stops anything else, even with external tools on', () => {

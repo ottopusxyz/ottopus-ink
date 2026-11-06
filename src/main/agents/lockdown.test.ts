@@ -8,6 +8,7 @@ const report = (fields: Partial<Extract<ChatEvent, { type: 'session' }>> = {}): 
   tools: [ours],
   servers: ['ottopus-ink'],
   plugins: [],
+  needsSignIn: [],
   model: null,
   ...fields,
 })

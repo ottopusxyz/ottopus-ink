@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { ExternalItem } from '../../../../shared/ipc'
 import { Badge, Button, Callout, Input } from '@/components/ui'
+import { SignInIcon } from './sign-in-icon'
 import { agentInfo } from '@/lib/agents'
 import { ipcErrorText } from '@/lib/chats'
 import { filterExternal, groupExternal, KIND_LABELS, serverFromForm } from '@/lib/external-tools'
@@ -193,6 +194,7 @@ function ExternalRow({
           {item.origin ? <Badge>{agentInfo(item.origin).name}</Badge> : null}
           {item.mayMoveFunds ? <Badge tone="warn">May move funds</Badge> : null}
           {item.changed ? <Badge tone="warn">Changed, so turned off</Badge> : null}
+          <SignInIcon names={item.needsSignIn ? [item.name] : []} />
         </span>
         {detail ? <span className="selectable mt-1 block text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">{detail}</span> : null}
         {item.description && item.summary ? (

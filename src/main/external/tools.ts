@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { asksForSecrets, fingerprint, letsVariableChooseWhatRuns, looksLikeItMovesFunds, summaryOf, type CatalogEntry, type ServerDef } from './catalog'
-import { buildSessionExternal, type SessionExternal } from './session'
+import { buildSessionExternal, itemsNeedingSignIn, type SessionExternal } from './session'
 import type { ExternalItem, NewExternalServer } from '../../shared/ipc'
 
 /**
@@ -37,6 +37,8 @@ export interface ExternalTools {
   setEnabled(id: unknown, on: unknown, confirm: Confirm): Promise<ExternalItem[]>
   /** What's enabled, read fresh, so a server changed since it was enabled stays out. */
   forNewChat(): Promise<SessionExternal>
+  /** Keeps what a chat's latest report said about sign-in. Only a session can tell, as listing starts nothing. */
+  noteSignIn(external: SessionExternal, serverNames: readonly string[]): void
 }
 
 const NAME = /^[\w .@-]{1,64}$/
@@ -171,6 +173,8 @@ const FUNDS_RISK = 'Its name suggests it may send, sign or trade. Only turn this
 
 export function createExternalTools({ file, bundled, detect, readEnv }: ExternalToolsOptions): ExternalTools {
   let saved = load(file)
+  /** By id, and not kept on disk: a stale answer is worse than none. */
+  const waitingForSignIn = new Set<string>()
 
   const allEntries = async (): Promise<CatalogEntry[]> => [...bundled, ...(await detect()), ...saved.added.map(addedEntry)]
 
@@ -194,6 +198,7 @@ export function createExternalTools({ file, bundled, detect, readEnv }: External
       unavailable: entry.unavailable,
       changed: entry.source !== 'bundled' && agreed !== undefined && agreed !== fingerprint(entry),
       mayMoveFunds: looksLikeItMovesFunds(entry.name),
+      needsSignIn: isEnabled(entry) && waitingForSignIn.has(entry.id),
     }
   }
 
@@ -252,6 +257,11 @@ export function createExternalTools({ file, bundled, detect, readEnv }: External
 
     async forNewChat() {
       return buildSessionExternal((await allEntries()).filter(isEnabled), readEnv)
+    },
+
+    noteSignIn(external, serverNames) {
+      for (const { id } of external.owners.values()) waitingForSignIn.delete(id)
+      for (const { id } of itemsNeedingSignIn(external, serverNames)) waitingForSignIn.add(id)
     },
   }
 }

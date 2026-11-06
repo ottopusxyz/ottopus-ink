@@ -182,7 +182,10 @@ function registerIpc(): void {
     const external = await getExternalTools().forNewChat()
     // Nothing is left to show or close a chat for a page that went away during those waits.
     if (askedIn !== pageGeneration) throw new Error('The page that asked for this chat has gone')
-    return startChat(status, env, tools, external, (chatId, chatEvent) => sendToWindows(IPC.chatEvent, chatId, chatEvent))
+    return startChat(status, env, tools, external, (chatId, chatEvent) => {
+      if (chatEvent.type === 'session') getExternalTools().noteSignIn(external, chatEvent.needsSignIn)
+      sendToWindows(IPC.chatEvent, chatId, chatEvent)
+    })
   })
 
   ipcMain.handle(IPC.listExternalTools, (event) => {

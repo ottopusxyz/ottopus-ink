@@ -30,8 +30,10 @@ export interface Chat {
   phase: ChatPhase
   /** Unchecked until the agent reports its tools, which it does only after the first message. */
   lock: 'unchecked' | 'locked' | 'unlocked'
-  /** What the person turned on for this chat beyond Ink's own tools, by name. */
+  /** What the person turned on for this chat beyond Ink's own tools and is working, by name. */
   external: string[]
+  /** What they turned on that gave this chat no tools, because it's waiting for sign-in. */
+  needsSignIn: string[]
   /** Tools already pointed out as maybe moving funds, so each is mentioned once. */
   warnedTools: string[]
   items: ChatItem[]
@@ -74,6 +76,7 @@ export function newChat(id: string, agent: AgentId, text: string): Chat {
     phase: 'starting',
     lock: 'unchecked',
     external: [],
+    needsSignIn: [],
     warnedTools: [],
     items: [],
     plan: null,
@@ -119,7 +122,7 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
       return chat
     case 'lock':
       if (event.locked) {
-        const known = { ...chat, lock: chat.lock === 'unlocked' ? ('unlocked' as const) : ('locked' as const), external: event.external }
+        const known = { ...chat, lock: chat.lock === 'unlocked' ? ('unlocked' as const) : ('locked' as const), external: event.external, needsSignIn: event.needsSignIn }
         const fresh = event.mayMoveFunds.filter((tool) => !chat.warnedTools.includes(tool))
         if (fresh.length === 0) return known
         return {

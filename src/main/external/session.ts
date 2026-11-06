@@ -13,9 +13,20 @@ export interface SessionExternal {
   skipped: string[]
   /** What the person enabled, by name, for the lock status. */
   labels: string[]
+  /** Which enabled item each server name came from. */
+  owners: ReadonlyMap<string, { id: string; name: string }>
 }
 
-export const NO_EXTERNAL: SessionExternal = { servers: {}, serverNames: [], skillsText: null, skipped: [], labels: [] }
+export const NO_EXTERNAL: SessionExternal = { servers: {}, serverNames: [], skillsText: null, skipped: [], labels: [], owners: new Map() }
+
+/** The enabled items behind servers a session says are waiting for sign-in. Names the session made up are left out. */
+export function itemsNeedingSignIn({ owners }: SessionExternal, serverNames: readonly string[]): { id: string; name: string }[] {
+  const items = new Map(serverNames.flatMap((name) => {
+    const owner = owners.get(name)
+    return owner ? [[owner.id, owner] as const] : []
+  }))
+  return [...items.values()]
+}
 
 /** All of it goes into every message's prompt. */
 const MAX_SKILLS_CHARS = 256 * 1024
@@ -86,6 +97,7 @@ export async function buildSessionExternal(
   const taken = new Set<string>()
   const skipped: string[] = []
   const labels: string[] = []
+  const owners = new Map<string, { id: string; name: string }>()
   const skills: string[] = []
   let skillChars = 0
 
@@ -102,6 +114,7 @@ export async function buildSessionExternal(
       const key = serverKey(name, taken)
       taken.add(key)
       servers[key] = config
+      owners.set(key, { id: entry.id, name: entry.name })
     }
     skillChars += entryChars
     skills.push(...entry.skills.map((skill) => `<skill name="${skill.name}">\n${skill.text}\n</skill>`))
@@ -117,5 +130,6 @@ export async function buildSessionExternal(
         : null,
     skipped,
     labels,
+    owners,
   }
 }

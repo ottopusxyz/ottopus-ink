@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SECRET_ENV_NAMES, type CatalogEntry, type ServerDef } from './catalog'
-import { buildSessionExternal } from './session'
+import { buildSessionExternal, itemsNeedingSignIn } from './session'
 
 const stdio = (fields: Partial<Extract<ServerDef, { transport: 'stdio' }>> = {}): ServerDef => ({
   transport: 'stdio',
@@ -95,6 +95,19 @@ describe('the names servers get in a session', () => {
 
   it('gives a name with nothing usable in it something to go by', async () => {
     expect(await namesFor('___')).toEqual(['server'])
+  })
+})
+
+describe('which item a waiting server belongs to', () => {
+  it('finds it by the name the session uses, once for an item with several servers', async () => {
+    const plugin = entry('both', { 'a.b': stdio(), c: stdio() }, { kind: 'plugin' })
+    const external = await build([plugin])
+    expect(itemsNeedingSignIn(external, ['a-b', 'c'])).toEqual([{ id: 'both', name: 'both' }])
+  })
+
+  it('leaves out names the session made up', async () => {
+    const external = await build([entry('one', { one: stdio() })])
+    expect(itemsNeedingSignIn(external, ['two', '__proto__', 'constructor'])).toEqual([])
   })
 })
 

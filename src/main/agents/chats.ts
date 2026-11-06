@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentStatus, ChatEvent } from '../../shared/ipc'
 import { looksLikeItMovesFunds } from '../external/catalog'
-import type { SessionExternal } from '../external/session'
+import { itemsNeedingSignIn, type SessionExternal } from '../external/session'
 import type { McpBridge } from '../mcp/bridge'
 import { MCP_SERVER_NAME } from '../mcp/protocol'
 import { claudeMcpServers, MCP_TOKEN_ENV } from './claude-launch'
@@ -51,6 +51,7 @@ export function startChat(
   })
   const watchLock = lockWatcher(tools.connected, external.serverNames)
   let externalTools: string[] = []
+  let waiting: string[] = []
   const session = startClaudeSession({
     binary: agent.path,
     env: { ...process.env, ...agentEnv },
@@ -67,12 +68,16 @@ export function startChat(
         tools.remove()
       }
       onEvent(chatId, event)
-      if (event.type === 'session') externalTools = (event.tools ?? []).filter((tool) => !tool.startsWith(`mcp__${MCP_SERVER_NAME}__`))
+      if (event.type === 'session') {
+        externalTools = (event.tools ?? []).filter((tool) => !tool.startsWith(`mcp__${MCP_SERVER_NAME}__`))
+        waiting = itemsNeedingSignIn(external, event.needsSignIn).map((item) => item.name)
+      }
       const found = watchLock(event)
       if (found === null) return
       locked = found.length === 0
       const mayMoveFunds = externalTools.filter((tool) => looksLikeItMovesFunds(tool.split('__').at(-1) ?? tool))
-      onEvent(chatId, { type: 'lock', locked, found, external: external.labels, mayMoveFunds })
+      const working = external.labels.filter((label) => !waiting.includes(label))
+      onEvent(chatId, { type: 'lock', locked, found, external: working, needsSignIn: waiting, mayMoveFunds })
       if (found.length > 0) session.kill(`Ink stopped this chat because the agent showed ${found.join(', ')}.`)
     },
   })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ExternalItem } from '../../../shared/ipc'
-import { filterExternal, groupExternal, serverFromForm } from './external-tools'
+import { filterExternal, groupExternal, serverFromForm, signInHint } from './external-tools'
 
 const item = (name: string, fields: Partial<ExternalItem> = {}): ExternalItem => ({
   id: name,
@@ -14,6 +14,7 @@ const item = (name: string, fields: Partial<ExternalItem> = {}): ExternalItem =>
   unavailable: null,
   changed: false,
   mayMoveFunds: false,
+  needsSignIn: false,
   ...fields,
 })
 
@@ -68,5 +69,17 @@ describe('serverFromForm', () => {
       name: 'r',
       url: 'https://example.test/mcp',
     })
+  })
+})
+
+describe('signInHint', () => {
+  it('names the tool and says what to do', () => {
+    expect(signInHint(['near-tools'])).toBe(
+      "near-tools needs sign-in, so chats don't get its tools. In Claude Code, run /mcp and sign in, using this same name and address, then start a new chat.",
+    )
+  })
+
+  it('reads properly for several', () => {
+    expect(signInHint(['one', 'two'])).toContain('one, two need sign-in, so chats don\'t get their tools.')
   })
 })

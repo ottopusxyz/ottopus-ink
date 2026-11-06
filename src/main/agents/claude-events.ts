@@ -98,6 +98,7 @@ export function claudeEventReader(): (line: string) => ChatEvent[] {
           servers: namesOf(event.mcp_servers),
           // Every session lists Claude Code's own plugins, whatever its settings say.
           plugins: namesOf(event.plugins, (plugin) => plugin.path !== 'builtin'),
+          needsSignIn: namesOf(event.mcp_servers, (server) => server.status === 'needs-auth') ?? [],
           model: typeof event.model === 'string' ? event.model : null,
         },
       ]

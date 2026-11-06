@@ -15,6 +15,7 @@ const item = (name: string, fields: Partial<ExternalItem> = {}): ExternalItem =>
   changed: false,
   mayMoveFunds: false,
   needsSignIn: false,
+  signedIn: false,
   ...fields,
 })
 
@@ -75,7 +76,7 @@ describe('serverFromForm', () => {
 describe('signInHint', () => {
   it('names the tool and says what to do', () => {
     expect(signInHint(['near-tools'])).toBe(
-      "near-tools needs sign-in, so chats don't get its tools. In Claude Code, run /mcp and sign in, using this same name and address, then start a new chat.",
+      "near-tools needs sign-in, so chats don't get its tools. Sign in under Settings, Tools and skills, then start a new chat.",
     )
   })
 

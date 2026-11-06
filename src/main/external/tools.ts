@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { asksForSecrets, fingerprint, letsVariableChooseWhatRuns, looksLikeItMovesFunds, summaryOf, type CatalogEntry, type ServerDef } from './catalog'
 import { buildSessionExternal, itemsNeedingSignIn, type SessionExternal } from './session'
+import type { RemoteServer, SignIns } from './sign-ins'
 import type { ExternalItem, NewExternalServer } from '../../shared/ipc'
 
 /**
@@ -25,6 +26,7 @@ export interface ExternalToolsOptions {
   bundled: readonly CatalogEntry[]
   detect: () => Promise<CatalogEntry[]>
   readEnv: (names: string[]) => Promise<Record<string, string>>
+  signIns: SignIns
 }
 
 /** Asks the person in the app's own native dialog, which a page can't answer. */
@@ -39,6 +41,10 @@ export interface ExternalTools {
   forNewChat(): Promise<SessionExternal>
   /** Keeps what a chat's latest report said about sign-in. Only a session can tell, as listing starts nothing. */
   noteSignIn(external: SessionExternal, serverNames: readonly string[]): void
+  /** Waits in the person's browser until they finish, or cancelSignIn is called. */
+  signIn(id: unknown, confirm: Confirm): Promise<ExternalItem[]>
+  cancelSignIn(): void
+  signOut(id: unknown): Promise<ExternalItem[]>
 }
 
 const NAME = /^[\w .@-]{1,64}$/
@@ -171,10 +177,11 @@ const RISK =
 
 const FUNDS_RISK = 'Its name suggests it may send, sign or trade. Only turn this on if you trust it with your funds.\n\n'
 
-export function createExternalTools({ file, bundled, detect, readEnv }: ExternalToolsOptions): ExternalTools {
+export function createExternalTools({ file, bundled, detect, readEnv, signIns }: ExternalToolsOptions): ExternalTools {
   let saved = load(file)
   /** By id, and not kept on disk: a stale answer is worse than none. */
   const waitingForSignIn = new Set<string>()
+  let signingIn: AbortController | null = null
 
   const allEntries = async (): Promise<CatalogEntry[]> => [...bundled, ...(await detect()), ...saved.added.map(addedEntry)]
 
@@ -182,6 +189,15 @@ export function createExternalTools({ file, bundled, detect, readEnv }: External
     if (entry.unavailable) return false
     if (entry.source === 'bundled') return !saved.off.includes(entry.id)
     return saved.enabled[entry.id] === fingerprint(entry)
+  }
+
+  const remoteServers = (entry: CatalogEntry) => Object.values(entry.servers).filter((server): server is RemoteServer => signIns.handles(server))
+
+  /** Asks an item's servers whether they need a sign-in, so its row can say so before a chat fails to get its tools. */
+  const lookForSignIn = async (entry: CatalogEntry) => {
+    const access = await Promise.all(remoteServers(entry).map((server) => signIns.accessFor(server)))
+    if (access.some(({ kind }) => kind === 'needs-sign-in')) waitingForSignIn.add(entry.id)
+    else waitingForSignIn.delete(entry.id)
   }
 
   const toItem = (entry: CatalogEntry): ExternalItem => {
@@ -199,6 +215,7 @@ export function createExternalTools({ file, bundled, detect, readEnv }: External
       changed: entry.source !== 'bundled' && agreed !== undefined && agreed !== fingerprint(entry),
       mayMoveFunds: looksLikeItMovesFunds(entry.name),
       needsSignIn: isEnabled(entry) && waitingForSignIn.has(entry.id),
+      signedIn: Object.values(entry.servers).some((server) => signIns.isSignedIn(server)),
     }
   }
 
@@ -224,6 +241,8 @@ export function createExternalTools({ file, bundled, detect, readEnv }: External
     },
 
     async remove(id) {
+      // A sign-in shouldn't outlive the thing it was for, or come back if it's added again.
+      for (const item of saved.added) if (item.id === id) signIns.signOut(item.server)
       saved = {
         ...saved,
         added: saved.added.filter((item) => item.id !== id),
@@ -250,18 +269,69 @@ export function createExternalTools({ file, bundled, detect, readEnv }: External
         })
         if (!agreed) return list()
         saved = { ...saved, enabled: { ...saved.enabled, [entry.id]: fingerprint(entry) } }
+        save(file, saved)
+        await lookForSignIn(entry)
+        return list()
       }
       save(file, saved)
       return list()
     },
 
     async forNewChat() {
-      return buildSessionExternal((await allEntries()).filter(isEnabled), readEnv)
+      const enabled = (await allEntries()).filter(isEnabled)
+      const external = await buildSessionExternal(enabled, readEnv, (server) => signIns.accessFor(server))
+      for (const { id } of enabled) waitingForSignIn.delete(id)
+      for (const { id } of external.needsSignIn) waitingForSignIn.add(id)
+      return external
     },
 
     noteSignIn(external, serverNames) {
       for (const { id } of external.owners.values()) waitingForSignIn.delete(id)
       for (const { id } of itemsNeedingSignIn(external, serverNames)) waitingForSignIn.add(id)
+    },
+
+    async signIn(id, confirm) {
+      const entry = (await allEntries()).find((candidate) => candidate.id === id)
+      if (!entry || !isEnabled(entry)) throw new Error('Turn it on first')
+      const servers = remoteServers(entry).filter((server) => !signIns.isSignedIn(server))
+      if (servers.length === 0) throw new Error("This one doesn't sign in through Ink")
+      signingIn?.abort()
+      const attempt = new AbortController()
+      signingIn = attempt
+      const lasts = signIns.canKeep() ? 'Ink keeps the sign-in encrypted on this computer' : "This computer has no secure place to keep it, so you'll sign in again next time Ink opens. Until then Ink holds the sign-in in memory"
+      try {
+        for (const server of servers) {
+          const plan = await signIns.plan(server)
+          const agreed = await confirm({
+            message: `Sign in to ${entry.name}?`,
+            detail: `Your browser will open at ${plan.host}.${plan.host === new URL(server.url).host ? '' : ` That's a different site from the tool, and the tool will get what you sign in with there. Only go on if you expected ${plan.host} to handle this.`}\n\n${lasts}, and uses it only for ${server.url}. The agent in a chat that uses this tool can read it while that chat runs.`,
+            confirm: 'Open browser',
+          })
+          if (!agreed) return await list()
+          await signIns.signIn(server, plan, attempt.signal)
+        }
+        waitingForSignIn.delete(entry.id)
+      } catch (caught) {
+        // Giving up isn't a failure worth a message.
+        if (!attempt.signal.aborted) throw caught
+      } finally {
+        if (signingIn === attempt) signingIn = null
+      }
+      return list()
+    },
+
+    cancelSignIn() {
+      signingIn?.abort()
+    },
+
+    async signOut(id) {
+      const entry = (await allEntries()).find((candidate) => candidate.id === id)
+      if (!entry) throw new Error('That item is no longer available')
+      // A sign-in still waiting would otherwise land just after this.
+      signingIn?.abort()
+      for (const server of Object.values(entry.servers)) signIns.signOut(server)
+      if (isEnabled(entry)) await lookForSignIn(entry)
+      return list()
     },
   }
 }

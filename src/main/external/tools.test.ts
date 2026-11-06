@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CatalogEntry, ServerDef } from './catalog'
+import type { RemoteServer, ServerAccess, SignIns } from './sign-ins'
 import { createExternalTools, parseNewServer, type Confirm } from './tools'
 
 let dir: string
@@ -32,8 +33,26 @@ const detected = (name: string, def: ServerDef = server(), fields: Partial<Catal
 
 const bundled = (name: string): CatalogEntry => ({ ...detected(name), id: `bundled:${name}`, source: 'bundled', origin: null })
 
-function setup(found: () => CatalogEntry[], shipped: CatalogEntry[] = []) {
-  return createExternalTools({ file, bundled: shipped, detect: async () => found(), readEnv: async () => ({}) })
+/** Sign-ins for tests. What a remote server needs is whatever `access` says. */
+function fakeSignIns(access: () => ServerAccess = () => ({ kind: 'open' })) {
+  const signedIn = new Set<string>()
+  return {
+    handles: (server): server is RemoteServer => server.transport !== 'stdio' && !Object.keys(server.headers).includes('Authorization'),
+    isSignedIn: (server) => server.transport !== 'stdio' && signedIn.has(server.url),
+    canKeep: () => true,
+    accessFor: vi.fn(async (server: ServerDef) => (server.transport === 'stdio' ? { kind: 'open' as const } : access())),
+    plan: vi.fn(async () => ({ authorizationEndpoint: 'https://as.test/a', tokenEndpoint: 'https://as.test/t', registrationEndpoint: 'https://as.test/r', resource: null, scope: null, host: 'as.test', issuer: 'https://as.test', issuerAnswers: false })),
+    signIn: vi.fn(async (server: { url: string }) => {
+      signedIn.add(server.url)
+    }),
+    signOut: (server) => {
+      if (server.transport !== 'stdio') signedIn.delete(server.url)
+    },
+  } satisfies SignIns
+}
+
+function setup(found: () => CatalogEntry[], shipped: CatalogEntry[] = [], signIns: SignIns = fakeSignIns()) {
+  return createExternalTools({ file, bundled: shipped, detect: async () => found(), readEnv: async () => ({}), signIns })
 }
 
 const yes: Confirm = async () => true
@@ -167,6 +186,111 @@ describe('whether an item is waiting for sign-in', () => {
     tools.noteSignIn(await tools.forNewChat(), ['one'])
     tools.noteSignIn(await setup(() => []).forNewChat(), [])
     expect((await itemOf(tools))?.needsSignIn).toBe(true)
+  })
+})
+
+describe('signing in', () => {
+  const remote: ServerDef = { transport: 'http', url: 'https://near.test/mcp', headers: {} }
+  const itemOf = async (tools: ReturnType<typeof setup>) => (await tools.list())[0]
+
+  it('finds out when it is turned on, so the row can say before a chat fails', async () => {
+    const tools = setup(() => [detected('one', remote)], [], fakeSignIns(() => ({ kind: 'needs-sign-in' })))
+    await tools.setEnabled(idOf, true, yes)
+    expect(await itemOf(tools)).toMatchObject({ enabled: true, needsSignIn: true, signedIn: false })
+  })
+
+  it('contacts no server until it is turned on', async () => {
+    const signIns = fakeSignIns(() => ({ kind: 'needs-sign-in' }))
+    const tools = setup(() => [detected('one', remote)], [], signIns)
+    await tools.list()
+    expect(signIns.accessFor).not.toHaveBeenCalled()
+  })
+
+  it('keeps it out of a new chat and says why', async () => {
+    const tools = setup(() => [detected('one', remote)], [], fakeSignIns(() => ({ kind: 'needs-sign-in' })))
+    await tools.setEnabled(idOf, true, yes)
+    const external = await tools.forNewChat()
+    expect(external.serverNames).toEqual([])
+    expect(external.labels).toEqual([])
+    expect(external.needsSignIn).toEqual([{ id: idOf, name: 'one' }])
+  })
+
+  it('asks in the native dialog first, naming where the browser goes and who can read it', async () => {
+    const signIns = fakeSignIns(() => ({ kind: 'needs-sign-in' }))
+    const tools = setup(() => [detected('one', remote)], [], signIns)
+    await tools.setEnabled(idOf, true, yes)
+    const confirm = vi.fn<Confirm>(async () => false)
+    await tools.signIn(idOf, confirm)
+    expect(signIns.signIn).not.toHaveBeenCalled()
+    const detail = confirm.mock.calls[0]?.[0].detail
+    expect(detail).toContain('as.test')
+    expect(detail).toContain('https://near.test/mcp')
+    expect(detail).toContain('agent')
+  })
+
+  it('shows it signed in afterwards, and no longer waiting', async () => {
+    const tools = setup(() => [detected('one', remote)], [], fakeSignIns(() => ({ kind: 'needs-sign-in' })))
+    await tools.setEnabled(idOf, true, yes)
+    await tools.signIn(idOf, yes)
+    expect(await itemOf(tools)).toMatchObject({ needsSignIn: false, signedIn: true })
+  })
+
+  it('refuses to sign in to something that is off, which the page could ask for', async () => {
+    const signIns = fakeSignIns()
+    const tools = setup(() => [detected('one', remote)], [], signIns)
+    await expect(tools.signIn(idOf, yes)).rejects.toThrow(/Turn it on/)
+    expect(signIns.plan).not.toHaveBeenCalled()
+  })
+
+  it('has nothing to do for a local server, or one with its own headers', async () => {
+    const tools = setup(() => [detected('one', { transport: 'http', url: 'https://near.test/mcp', headers: { Authorization: 'Bearer ${KEY}' } })])
+    await tools.setEnabled(idOf, true, yes)
+    await expect(tools.signIn(idOf, yes)).rejects.toThrow(/doesn't sign in/)
+  })
+
+  it('treats cancelling as no failure', async () => {
+    const signIns = fakeSignIns(() => ({ kind: 'needs-sign-in' }))
+    const tools = setup(() => [detected('one', remote)], [], signIns)
+    signIns.signIn.mockImplementation(async () => {
+      tools.cancelSignIn()
+      throw new Error('cancelled')
+    })
+    await tools.setEnabled(idOf, true, yes)
+    expect((await tools.signIn(idOf, yes))[0]).toMatchObject({ needsSignIn: true, signedIn: false })
+  })
+
+  it('says what went wrong otherwise', async () => {
+    const signIns = fakeSignIns(() => ({ kind: 'needs-sign-in' }))
+    signIns.plan.mockRejectedValueOnce(new Error("That server doesn't say how to sign in"))
+    const tools = setup(() => [detected('one', remote)], [], signIns)
+    await tools.setEnabled(idOf, true, yes)
+    await expect(tools.signIn(idOf, yes)).rejects.toThrow(/doesn't say/)
+  })
+
+  it('warns when the sign-in page is on a different site from the tool', async () => {
+    const tools = setup(() => [detected('one', remote)], [], fakeSignIns(() => ({ kind: 'needs-sign-in' })))
+    await tools.setEnabled(idOf, true, yes)
+    const confirm = vi.fn<Confirm>(async () => false)
+    await tools.signIn(idOf, confirm)
+    expect(confirm.mock.calls[0]?.[0].detail).toContain('different site')
+  })
+
+  it('forgets the sign-in when a hand-added server is removed', async () => {
+    const signIns = fakeSignIns()
+    const tools = setup(() => [], [], signIns)
+    const added = await tools.add({ name: 'mine', url: 'https://near.test/mcp' }, yes)
+    const id = added[0]?.id ?? ''
+    await signIns.signIn({ url: 'https://near.test/mcp' })
+    expect((await tools.list())[0]?.signedIn).toBe(true)
+    await tools.remove(id)
+    expect(signIns.isSignedIn(remote)).toBe(false)
+  })
+
+  it('signing out forgets it and checks again', async () => {
+    const tools = setup(() => [detected('one', remote)], [], fakeSignIns(() => ({ kind: 'needs-sign-in' })))
+    await tools.setEnabled(idOf, true, yes)
+    await tools.signIn(idOf, yes)
+    expect(await tools.signOut(idOf)).toMatchObject([{ signedIn: false, needsSignIn: true }])
   })
 })
 

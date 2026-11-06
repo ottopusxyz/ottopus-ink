@@ -51,7 +51,7 @@ export function startChat(
   })
   const watchLock = lockWatcher(tools.connected, external.serverNames)
   let externalTools: string[] = []
-  let waiting: string[] = []
+  let waiting = external.needsSignIn.map((item) => item.name)
   const session = startClaudeSession({
     binary: agent.path,
     env: { ...process.env, ...agentEnv },
@@ -70,7 +70,7 @@ export function startChat(
       onEvent(chatId, event)
       if (event.type === 'session') {
         externalTools = (event.tools ?? []).filter((tool) => !tool.startsWith(`mcp__${MCP_SERVER_NAME}__`))
-        waiting = itemsNeedingSignIn(external, event.needsSignIn).map((item) => item.name)
+        waiting = [...new Set([...external.needsSignIn, ...itemsNeedingSignIn(external, event.needsSignIn)].map((item) => item.name))]
       }
       const found = watchLock(event)
       if (found === null) return

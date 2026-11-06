@@ -25,7 +25,7 @@ const tool = 'mcp__ottopus-ink__get_accounts'
 
 describe('claudeEventReader on recorded sessions', () => {
   it('follows a tool call, an interrupted turn and a follow-up', () => {
-    const session = { type: 'session', tools: [tool], servers: ['ottopus-ink'], plugins: [], model: 'claude-haiku-5-5' }
+    const session = { type: 'session', tools: [tool], servers: ['ottopus-ink'], plugins: [], needsSignIn: [], model: 'claude-haiku-5-5' }
     expect(joined(replay('claude-session.ndjson'))).toEqual([
       session,
       { type: 'tool-call', id: 'toolu_fixture1', name: tool, input: '{}' },
@@ -71,6 +71,23 @@ describe('claudeEventReader on anything else', () => {
     expect(read(line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 1 } } }))).toEqual([])
   })
 
+  it('names the servers a report says are waiting for sign-in', () => {
+    const events = claudeEventReader()(
+      JSON.stringify({
+        type: 'system',
+        subtype: 'init',
+        tools: [],
+        plugins: [],
+        mcp_servers: [
+          { name: 'ottopus-ink', status: 'connected' },
+          { name: 'near-tools', status: 'needs-auth' },
+          { name: 'other', status: 'failed' },
+        ],
+      }),
+    )
+    expect(events).toMatchObject([{ servers: ['ottopus-ink', 'near-tools', 'other'], needsSignIn: ['near-tools'] }])
+  })
+
   it('passes on what a session reports, leaving out only built-in plugins', () => {
     const read = claudeEventReader()
     const init = {
@@ -85,16 +102,16 @@ describe('claudeEventReader on anything else', () => {
       model: 7,
     }
     expect(read(line(init))).toEqual([
-      { type: 'session', tools: ['Bash'], servers: ['ottopus-ink', 'other'], plugins: ['dropped-in'], model: null },
+      { type: 'session', tools: ['Bash'], servers: ['ottopus-ink', 'other'], plugins: ['dropped-in'], needsSignIn: [], model: null },
     ])
   })
 
   it('marks a list it cannot read as null, so it never looks empty', () => {
     const read = claudeEventReader()
     const lists = (fields: object) => read(line({ type: 'system', subtype: 'init', ...fields }))
-    expect(lists({})).toEqual([{ type: 'session', tools: null, servers: null, plugins: null, model: null }])
+    expect(lists({})).toEqual([{ type: 'session', tools: null, servers: null, plugins: null, needsSignIn: [], model: null }])
     expect(lists({ tools: ['Bash', 7], mcp_servers: ['ottopus-ink'], plugins: [{ path: '/x' }] })).toEqual([
-      { type: 'session', tools: null, servers: null, plugins: null, model: null },
+      { type: 'session', tools: null, servers: null, plugins: null, needsSignIn: [], model: null },
     ])
   })
 
@@ -111,12 +128,12 @@ describe('claudeEventReader on anything else', () => {
     const short = `${'x'.repeat(1000)}…`
     const named = { tools: [long], mcp_servers: [{ name: long }], plugins: [{ name: long, path: '/x' }] }
     expect(read(line({ type: 'system', subtype: 'init', ...named }))).toEqual([
-      { type: 'session', tools: [short], servers: [short], plugins: [short], model: null },
+      { type: 'session', tools: [short], servers: [short], plugins: [short], needsSignIn: [], model: null },
     ])
 
     const many = { tools: Array(201).fill('x'), mcp_servers: Array(201).fill({ name: 'x' }), plugins: Array(201).fill({ name: 'x' }) }
     expect(read(line({ type: 'system', subtype: 'init', ...many }))).toEqual([
-      { type: 'session', tools: null, servers: null, plugins: null, model: null },
+      { type: 'session', tools: null, servers: null, plugins: null, needsSignIn: [], model: null },
     ])
   })
 

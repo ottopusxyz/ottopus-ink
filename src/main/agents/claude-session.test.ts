@@ -73,6 +73,9 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/** For a test that isn't about the deadline: a busy machine can take longer than the short one to start a stand-in. */
+const PATIENT_MS = 30_000
+
 const answers = `onLine((m) => { if (m.type === 'user') { say(delta('you said: ')); say(delta(m.message.content)); say(done) } })`
 
 beforeAll(async () => {
@@ -194,7 +197,7 @@ describe('startClaudeSession stopping a turn', () => {
          }
        })`,
     )
-    const { session, events } = start(file)
+    const { session, events } = start(file, { stopTurnGraceMs: PATIENT_MS })
     session.send('hang')
     await vi.waitFor(() => expect(events).toContainEqual({ type: 'text', text: 'thinking' }))
     session.stopTurn()
@@ -219,7 +222,7 @@ describe('startClaudeSession stopping a turn', () => {
          else say({ type: 'result', is_error: true, result: 'API Error' })
        })`,
     )
-    const { session, events } = start(file)
+    const { session, events } = start(file, { stopTurnGraceMs: PATIENT_MS })
     session.send('hang')
     session.stopTurn()
     await turnEnds(events, 1)

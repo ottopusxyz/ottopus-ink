@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const src = resolve(import.meta.dirname, '..')
 
 /** Code an agent can reach, or that handles what an agent sends. It must never reach signing code. */
-const AGENT_FACING = ['shim', 'main/agents', 'main/mcp']
+const AGENT_FACING = ['shim', 'main/agents', 'main/mcp', 'main/external']
 
 const isSigning = (file: string) => relative(src, file).startsWith('signer/') || file.endsWith('/signer-host.ts')
 

@@ -13,6 +13,13 @@ const bridge: InkBridge = {
   sendToChat: (chatId, text) => ipcRenderer.invoke(IPC.sendToChat, chatId, text),
   stopChatTurn: (chatId) => ipcRenderer.invoke(IPC.stopChatTurn, chatId),
   closeChat: (chatId) => ipcRenderer.invoke(IPC.closeChat, chatId),
+  listExternalTools: () => ipcRenderer.invoke(IPC.listExternalTools),
+  signInExternal: (id) => ipcRenderer.invoke(IPC.signInExternal, id),
+  cancelExternalSignIn: () => ipcRenderer.invoke(IPC.cancelExternalSignIn),
+  signOutExternal: (id) => ipcRenderer.invoke(IPC.signOutExternal, id),
+  addExternalServer: (server) => ipcRenderer.invoke(IPC.addExternalServer, server),
+  removeExternalServer: (id) => ipcRenderer.invoke(IPC.removeExternalServer, id),
+  setExternalEnabled: (id, enabled) => ipcRenderer.invoke(IPC.setExternalEnabled, id, enabled),
   onChatEvent: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, chatId: string, event: ChatEvent) => listener(chatId, event)
     ipcRenderer.on(IPC.chatEvent, handler)

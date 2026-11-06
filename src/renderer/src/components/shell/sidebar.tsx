@@ -1,6 +1,7 @@
 import { useMemo, useState, type Ref } from 'react'
 import type { SignerStatus } from '../../../../shared/ipc'
 import { AgentMark } from '@/components/chat/agent-picker'
+import { SignInIcon } from '@/components/settings/sign-in-icon'
 import { Badge, Tooltip } from '@/components/ui'
 import { agentInfo } from '@/lib/agents'
 import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
@@ -166,15 +167,19 @@ const LOCK_COLOURS = {
 /** Whether the open chat's agent is held to Ottopus tools. Each chat has its own session, so each has its own answer. */
 function LockIndicator({ chat }: { chat: Chat }) {
   const { text, hint, tone } = lockStatus(chat)
+  // Side by side rather than nested, so each shows only its own tooltip.
   return (
-    <Tooltip text={hint} className="ink-tip--block">
-      <div className="ink-signer" role="status" tabIndex={0}>
-        <span style={{ color: LOCK_COLOURS[tone] }}>
-          <PlugIcon />
-        </span>
-        <span className="flex-1">{text}</span>
-      </div>
-    </Tooltip>
+    <div className="ink-signer">
+      <Tooltip text={hint} className="min-w-0 flex-1">
+        <div className="flex w-full items-center gap-2" role="status" tabIndex={0}>
+          <span style={{ color: LOCK_COLOURS[tone] }}>
+            <PlugIcon />
+          </span>
+          <span className="flex-1">{text}</span>
+        </div>
+      </Tooltip>
+      {chat.phase !== 'ended' && chat.lock === 'locked' ? <SignInIcon names={chat.needsSignIn} /> : null}
+    </div>
   )
 }
 

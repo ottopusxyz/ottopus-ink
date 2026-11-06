@@ -317,6 +317,12 @@
   white-space: nowrap;
 }
 
+.ink-connector--open {
+  border-color: var(--ot-plan);
+  background: var(--ot-plan-bg);
+  color: var(--ot-plan-text);
+}
+
 .ink-suggestion {
   display: inline-flex;
   align-items: center;
@@ -735,6 +741,52 @@ button.ink-agent-option:hover {
   color: var(--ot-text-2);
   font-size: 12.5px;
   line-height: 1.45;
+}
+
+.ink-external {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ot-border);
+  border-radius: 12px;
+  background: var(--ot-card);
+}
+
+/* Off reads as empty and quiet: on has to be a choice someone can see at a glance. */
+.ink-switch {
+  flex: none;
+  width: 38px;
+  height: 22px;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ot-surface-3);
+  cursor: pointer;
+}
+.ink-switch span {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ot-text-3);
+  transition: transform 120ms ease;
+}
+.ink-switch[aria-checked="true"] {
+  background: var(--ot-plan);
+}
+.ink-switch[aria-checked="true"] span {
+  background: var(--ot-card);
+  transform: translateX(16px);
+}
+.ink-switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-switch span {
+    transition: none;
+  }
 }
 
 .ink-segmented {

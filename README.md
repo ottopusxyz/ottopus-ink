@@ -10,7 +10,7 @@ A desktop universal wallet whose brain is the coding agent you already have inst
 2. **The review window shows decoded bytes, not the agent's words.** The signer re-checks the plan hash before it signs.
 3. **Keys stay on the device.** No Ottopus server, no custody.
 4. **Each dependent step gets its own review** once its exact bytes are known.
-5. **Chats started by the app are locked to Ottopus Ink tools,** with no shell, file or web access.
+5. **Chats started by the app are locked to Ottopus Ink tools,** with no shell, file or web access, unless you turn on an outside tool or skill in Settings. Each stays off until you agree in a dialog, and the chat then says it isn't Ottopus tools only. Ink can't see what an outside tool does: one that holds its own keys could move funds outside Ink's review. A remote server that needs a sign-in stays out of chats until you sign in from Settings. Ink keeps that sign-in encrypted and sends it only to that server's address, and the agent in a chat using the tool can read it while the chat runs.
 
 ## Run it
 

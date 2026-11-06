@@ -1,10 +1,21 @@
 import { useId, type ReactNode, type Ref } from 'react'
+import { externalCount } from '@/lib/chats'
 import { cn } from '@/lib/cn'
 import { ArrowUpIcon, ChevronDownIcon, PlugIcon, PlusIcon, StopIcon } from '@/components/shell/icons'
 import { Tooltip } from '@/components/ui'
 
-export const SKILLS_HINT = "Skills aren't available yet. Ink's own skills are on the way."
+export const SKILLS_HINT = "Turn skills on in Settings, under Tools and skills. Ink's own are on the way."
 export const TOOLS_HINT = 'Ink starts chats with only its own tools: reading balances and proposing plans. No shell, file or web access.'
+
+/** What a chat can use, for the chip beside the composer and the chat's toolbar. */
+export function toolsChip(external: readonly string[]): { text: string; hint: string; open: boolean } {
+  if (external.length === 0) return { text: 'Ottopus tools only', hint: TOOLS_HINT, open: false }
+  return {
+    text: `Ottopus + ${externalCount(external.length)}`,
+    hint: `Also on, by your choice: ${external.join(', ')}. These can act outside Ink's review. Change them in Settings.`,
+    open: true,
+  }
+}
 
 export interface ComposerProps {
   value: string
@@ -23,6 +34,8 @@ export interface ComposerProps {
   onStop?: (() => void) | undefined
   /** Whether the running turn has already been asked to stop. */
   stopping?: boolean
+  /** What new chats get beyond Ottopus tools, by name. */
+  external?: readonly string[]
 }
 
 /**
@@ -43,8 +56,10 @@ export function Composer({
   disabled = false,
   onStop,
   stopping = false,
+  external = [],
 }: ComposerProps) {
   const id = useId()
+  const chip = toolsChip(external)
   const sendable = canSend && !disabled && !onStop && value.trim().length > 0
 
   return (
@@ -93,10 +108,10 @@ export function Composer({
         {compact ? (
           <span className="mr-2 text-[12px] text-[var(--ot-text-3)]">Enter sends · Shift+Enter for a new line</span>
         ) : (
-          <Tooltip text={TOOLS_HINT}>
-            <span className="ink-connector" tabIndex={0}>
+          <Tooltip text={chip.hint}>
+            <span className={cn('ink-connector', chip.open && 'ink-connector--open')} tabIndex={0}>
               <PlugIcon size={13} />
-              Ottopus tools only
+              {chip.text}
             </span>
           </Tooltip>
         )}

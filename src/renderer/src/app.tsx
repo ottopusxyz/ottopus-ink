@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AgentId, AgentStatus, AppInfo, SignerStatus } from '../../shared/ipc'
+import type { AgentId, AgentStatus, AppInfo, ExternalItem, SignerStatus } from '../../shared/ipc'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { ChatView } from '@/components/chat/chat-view'
 import { HomeView } from '@/components/home/home-view'
@@ -36,6 +36,8 @@ export function App() {
   const [checkingAgents, setCheckingAgents] = useState(true)
   const [beginDetection] = useState(latestOnly)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // What new chats get beyond Ink's own tools, for the home composer to say so.
+  const [externalItems, setExternalItems] = useState<ExternalItem[]>([])
   const searchRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
 
@@ -77,6 +79,10 @@ export function App() {
   )
 
   useEffect(() => detectAgents(false), [detectAgents])
+
+  useEffect(() => {
+    window.ink.listExternalTools().then(setExternalItems, (error: unknown) => console.error('Could not read external tools', error))
+  }, [])
 
   const newChat = useCallback(() => {
     setView({ kind: 'home' })
@@ -153,9 +159,11 @@ export function App() {
           composerRef={composerRef}
           agentPicker={agentPicker}
           canSend={selectedAgent !== null}
+          external={externalItems.filter((item) => item.enabled).map((item) => item.name)}
         />
       )}
       <SettingsDialog
+        onExternalChange={setExternalItems}
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         agents={agents}

@@ -10,6 +10,13 @@ export const IPC = {
   sendToChat: 'chat:send',
   stopChatTurn: 'chat:stop-turn',
   closeChat: 'chat:close',
+  listExternalTools: 'external:list',
+  addExternalServer: 'external:add',
+  removeExternalServer: 'external:remove',
+  setExternalEnabled: 'external:set-enabled',
+  signInExternal: 'external:sign-in',
+  cancelExternalSignIn: 'external:cancel-sign-in',
+  signOutExternal: 'external:sign-out',
   /** Main to renderer: what happened in a chat. */
   chatEvent: 'chat:event',
   /** Main to renderer: the signer's status, sent on every change. */
@@ -71,15 +78,64 @@ export interface ChatPlan {
   toChain: string | null
 }
 
+export type ExternalKind = 'mcp' | 'skill' | 'plugin'
+export type ExternalSource = 'bundled' | 'detected' | 'added'
+
+/**
+ * A skill, MCP server or plugin a chat could use, as the page sees it. Commands,
+ * arguments, full URLs and secrets stay in the main process.
+ */
+export interface ExternalItem {
+  id: string
+  name: string
+  kind: ExternalKind
+  source: ExternalSource
+  /** Which agent it was found in, if it was found in one. */
+  origin: AgentId | null
+  /** What it does in a few words, with nothing secret in it. */
+  summary: string
+  /** Its own description of itself: third-party text. */
+  description: string | null
+  /** Whether new chats get it. */
+  enabled: boolean
+  /** Why it can't be turned on, or null if it can. */
+  unavailable: string | null
+  /** It was turned on, then what it runs changed, so it went back to off. */
+  changed: boolean
+  /** Its name suggests it can send, sign or trade. Only a hint. */
+  mayMoveFunds: boolean
+  /** A server of its turned the app away for want of a sign-in, when last asked. Unknown until then. */
+  needsSignIn: boolean
+  /** Ink holds a sign-in for it. The token itself stays in the main process. */
+  signedIn: boolean
+}
+
+/** A server someone is adding by hand: a command, or a URL. Keys go in env vars, by name. */
+export interface NewExternalServer {
+  name: string
+  command?: string
+  args?: string[]
+  url?: string
+  envNames?: string[]
+}
+
 /** What happens in a chat, whichever agent is driving it. */
 export type ChatEvent =
   /**
    * The agent's session as it reports it, at the start of each turn. A list is
    * null when the report couldn't be read. Plugins leaves out the agent's built-in ones.
+   * NeedsSignIn names the servers waiting for someone to sign in, which gave it no tools.
    */
-  | { type: 'session'; tools: string[] | null; servers: string[] | null; plugins: string[] | null; model: string | null }
-  /** Whether a report showed only Ink's tools. If not, found says what else, and the chat is being stopped. */
-  | { type: 'lock'; locked: boolean; found: string[] }
+  | { type: 'session'; tools: string[] | null; servers: string[] | null; plugins: string[] | null; needsSignIn: string[]; model: string | null }
+  /**
+   * Whether a report showed only Ink's tools and what the person enabled. If not,
+   * found says what else, and the chat is being stopped. External names what they
+   * enabled that's working, needsSignIn what they enabled that's waiting for sign-in,
+   * and mayMoveFunds any of its tools whose names suggest they send or sign.
+   */
+  | { type: 'lock'; locked: boolean; found: string[]; external: string[]; needsSignIn: string[]; mayMoveFunds: string[] }
+  /** External items that were enabled but couldn't be loaded into this chat. */
+  | { type: 'external-skipped'; names: string[] }
   /** The next piece of the reply. */
   | { type: 'text'; text: string }
   /** Input is already text, as an agent can shape its own so it won't cross IPC. */
@@ -108,6 +164,18 @@ export interface InkBridge {
   /** Stops the running turn and keeps the conversation. */
   stopChatTurn(chatId: string): Promise<void>
   closeChat(chatId: string): Promise<void>
+  /** The skills, MCP servers and plugins new chats could use. Reads only, and starts nothing. */
+  listExternalTools(): Promise<ExternalItem[]>
+  /** Asks the person in a native dialog, then adds it, switched off. */
+  addExternalServer(server: NewExternalServer): Promise<ExternalItem[]>
+  removeExternalServer(id: string): Promise<ExternalItem[]>
+  /** Turning one on asks the person in a native dialog, so a page can't do it alone. */
+  setExternalEnabled(id: string, enabled: boolean): Promise<ExternalItem[]>
+  /** Asks in a native dialog, then waits for the person in their browser, for as long as that takes. */
+  signInExternal(id: string): Promise<ExternalItem[]>
+  /** Gives up on a sign-in that's waiting. */
+  cancelExternalSignIn(): Promise<void>
+  signOutExternal(id: string): Promise<ExternalItem[]>
   /** Calls listener on everything that happens in any chat; returns an unsubscribe. */
   onChatEvent(listener: (chatId: string, event: ChatEvent) => void): () => void
   /** Calls listener on every signer status change; returns an unsubscribe. */

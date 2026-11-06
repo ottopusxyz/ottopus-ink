@@ -116,12 +116,12 @@ describe('applyChatEvent', () => {
   })
 
   it('marks a chat locked', () => {
-    expect(after([{ type: 'lock', locked: true, found: [] }]).lock).toBe('locked')
+    expect(after([{ type: 'lock', locked: true, found: [], external: [], needsSignIn: [], mayMoveFunds: [] }]).lock).toBe('locked')
   })
 
   it('says what broke the lock once, however the chat then ends', () => {
     const chat = after([
-      { type: 'lock', locked: false, found: ['the tool Bash'] },
+      { type: 'lock', locked: false, found: ['the tool Bash'], external: [], needsSignIn: [], mayMoveFunds: [] },
       { type: 'ended', error: 'Ink stopped this chat because the agent showed the tool Bash.' },
     ])
     expect(chat).toMatchObject({ lock: 'unlocked', phase: 'ended' })
@@ -130,13 +130,13 @@ describe('applyChatEvent', () => {
   })
 
   it('never goes from unlocked back to locked', () => {
-    expect(after([{ type: 'lock', locked: false, found: ['x'] }, { type: 'lock', locked: true, found: [] }]).lock).toBe('unlocked')
+    expect(after([{ type: 'lock', locked: false, found: ['x'], external: [], needsSignIn: [], mayMoveFunds: [] }, { type: 'lock', locked: true, found: [], external: [], needsSignIn: [], mayMoveFunds: [] }]).lock).toBe('unlocked')
   })
 
   it('removes the plan of an agent that broke the lock, and says so', () => {
     const chat = after([
       { type: 'plan', plan },
-      { type: 'lock', locked: false, found: ['the tool Bash'] },
+      { type: 'lock', locked: false, found: ['the tool Bash'], external: [], needsSignIn: [], mayMoveFunds: [] },
     ])
     expect(chat.plan).toBeNull()
     expect(chat.items.some((item) => item.kind === 'plan')).toBe(false)
@@ -145,7 +145,7 @@ describe('applyChatEvent', () => {
 
   it('still says the lock broke if that arrives just after End', () => {
     const ended: Chat = { ...started(), phase: 'ended' }
-    const chat = after([{ type: 'lock', locked: false, found: ['the tool Bash'] }], ended)
+    const chat = after([{ type: 'lock', locked: false, found: ['the tool Bash'], external: [], needsSignIn: [], mayMoveFunds: [] }], ended)
     expect(chat).toMatchObject({ lock: 'unlocked', phase: 'ended' })
     expect(chat.items.at(-1)).toMatchObject({ title: 'Ink stopped this chat' })
     expect(lockStatus(chat).text).toBe('Not locked, chat stopped')
@@ -233,6 +233,58 @@ describe('lockStatus', () => {
 
   it('keeps saying a chat was not locked after it ended', () => {
     expect(lockStatus({ lock: 'unlocked', phase: 'ended' })).toMatchObject({ text: 'Not locked, chat stopped', tone: 'block' })
+  })
+})
+
+describe('a chat with external tools on', () => {
+  const lock = (external: string[], mayMoveFunds: string[] = []): ChatEvent => ({ type: 'lock', locked: true, found: [], external, needsSignIn: [], mayMoveFunds })
+
+  it('says plainly it is not only Ottopus tools', () => {
+    const chat = after([lock(['near-tools', 'other'])])
+    expect(chat.external).toEqual(['near-tools', 'other'])
+    expect(lockStatus(chat)).toMatchObject({ text: 'Ottopus + 2 external tools', tone: 'plan' })
+    expect(lockStatus(chat).hint).toContain('near-tools, other')
+    expect(lockStatus(after([lock(['one'])])).text).toBe('Ottopus + 1 external tool')
+  })
+
+  it('keeps a tool waiting for sign-in out of the count, and notes it apart', () => {
+    const chat = after([{ type: 'lock', locked: true, found: [], external: ['works'], needsSignIn: ['waiting'], mayMoveFunds: [] }])
+    expect(chat.needsSignIn).toEqual(['waiting'])
+    expect(lockStatus(chat).text).toBe('Ottopus + 1 external tool')
+    expect(lockStatus(chat).hint).not.toContain('waiting')
+  })
+
+  it('says only Ottopus tools when all that was on is waiting for sign-in', () => {
+    const chat = after([{ type: 'lock', locked: true, found: [], external: [], needsSignIn: ['waiting'], mayMoveFunds: [] }])
+    expect(lockStatus(chat).text).toBe('Locked to Ottopus tools')
+  })
+
+  it('drops the note once a later report has the tool working', () => {
+    const chat = after([
+      { type: 'lock', locked: true, found: [], external: [], needsSignIn: ['waiting'], mayMoveFunds: [] },
+      { type: 'lock', locked: true, found: [], external: ['waiting'], needsSignIn: [], mayMoveFunds: [] },
+    ])
+    expect(chat.needsSignIn).toEqual([])
+  })
+
+  it('still says locked when nothing external is on', () => {
+    expect(lockStatus(after([lock([])])).text).toBe('Locked to Ottopus tools')
+  })
+
+  it('points out a tool that may move funds once, however many turns it appears on', () => {
+    const chat = after([lock(['w'], ['mcp__w__send']), lock(['w'], ['mcp__w__send'])])
+    const notices = chat.items.filter((item) => item.kind === 'notice')
+    expect(notices).toHaveLength(1)
+    expect(notices[0]).toMatchObject({ title: expect.stringContaining('move funds') as string, text: expect.stringContaining('mcp__w__send') as string })
+  })
+
+  it('says what could not be loaded', () => {
+    expect(after([{ type: 'external-skipped', names: ['broken'] }]).items.at(-1)).toMatchObject({ kind: 'notice', text: expect.stringContaining('broken') as string })
+  })
+
+  it('stopping still wins over anything external', () => {
+    const chat = after([lock(['w']), { type: 'lock', locked: false, found: ['the tool Bash'], external: ['w'], needsSignIn: [], mayMoveFunds: [] }])
+    expect(lockStatus(chat).text).toBe('Not locked, chat stopped')
   })
 })
 

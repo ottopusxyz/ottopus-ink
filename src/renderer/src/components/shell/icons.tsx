@@ -61,6 +61,12 @@ export const ShieldIcon = icon(
 )
 export const ChevronDownIcon = icon(<path d="m6 9 6 6 6-6" />, 2)
 export const ArrowUpIcon = icon(<path d="M12 19V5M6 11l6-6 6 6" />, 2.25)
+export const KeyIcon = icon(
+  <>
+    <circle cx="8" cy="16" r="4.5" />
+    <path d="m11.2 12.8 8.3-8.3M16 8l3 3" />
+  </>,
+)
 export const PlugIcon = icon(<path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0zM12 16v5" />, 2)
 export const SidebarIcon = icon(
   <>

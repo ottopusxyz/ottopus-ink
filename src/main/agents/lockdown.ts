@@ -11,13 +11,19 @@ const MAX_FOUND = 10
  * whatever it was given, and they can't run without the `Skill` and `Agent` tools,
  * which this rejects.
  */
-function outsideInk(tools: string[] | null, servers: string[] | null, plugins: string[] | null): string[] {
+function outsideInk(
+  tools: string[] | null,
+  servers: string[] | null,
+  plugins: string[] | null,
+  allowedPrefixes: readonly string[],
+  allowedServers: readonly string[],
+): string[] {
   const found: string[] = []
   if (tools === null) found.push("a tool list Ink can't read")
   if (servers === null) found.push("a server list Ink can't read")
   if (plugins === null) found.push("a plugin list Ink can't read")
-  for (const tool of tools ?? []) if (!tool.startsWith(TOOL_PREFIX)) found.push(`the tool ${tool}`)
-  for (const server of servers ?? []) if (server !== MCP_SERVER_NAME) found.push(`the MCP server ${server}`)
+  for (const tool of tools ?? []) if (!allowedPrefixes.some((prefix) => tool.startsWith(prefix))) found.push(`the tool ${tool}`)
+  for (const server of servers ?? []) if (!allowedServers.includes(server)) found.push(`the MCP server ${server}`)
   for (const plugin of plugins ?? []) found.push(`the plugin ${plugin}`)
   // This goes in a notice for the person, who doesn't need all of a long list.
   return found.length > MAX_FOUND ? [...found.slice(0, MAX_FOUND), `${found.length - MAX_FOUND} more`] : found
@@ -38,14 +44,20 @@ function outsideInk(tools: string[] | null, servers: string[] | null, plugins: s
  *   tools can only be listed by way of that connection, so without it they're
  *   coming from some other server that uses the name.
  */
-export function lockWatcher(shimConnected: () => boolean): (event: ChatEvent) => string[] | null {
+export function lockWatcher(
+  shimConnected: () => boolean,
+  externalServers: readonly string[] = [],
+): (event: ChatEvent) => string[] | null {
   let reportedThisTurn = false
+  // Server names hold no underscores, so `mcp__a__` can't also match a tool of `a__b`.
+  const allowedPrefixes = [TOOL_PREFIX, ...externalServers.map((server) => `mcp__${server}__`)]
+  const allowedServers = [MCP_SERVER_NAME, ...externalServers]
 
   return (event) => {
     switch (event.type) {
       case 'session': {
         reportedThisTurn = true
-        const found = outsideInk(event.tools, event.servers, event.plugins)
+        const found = outsideInk(event.tools, event.servers, event.plugins, allowedPrefixes, allowedServers)
         if (event.tools?.some((tool) => tool.startsWith(TOOL_PREFIX)) && !shimConnected()) {
           found.push(`${MCP_SERVER_NAME} tools that didn't come through Ink's shim`)
         }
@@ -55,7 +67,7 @@ export function lockWatcher(shimConnected: () => boolean): (event: ChatEvent) =>
         return ['a subagent at work']
       case 'tool-call':
         if (!reportedThisTurn) return [`a call to ${event.name} before the agent reported its tools`]
-        return event.name.startsWith(TOOL_PREFIX) ? null : [`a call to ${event.name}`]
+        return allowedPrefixes.some((prefix) => event.name.startsWith(prefix)) ? null : [`a call to ${event.name}`]
       case 'turn-end': {
         // A stopped or failed turn can end before the report goes out.
         const silent = event.outcome === 'done' && !reportedThisTurn

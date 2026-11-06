@@ -101,6 +101,12 @@ describe('which addresses a server may name', () => {
     expect(isAllowedEndpoint('http://127.0.0.1:1/a', remote)).toBe(false)
   })
   it('lets a server on this computer use this computer', () => expect(isAllowedEndpoint('http://127.0.0.1:1/a', local)).toBe(true))
+  it.each(['https://127.0.0.1:8443/a', 'https://localhost/a', 'https://10.0.0.1/a', 'https://192.168.1.1/a', 'https://169.254.169.254/a', 'https://172.16.0.1/a', 'https://100.64.0.1/a', 'https://[::1]/a', 'https://[fd00::1]/a', 'https://[fe80::1]/a', 'https://0x7f.1/a', 'https://2130706433/a'])(
+    'refuses %s from a remote server',
+    (value) => expect(isAllowedEndpoint(value, remote)).toBe(false),
+  )
+  it('lets a server on a private network use that network', () => expect(isAllowedEndpoint('https://10.0.0.2/a', 'https://10.0.0.1/mcp')).toBe(true))
+  it('does not take a public name for a private one', () => expect(isAllowedEndpoint('https://10.0.0.1.example.test/a', remote)).toBe(true))
   it('still refuses http elsewhere for a local server', () => expect(isAllowedEndpoint('http://as.test/a', local)).toBe(false))
   it.each(['file:///etc/passwd', 'javascript:alert(1)', 'https://user:pw@as.test/a', 'not a url', 7, null])('refuses %s', (value) => {
     expect(isAllowedEndpoint(value, remote)).toBe(false)
@@ -174,6 +180,8 @@ describe('planSignIn', () => {
       resource: fake.mcp,
       scope: 'read write',
       host: new URL(fake.base).host,
+      issuer: fake.base,
+      issuerAnswers: false,
     })
   })
 
@@ -211,6 +219,21 @@ describe('planSignIn', () => {
     await expect(planSignIn(fake.mcp, 'http')).rejects.toThrow(/doesn't say how/)
   })
 
+  it('refuses to send a real provider\'s code to the token endpoint of someone else', async () => {
+    const fake = await startFake()
+    answering(fake, '/.well-known/oauth-authorization-server', metadata(fake, { authorization_endpoint: 'http://localhost:1/authorize' }))
+    await expect(planSignIn(fake.mcp, 'http')).rejects.toThrow(/different sites/)
+  })
+
+  it('still names this server as the resource when it has no details of its own', async () => {
+    const fake = await startFake()
+    fake.override.set('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
+      res.writeHead(404).end()
+      return true
+    })
+    expect((await planSignIn(fake.mcp, 'http')).resource).toBe(fake.mcp)
+  })
+
   it('refuses a token endpoint at an unsafe address', async () => {
     const fake = await startFake()
     answering(fake, '/.well-known/oauth-authorization-server', metadata(fake, { token_endpoint: 'http://evil.test/token' }))
@@ -229,7 +252,7 @@ describe('planSignIn', () => {
       res.writeHead(200).end(`{"resource":"${'x'.repeat(2 * 1024 * 1024)}"}`)
       return true
     })
-    expect(await planSignIn(fake.mcp, 'http')).toMatchObject({ resource: null, authorizationEndpoint: `${fake.base}/authorize` })
+    expect(await planSignIn(fake.mcp, 'http')).toMatchObject({ resource: fake.mcp, authorizationEndpoint: `${fake.base}/authorize` })
   })
 })
 
@@ -280,6 +303,50 @@ describe('completeSignIn', () => {
     expect(fake.tokenForms.map((form) => form.get('code'))).toEqual(['the-code'])
   })
 
+  it('survives a callback built to crash it, whose state matches in length but not bytes', async () => {
+    const fake = await startFake()
+    const plan = await planSignIn(fake.mcp, 'http')
+    const signIn = await completeSignIn(plan, {
+      signal: signal(),
+      openBrowser: async (url) => {
+        const back = new URL(new URL(url).searchParams.get('redirect_uri') ?? '')
+        back.searchParams.set('code', 'x')
+        back.searchParams.set('state', 'é'.repeat(43))
+        expect((await fetch(back)).status).toBe(404)
+        await approving(url)
+      },
+    })
+    expect(signIn.accessToken).toBe('first-token')
+  })
+
+  const returning = (iss: string | null) => async (url: string) => {
+    const asked = new URL(url)
+    const back = new URL(asked.searchParams.get('redirect_uri') ?? '')
+    back.searchParams.set('code', 'the-code')
+    back.searchParams.set('state', asked.searchParams.get('state') ?? '')
+    if (iss !== null) back.searchParams.set('iss', iss)
+    await fetch(back)
+  }
+
+  it('refuses a code that says it came from a different issuer', async () => {
+    const fake = await startFake()
+    const plan = await planSignIn(fake.mcp, 'http')
+    await expect(completeSignIn(plan, { signal: signal(), openBrowser: returning('https://honest.test') })).rejects.toThrow(/other than expected/)
+    expect(fake.tokenForms).toEqual([])
+  })
+
+  it('takes a code that names the right issuer', async () => {
+    const fake = await startFake()
+    const plan = await planSignIn(fake.mcp, 'http')
+    expect((await completeSignIn(plan, { signal: signal(), openBrowser: returning(fake.base) })).accessToken).toBe('first-token')
+  })
+
+  it('refuses a code with no issuer from one that promised to name itself', async () => {
+    const fake = await startFake()
+    const plan = { ...(await planSignIn(fake.mcp, 'http')), issuerAnswers: true }
+    await expect(completeSignIn(plan, { signal: signal(), openBrowser: returning(null) })).rejects.toThrow(/other than expected/)
+  })
+
   it('fails when the person refuses at the server', async () => {
     const fake = await startFake()
     const plan = await planSignIn(fake.mcp, 'http')
@@ -311,6 +378,27 @@ describe('completeSignIn', () => {
     })
     await expect(finished).rejects.toThrow(/cancelled/)
     await expect(fetch(redirect)).rejects.toThrow()
+  })
+
+  it('opens no browser if already cancelled', async () => {
+    const fake = await startFake()
+    const plan = await planSignIn(fake.mcp, 'http')
+    const controller = new AbortController()
+    controller.abort()
+    let opened = false
+    await expect(completeSignIn(plan, { signal: controller.signal, openBrowser: async () => void (opened = true) })).rejects.toThrow()
+    expect(opened).toBe(false)
+  })
+
+  it('returns no token when cancelled while asking for it', async () => {
+    const fake = await startFake()
+    const controller = new AbortController()
+    fake.override.set('/token', () => {
+      controller.abort()
+      return true
+    })
+    const plan = await planSignIn(fake.mcp, 'http')
+    await expect(completeSignIn(plan, { signal: controller.signal, openBrowser: approving })).rejects.toThrow()
   })
 
   it('gives up after a time', async () => {
@@ -475,6 +563,52 @@ describe('createSignIns', () => {
       running.closeAllConnections()
     }
     expect(await signIns.accessFor(server)).toEqual({ kind: 'token', token: 'first-token' })
+  })
+
+  it('does not let a renewal on its way bring back a sign-in after signing out', async () => {
+    const fake = await startFake()
+    const { signIns, server } = await signedIn(fake)
+    fake.goodTokens.clear()
+    let release = () => undefined as void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    fake.override.set('/token', (_req, res) => {
+      void held.then(() => res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ access_token: 'renewed-token', token_type: 'Bearer', refresh_token: 'r' })))
+      return true
+    })
+    const asked = signIns.accessFor(server)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    signIns.signOut(server)
+    release()
+    expect(await asked).toEqual({ kind: 'needs-sign-in' })
+    expect(signIns.isSignedIn(server)).toBe(false)
+    expect(existsSync(file)).toBe(false)
+  })
+
+  it('renews once when two chats start together', async () => {
+    const fake = await startFake()
+    const { signIns, server } = await signedIn(fake)
+    fake.goodTokens.delete('first-token')
+    const answers = await Promise.all([signIns.accessFor(server), signIns.accessFor(server)])
+    expect(answers).toEqual([{ kind: 'token', token: 'renewed-token' }, { kind: 'token', token: 'renewed-token' }])
+    expect(fake.tokenForms.filter((form) => form.get('grant_type') === 'refresh_token')).toHaveLength(1)
+  })
+
+  it('looks after a server whose only headers carry no sign-in, and sends them along', async () => {
+    const fake = await startFake()
+    let tenant: string | undefined
+    fake.override.set('/mcp', (req, res) => {
+      tenant = req.headers['x-tenant'] as string | undefined
+      res.writeHead(401).end('{}')
+      return true
+    })
+    const server: RemoteServer = { transport: 'http', url: fake.mcp, headers: { 'X-Tenant': 'demo' } }
+    expect(make().handles(server)).toBe(true)
+    expect(await make().accessFor(server)).toEqual({ kind: 'needs-sign-in' })
+    expect(tenant).toBe('demo')
+  })
+
+  it.each(['Authorization', 'X-API-Key', 'x-auth-token'])('leaves alone a server with its own %s header', (name) => {
+    expect(createSignIns({ file, box, openBrowser: approving }).handles({ transport: 'http', url: 'https://near.test/mcp', headers: { [name]: 'x' } })).toBe(false)
   })
 
   it('removes the file on signing out of the last one', async () => {

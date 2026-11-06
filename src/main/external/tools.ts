@@ -241,6 +241,8 @@ export function createExternalTools({ file, bundled, detect, readEnv, signIns }:
     },
 
     async remove(id) {
+      // A sign-in shouldn't outlive the thing it was for, or come back if it's added again.
+      for (const item of saved.added) if (item.id === id) signIns.signOut(item.server)
       saved = {
         ...saved,
         added: saved.added.filter((item) => item.id !== id),
@@ -302,7 +304,7 @@ export function createExternalTools({ file, bundled, detect, readEnv, signIns }:
           const plan = await signIns.plan(server)
           const agreed = await confirm({
             message: `Sign in to ${entry.name}?`,
-            detail: `Your browser will open at ${plan.host}.\n\n${lasts}, and uses it only for ${server.url}. The agent in a chat that uses this tool can read it while that chat runs.`,
+            detail: `Your browser will open at ${plan.host}.${plan.host === new URL(server.url).host ? '' : ` That's a different site from the tool, and the tool will get what you sign in with there. Only go on if you expected ${plan.host} to handle this.`}\n\n${lasts}, and uses it only for ${server.url}. The agent in a chat that uses this tool can read it while that chat runs.`,
             confirm: 'Open browser',
           })
           if (!agreed) return await list()
@@ -325,6 +327,8 @@ export function createExternalTools({ file, bundled, detect, readEnv, signIns }:
     async signOut(id) {
       const entry = (await allEntries()).find((candidate) => candidate.id === id)
       if (!entry) throw new Error('That item is no longer available')
+      // A sign-in still waiting would otherwise land just after this.
+      signingIn?.abort()
       for (const server of Object.values(entry.servers)) signIns.signOut(server)
       if (isEnabled(entry)) await lookForSignIn(entry)
       return list()

@@ -37,11 +37,11 @@ const bundled = (name: string): CatalogEntry => ({ ...detected(name), id: `bundl
 function fakeSignIns(access: () => ServerAccess = () => ({ kind: 'open' })) {
   const signedIn = new Set<string>()
   return {
-    handles: (server): server is RemoteServer => server.transport !== 'stdio' && Object.keys(server.headers).length === 0,
+    handles: (server): server is RemoteServer => server.transport !== 'stdio' && !Object.keys(server.headers).includes('Authorization'),
     isSignedIn: (server) => server.transport !== 'stdio' && signedIn.has(server.url),
     canKeep: () => true,
     accessFor: vi.fn(async (server: ServerDef) => (server.transport === 'stdio' ? { kind: 'open' as const } : access())),
-    plan: vi.fn(async () => ({ authorizationEndpoint: 'https://as.test/a', tokenEndpoint: 'https://as.test/t', registrationEndpoint: 'https://as.test/r', resource: null, scope: null, host: 'as.test' })),
+    plan: vi.fn(async () => ({ authorizationEndpoint: 'https://as.test/a', tokenEndpoint: 'https://as.test/t', registrationEndpoint: 'https://as.test/r', resource: null, scope: null, host: 'as.test', issuer: 'https://as.test', issuerAnswers: false })),
     signIn: vi.fn(async (server: { url: string }) => {
       signedIn.add(server.url)
     }),
@@ -265,6 +265,25 @@ describe('signing in', () => {
     const tools = setup(() => [detected('one', remote)], [], signIns)
     await tools.setEnabled(idOf, true, yes)
     await expect(tools.signIn(idOf, yes)).rejects.toThrow(/doesn't say/)
+  })
+
+  it('warns when the sign-in page is on a different site from the tool', async () => {
+    const tools = setup(() => [detected('one', remote)], [], fakeSignIns(() => ({ kind: 'needs-sign-in' })))
+    await tools.setEnabled(idOf, true, yes)
+    const confirm = vi.fn<Confirm>(async () => false)
+    await tools.signIn(idOf, confirm)
+    expect(confirm.mock.calls[0]?.[0].detail).toContain('different site')
+  })
+
+  it('forgets the sign-in when a hand-added server is removed', async () => {
+    const signIns = fakeSignIns()
+    const tools = setup(() => [], [], signIns)
+    const added = await tools.add({ name: 'mine', url: 'https://near.test/mcp' }, yes)
+    const id = added[0]?.id ?? ''
+    await signIns.signIn({ url: 'https://near.test/mcp' })
+    expect((await tools.list())[0]?.signedIn).toBe(true)
+    await tools.remove(id)
+    expect(signIns.isSignedIn(remote)).toBe(false)
   })
 
   it('signing out forgets it and checks again', async () => {

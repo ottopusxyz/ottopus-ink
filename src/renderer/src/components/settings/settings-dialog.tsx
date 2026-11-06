@@ -78,7 +78,8 @@ export function SettingsDialog({ open, onClose, agents, selectedAgent, checking,
           {tab === 'agent' ? (
             <AgentTab agents={agents} selectedAgent={selectedAgent} checking={checking} onCheckAgain={onCheckAgain} />
           ) : tab === 'tools' ? (
-            <ToolsTab onChange={onExternalChange} />
+            // Only while open, so reopening Settings reads the list afresh.
+            open ? <ToolsTab onChange={onExternalChange} /> : null
           ) : tab === 'wallet' ? (
             <WalletTab />
           ) : (

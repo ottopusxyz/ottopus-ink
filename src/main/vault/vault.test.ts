@@ -96,11 +96,25 @@ describe('the vault file', () => {
     expect(service.status()).toEqual({ state: 'unlocked', keyring: false })
   })
 
-  it('never replaces a vault, even if one appears while saving', () => {
+  it('never replaces a vault that is already there', () => {
     const store = createVaultStore({ file, box: noKeyring })
     store.write('first')
     expect(() => store.write('second')).toThrow(VaultStoreError)
     expect(store.read()).toBe('first')
+  })
+
+  it('never replaces a vault that appears after the check, while saving', () => {
+    // Sealing runs after the check for an existing file, so this one appears in between.
+    const racing: SecretBox = {
+      ...keyringBox,
+      seal: (text) => {
+        writeFileSync(file, 'someone else’s vault')
+        return keyringBox.seal(text)
+      },
+    }
+    expect(() => createVaultStore({ file, box: racing }).write('second')).toThrow(expect.objectContaining({ reason: 'exists' }))
+    expect(readFileSync(file, 'utf8')).toBe('someone else’s vault')
+    expect(readdirSync(dir)).toEqual(['vault.bin'])
   })
 
   it.each([

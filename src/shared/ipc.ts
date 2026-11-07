@@ -1,3 +1,5 @@
+import type { VaultRequest, VaultResult } from './vault'
+
 /**
  * The IPC contract between the renderer (through the preload bridge) and the
  * main process. Every channel the renderer can reach is listed here; the main
@@ -183,5 +185,5 @@ export interface InkBridge {
 }
 
 /** Messages between main and the signer utility process. */
-export type SignerRequest = { type: 'ping'; id: number }
-export type SignerResponse = { type: 'pong'; id: number }
+export type SignerRequest = { type: 'ping'; id: number } | { type: 'vault'; id: number; request: VaultRequest }
+export type SignerResponse = { type: 'pong'; id: number } | { type: 'vault'; id: number; result: VaultResult<object> }

@@ -2,7 +2,7 @@
 
 A desktop universal wallet whose brain is the coding agent you already have installed (Claude Code, Codex or OpenCode). The agent proposes plans; you review and sign them in the app. Cross-chain value moves through NEAR Intents.
 
-> Work in progress for the NEAR hackathon. The vault and its addresses are built but have no screens yet, and nothing signs yet. Don't give it a recovery phrase that holds real funds.
+> Work in progress for the NEAR hackathon. You can set up, lock and unlock the wallet and see your addresses, but nothing signs yet. Don't give it a recovery phrase that holds real funds.
 
 ## Rules that never change
 
@@ -63,7 +63,7 @@ The phrase gives one account on each chain, at the path most wallets use, so res
 | Sui | `m/44'/784'/0'/0'/0'` | `0x…` |
 | Aptos | `m/44'/637'/0'/0'/0'` | `0x…`, until you rotate its key |
 
-Addresses are worked out in the signer and are only available while unlocked. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
+Addresses are worked out in the signer and are only available while unlocked. The Receive page shows each one with a QR code. Its Copy button asks main to copy the address the signer gave, so the page can't put a different one on your clipboard. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
 
 ## Prior work
 

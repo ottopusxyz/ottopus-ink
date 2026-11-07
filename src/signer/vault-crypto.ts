@@ -49,8 +49,11 @@ async function deriveKey(password: string, kdf: Kdf): Promise<Buffer> {
   }
 }
 
+/** The file format. It's in the bound data too, so a later format can never read this ciphertext as its own. */
+const FORMAT = 1
+
 /** Covers every setting in the file, so none can be changed without decryption failing. */
-const additionalData = (kdf: Kdf, iv: string) => Buffer.from(`${DOMAIN}\0${JSON.stringify([kdf.name, kdf.logN, kdf.r, kdf.p, kdf.salt, CIPHER, iv])}`, 'utf8')
+const additionalData = (kdf: Kdf, iv: string) => Buffer.from(`${DOMAIN}\0${JSON.stringify([FORMAT, kdf.name, kdf.logN, kdf.r, kdf.p, kdf.salt, CIPHER, iv])}`, 'utf8')
 
 /** Encrypts a seed's entropy under a password, as text that's safe to keep on disk. */
 export async function sealEntropy(entropy: Uint8Array, password: string, logN: number = DEFAULT_LOG_N): Promise<string> {
@@ -61,7 +64,7 @@ export async function sealEntropy(entropy: Uint8Array, password: string, logN: n
     const cipher = createCipheriv(CIPHER, key, Buffer.from(iv, 'base64'), { authTagLength: TAG_BYTES })
     cipher.setAAD(additionalData(kdf, iv))
     const data = Buffer.concat([cipher.update(entropy), cipher.final()])
-    return JSON.stringify({ v: 1, kdf, cipher: CIPHER, iv, tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') })
+    return JSON.stringify({ v: FORMAT, kdf, cipher: CIPHER, iv, tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') })
   } finally {
     wipe(key)
   }
@@ -88,7 +91,7 @@ function parse(blob: string, minLogN: number): Parsed {
   const kdf = (typeof file.kdf === 'object' && file.kdf !== null ? file.kdf : {}) as Record<string, unknown>
   const logN = kdf.logN
   const fits =
-    file.v === 1 &&
+    file.v === FORMAT &&
     file.cipher === CIPHER &&
     kdf.name === 'scrypt' &&
     typeof logN === 'number' &&

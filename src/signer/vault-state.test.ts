@@ -8,6 +8,20 @@ import { deriveAccounts } from './accounts'
 import { DEFAULT_LOG_N, openEntropy, sealEntropy } from './vault-crypto'
 import { createVaultState } from './vault-state'
 
+/** Set to hold the BIP-39 seed step open, so a test can act while accounts are being worked out. */
+const seedGate = vi.hoisted(() => ({ wait: null as Promise<void> | null }))
+
+vi.mock('@scure/bip39', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@scure/bip39')>()
+  return {
+    ...actual,
+    mnemonicToSeed: async (...args: Parameters<typeof actual.mnemonicToSeed>) => {
+      if (seedGate.wait) await seedGate.wait
+      return actual.mnemonicToSeed(...args)
+    },
+  }
+})
+
 vi.mock('./accounts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./accounts')>()
   return { ...actual, deriveAccounts: vi.fn(actual.deriveAccounts) }
@@ -288,10 +302,28 @@ describe('accounts', () => {
   it('are not given out if a lock arrives while they are worked out', async () => {
     const { state, blob } = await created()
     await state.handle({ op: 'unlock', blob, password: PASSWORD })
+    let release = () => {}
+    seedGate.wait = new Promise((resolve) => (release = resolve))
     const asking = accountsOf(state)
     await state.handle({ op: 'lock' })
+    seedGate.wait = null
+    release()
     expect(await asking).toEqual({ ok: false, reason: 'locked' })
     expect(await accountsOf(state)).toEqual({ ok: false, reason: 'locked' })
+  })
+
+  it('are still given if the vault is unlocked again while they are worked out', async () => {
+    const { state, blob } = await created()
+    await state.handle({ op: 'unlock', blob, password: PASSWORD })
+    let release = () => {}
+    seedGate.wait = new Promise((resolve) => (release = resolve))
+    const asking = accountsOf(state)
+    expectOk(await state.handle({ op: 'unlock', blob, password: PASSWORD }))
+    seedGate.wait = null
+    release()
+    const { accounts } = expectOk(await asking)
+    expect(accounts).toHaveLength(7)
+    expect(expectOk(await accountsOf(state)).accounts).toEqual(accounts)
   })
 
   it('wipe the seed they were worked out from', async () => {

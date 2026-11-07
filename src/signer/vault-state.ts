@@ -120,7 +120,8 @@ export function createVaultState({ logN = DEFAULT_LOG_N }: VaultStateOptions = {
           const before = locks
           const seed = await mnemonicToSeed(entropyToMnemonic(entropy, wordlist))
           try {
-            if (locks !== before || unlocked !== entropy) return fail('locked')
+            // Only a lock matters. Unlocking again opens the same file, so these are still its accounts.
+            if (locks !== before) return fail('locked')
             accounts = deriveAccounts(seed)
           } finally {
             seed.fill(0)

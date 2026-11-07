@@ -10,6 +10,7 @@ import {
   CheckIcon,
   LockIcon,
   PlugIcon,
+  ReceiveIcon,
   PlusIcon,
   SearchIcon,
   ShieldIcon,
@@ -20,6 +21,7 @@ import { PAGES, shortcutLabel, type PageId, type View } from './nav'
 
 const PAGE_ICONS: Record<PageId, typeof WalletIcon> = {
   portfolio: WalletIcon,
+  receive: ReceiveIcon,
   activity: ActivityIcon,
 }
 

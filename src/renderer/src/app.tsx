@@ -9,6 +9,7 @@ import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
 import { LockScreen } from '@/components/wallet/lock-screen'
+import { ReceiveView } from '@/components/wallet/receive-view'
 import { SetupScreen } from '@/components/wallet/setup-screen'
 import { chooseAgent } from '@/lib/agents'
 import { HOME_DRAFT, isWorking, withDraft, type Drafts } from '@/lib/chats'
@@ -153,8 +154,10 @@ export function App() {
         />
       }
     >
-      {page ? (
-        <PageView page={page} />
+      {page === 'receive' ? (
+        <ReceiveView />
+      ) : page ? (
+        <PageView page={page} onReceive={() => setView({ kind: 'page', page: 'receive' })} />
       ) : current ? (
         <ChatView
           chat={current}

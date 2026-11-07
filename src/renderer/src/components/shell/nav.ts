@@ -1,6 +1,7 @@
 /** The pages the sidebar's lower group opens. Chats are listed above them. */
 export const PAGES = [
   { id: 'portfolio', label: 'Portfolio' },
+  { id: 'receive', label: 'Receive' },
   { id: 'activity', label: 'Activity' },
 ] as const
 

@@ -345,6 +345,45 @@ describe('unlocking and locking', () => {
   })
 })
 
+describe('accounts', () => {
+  it('are given while unlocked, without asking the signer while locked', async () => {
+    const { service, asked } = setup()
+    expect(await service.accounts()).toEqual({ ok: false, reason: 'locked' })
+    await createVault(service)
+    const { accounts } = expectOk(await service.accounts())
+    expect(accounts.map((account) => account.chain)).toEqual(['near', 'evm', 'solana', 'bitcoin', 'tron', 'sui', 'aptos'])
+    await service.lock()
+    asked.length = 0
+    expect(await service.accounts()).toEqual({ ok: false, reason: 'locked' })
+    expect(asked).toEqual([])
+  })
+
+  it('come back the same after the app restarts', async () => {
+    const first = setup()
+    await createVault(first.service)
+    const before = expectOk(await first.service.accounts()).accounts
+    const { service } = setup()
+    expectOk(await service.unlock(PASSWORD))
+    expect(expectOk(await service.accounts()).accounts).toEqual(before)
+  })
+
+  it('do not wait behind another action', async () => {
+    const { service } = setup()
+    await createVault(service)
+    const restoring = service.restore('word', PASSWORD)
+    expectOk(await service.accounts())
+    await restoring
+  })
+
+  it('are not given out if the vault locks while they are asked for', async () => {
+    const { service } = setup()
+    await createVault(service)
+    const asking = service.accounts()
+    await service.lock()
+    expect(await asking).toEqual({ ok: false, reason: 'locked' })
+  })
+})
+
 describe('what a page can send', () => {
   it.each([
     ['a number for a password', (s: ReturnType<typeof setup>['service']) => s.unlock(5)],

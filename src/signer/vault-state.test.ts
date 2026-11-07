@@ -1,10 +1,31 @@
 import { randomBytes } from 'node:crypto'
-import { entropyToMnemonic, validateMnemonic } from '@scure/bip39'
+import { entropyToMnemonic, mnemonicToSeedSync, validateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Account } from '../shared/accounts'
 import type { NewPhrase, VaultResult } from '../shared/vault'
+import { deriveAccounts } from './accounts'
 import { DEFAULT_LOG_N, openEntropy, sealEntropy } from './vault-crypto'
 import { createVaultState } from './vault-state'
+
+/** Set to hold the BIP-39 seed step open, so a test can act while accounts are being worked out. */
+const seedGate = vi.hoisted(() => ({ wait: null as Promise<void> | null }))
+
+vi.mock('@scure/bip39', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@scure/bip39')>()
+  return {
+    ...actual,
+    mnemonicToSeed: async (...args: Parameters<typeof actual.mnemonicToSeed>) => {
+      if (seedGate.wait) await seedGate.wait
+      return actual.mnemonicToSeed(...args)
+    },
+  }
+})
+
+vi.mock('./accounts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./accounts')>()
+  return { ...actual, deriveAccounts: vi.fn(actual.deriveAccounts) }
+})
 
 /** Far below the real cost, so tests run in moments. */
 const logN = 10
@@ -245,5 +266,74 @@ describe('locking and unlocking', () => {
   it('refuses a vault made to look cheap to guess', async () => {
     const weak = await sealEntropy(new Uint8Array(16), PASSWORD, 4)
     expect(await make().handle({ op: 'unlock', blob: weak, password: PASSWORD })).toEqual({ ok: false, reason: 'damaged' })
+  })
+})
+
+describe('accounts', () => {
+  const accountsOf = async (state: ReturnType<typeof make>) => (await state.handle({ op: 'accounts' })) as VaultResult<{ accounts: Account[] }>
+
+  it('are only there while unlocked', async () => {
+    const { state, blob } = await created()
+    expect(await accountsOf(state)).toEqual({ ok: false, reason: 'locked' })
+    await state.handle({ op: 'unlock', blob, password: PASSWORD })
+    expect(expectOk(await accountsOf(state)).accounts).toHaveLength(7)
+    await state.handle({ op: 'lock' })
+    expect(await accountsOf(state)).toEqual({ ok: false, reason: 'locked' })
+  })
+
+  it('come from the phrase, so a restored phrase gives the same addresses as anywhere else', async () => {
+    const state = make()
+    const phrase = phraseOf(32)
+    expectOk(await state.handle({ op: 'begin-restore', words: phrase }))
+    const { blob } = expectOk((await state.handle({ op: 'finish', password: PASSWORD, answers: [] })) as VaultResult<{ blob: string }>)
+    await state.handle({ op: 'unlock', blob, password: PASSWORD })
+    expect(expectOk(await accountsOf(state)).accounts).toEqual(deriveAccounts(mnemonicToSeedSync(phrase)))
+  })
+
+  it('are the same after locking and unlocking again', async () => {
+    const { state, blob } = await created()
+    await state.handle({ op: 'unlock', blob, password: PASSWORD })
+    const first = expectOk(await accountsOf(state)).accounts
+    await state.handle({ op: 'lock' })
+    await state.handle({ op: 'unlock', blob, password: PASSWORD })
+    expect(expectOk(await accountsOf(state)).accounts).toEqual(first)
+  })
+
+  it('are not given out if a lock arrives while they are worked out', async () => {
+    const { state, blob } = await created()
+    await state.handle({ op: 'unlock', blob, password: PASSWORD })
+    let release = () => {}
+    seedGate.wait = new Promise((resolve) => (release = resolve))
+    const asking = accountsOf(state)
+    await state.handle({ op: 'lock' })
+    seedGate.wait = null
+    release()
+    expect(await asking).toEqual({ ok: false, reason: 'locked' })
+    expect(await accountsOf(state)).toEqual({ ok: false, reason: 'locked' })
+  })
+
+  it('are still given if the vault is unlocked again while they are worked out', async () => {
+    const { state, blob } = await created()
+    await state.handle({ op: 'unlock', blob, password: PASSWORD })
+    let release = () => {}
+    seedGate.wait = new Promise((resolve) => (release = resolve))
+    const asking = accountsOf(state)
+    expectOk(await state.handle({ op: 'unlock', blob, password: PASSWORD }))
+    seedGate.wait = null
+    release()
+    const { accounts } = expectOk(await asking)
+    expect(accounts).toHaveLength(7)
+    expect(expectOk(await accountsOf(state)).accounts).toEqual(accounts)
+  })
+
+  it('wipe the seed they were worked out from', async () => {
+    const { state, blob } = await created()
+    await state.handle({ op: 'unlock', blob, password: PASSWORD })
+    const derive = vi.mocked(deriveAccounts)
+    derive.mockClear()
+    expectOk(await accountsOf(state))
+    const seed = derive.mock.calls[0]?.[0]
+    expect(seed).toHaveLength(64)
+    expect([...seed!].every((byte) => byte === 0)).toBe(true)
   })
 })

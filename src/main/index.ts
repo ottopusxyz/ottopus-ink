@@ -295,6 +295,11 @@ function registerIpc(): void {
     return getVault().lock()
   })
 
+  ipcMain.handle(IPC.vaultAccounts, (event) => {
+    assertAppFrame(event)
+    return getVault().accounts()
+  })
+
   ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {
     assertAppFrame(event)
     if (typeof chatId !== 'string' || typeof text !== 'string') throw new Error('Bad message')

@@ -1,5 +1,7 @@
 /** What main, the signer and the page agree on about the vault. Types and limits only: no secrets, no crypto. */
 
+import type { Account } from './accounts'
+
 export type VaultWordCount = 12 | 24
 
 export const MIN_PASSWORD_LENGTH = 12
@@ -39,6 +41,8 @@ export type VaultFailure =
   | 'locked-meanwhile'
   | 'write-failed'
   | 'signer-stopped'
+  /** This needs the vault unlocked. */
+  | 'locked'
 
 export type VaultResult<T = object> = ({ ok: true } & T) | { ok: false; reason: VaultFailure }
 
@@ -62,6 +66,7 @@ export type VaultRequest =
   | { op: 'cancel' }
   | { op: 'unlock'; blob: string; password: string }
   | { op: 'lock' }
+  | { op: 'accounts' }
 
 export type VaultOp = VaultRequest['op']
 
@@ -74,4 +79,6 @@ export interface VaultReplies {
   cancel: object
   unlock: object
   lock: object
+  /** The public address on each chain. No keys. */
+  accounts: { accounts: Account[] }
 }

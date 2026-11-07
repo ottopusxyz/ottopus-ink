@@ -1,3 +1,4 @@
+import type { Account } from '../../shared/accounts'
 import { MAX_PASSWORD_LENGTH, type BackupAnswer, type NewPhrase, type VaultFailure, type VaultRequest, type VaultResult, type VaultStatus } from '../../shared/vault'
 import { VaultStoreError, type VaultStore } from './store'
 
@@ -20,6 +21,8 @@ export interface VaultService {
   restore(words: unknown, password: unknown): Promise<VaultResult>
   unlock(password: unknown): Promise<VaultResult>
   lock(): Promise<void>
+  /** The public address on each chain. Read only, so it doesn't wait behind other actions. */
+  accounts(): Promise<VaultResult<{ accounts: Account[] }>>
   isUnlocked(): boolean
   /** The signer went away, and took any seed with it. */
   signerStopped(): void
@@ -159,6 +162,13 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
       unlocked = false
       announce()
       await ask({ op: 'lock' })
+    },
+
+    async accounts() {
+      if (!unlocked) return fail('locked')
+      const before = locks
+      const answer = (await ask({ op: 'accounts' })) as VaultResult<{ accounts: Account[] }>
+      return locks === before ? answer : fail('locked')
     },
 
     signerStopped() {

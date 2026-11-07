@@ -1,7 +1,9 @@
 import { randomBytes, randomInt } from 'node:crypto'
-import { entropyToMnemonic, mnemonicToEntropy, validateMnemonic } from '@scure/bip39'
+import { entropyToMnemonic, mnemonicToEntropy, mnemonicToSeed, validateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, type BackupAnswer, type VaultFailure, type VaultRequest, type VaultResult, type VaultWordCount } from '../shared/vault'
+import type { Account } from '../shared/accounts'
+import { deriveAccounts } from './accounts'
 import { DEFAULT_LOG_N, openEntropy, sealEntropy, VaultCryptoError } from './vault-crypto'
 
 const BACKUP_CHECKS = 3
@@ -43,6 +45,8 @@ export interface VaultStateOptions {
 export function createVaultState({ logN = DEFAULT_LOG_N }: VaultStateOptions = {}) {
   let unlocked: Uint8Array | null = null
   let pending: Pending | null = null
+  /** Public, worked out once per unlock. */
+  let accounts: Account[] | null = null
   /** Moves on with every lock, so work that started before one can't finish after it. */
   let locks = 0
 
@@ -55,6 +59,7 @@ export function createVaultState({ logN = DEFAULT_LOG_N }: VaultStateOptions = {
     locks++
     unlocked?.fill(0)
     unlocked = null
+    accounts = null
     dropPending()
   }
 
@@ -101,12 +106,29 @@ export function createVaultState({ logN = DEFAULT_LOG_N }: VaultStateOptions = {
         }
         unlocked?.fill(0)
         unlocked = entropy
+        accounts = null
         dropPending()
         return { ok: true }
       }
       case 'lock':
         lock()
         return { ok: true }
+      case 'accounts': {
+        const entropy = unlocked
+        if (!entropy) return fail('locked')
+        if (!accounts) {
+          const before = locks
+          const seed = await mnemonicToSeed(entropyToMnemonic(entropy, wordlist))
+          try {
+            // Only a lock matters. Unlocking again opens the same file, so these are still its accounts.
+            if (locks !== before) return fail('locked')
+            accounts = deriveAccounts(seed)
+          } finally {
+            seed.fill(0)
+          }
+        }
+        return done({ accounts })
+      }
     }
   }
 

@@ -1,3 +1,4 @@
+import type { Account } from './accounts'
 import type { BackupAnswer, NewPhrase, VaultRequest, VaultResult, VaultStatus, VaultWordCount } from './vault'
 
 /**
@@ -30,6 +31,7 @@ export const IPC = {
   restoreVault: 'vault:restore',
   unlockVault: 'vault:unlock',
   lockVault: 'vault:lock',
+  vaultAccounts: 'vault:accounts',
   /** Main to renderer: the vault's status, sent on every change. */
   vaultStatusChanged: 'vault:status-changed',
 } as const
@@ -201,6 +203,8 @@ export interface InkBridge {
   restoreVault(words: string, password: string): Promise<VaultResult>
   unlockVault(password: string): Promise<VaultResult>
   lockVault(): Promise<void>
+  /** The address on each chain, while unlocked. Fails with 'locked' otherwise. */
+  vaultAccounts(): Promise<VaultResult<{ accounts: Account[] }>>
   /** Calls listener whenever the vault's status changes; returns an unsubscribe. */
   onVaultStatus(listener: (status: VaultStatus) => void): () => void
 }

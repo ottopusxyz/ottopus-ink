@@ -83,6 +83,11 @@ describe('sealing a seed', () => {
   it('sets the real cost at 128 MB unless told otherwise', () => {
     expect(DEFAULT_LOG_N).toBe(17)
   })
+
+  it('seals at the real cost when the signer is made as the app makes it', async () => {
+    const { blob } = await created(createVaultState())
+    expect((JSON.parse(blob) as { kdf: { logN: number } }).kdf.logN).toBe(DEFAULT_LOG_N)
+  })
 })
 
 describe('creating a vault', () => {

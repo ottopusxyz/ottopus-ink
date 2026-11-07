@@ -108,6 +108,11 @@ function getMcpBridge(): Promise<McpBridge> {
     // Private to the user on Linux. macOS has no such folder, so the app's own data folder.
     parentDir: process.env.XDG_RUNTIME_DIR ?? app.getPath('userData'),
     version: app.getVersion(),
+    // Public addresses only, and only while unlocked. The agent's tools get this function, never the vault.
+    accounts: async () => {
+      const wallet = getVault()
+      return wallet.status().state === 'none' ? { ok: false, reason: 'no-vault' } : wallet.accounts()
+    },
   }).catch((error: unknown) => {
     mcpBridge = null
     throw error

@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import type { ChatPlan } from '../../shared/ipc'
-import { handleMcpMessage, parseErrorResponse } from './protocol'
+import { handleMcpMessage, parseErrorResponse, type McpHandlers } from './protocol'
 
 export interface McpBridgeOptions {
   /** Where the socket's private folder goes. It must be the user's own. */
@@ -12,6 +12,8 @@ export interface McpBridgeOptions {
   version: string
   /** How long a new connection gets to prove itself. */
   helloTimeoutMs?: number
+  /** The wallet's public addresses, for get_accounts. Main passes this in so agent code never imports the vault. */
+  accounts?: McpHandlers['accounts']
 }
 
 export interface McpSession {
@@ -51,7 +53,7 @@ interface BridgeSession {
  * The socket sits in a new 0700 folder and is itself 0600. Only hashes of tokens
  * are kept, so a lookup doesn't compare against the secret.
  */
-export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: McpBridgeOptions): Promise<McpBridge> {
+export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, accounts }: McpBridgeOptions): Promise<McpBridge> {
   mkdirSync(parentDir, { recursive: true })
   const dir = mkdtempSync(join(parentDir, 'ottopus-ink-'))
   const socketPath = join(dir, 'mcp.sock')
@@ -91,7 +93,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
     const onRequest = async (session: BridgeSession, line: string) => {
       let response: object | null
       try {
-        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan })
+        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, accounts })
       } catch {
         response = parseErrorResponse()
       }

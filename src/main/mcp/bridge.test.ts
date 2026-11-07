@@ -83,6 +83,46 @@ describe('startMcpBridge plans', () => {
   })
 })
 
+describe('startMcpBridge accounts', () => {
+  const getAccounts = (id: number) => `${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'get_accounts' } })}\n`
+
+  it('answers get_accounts from what main passes in', async () => {
+    bridge.close()
+    bridge = await startMcpBridge({
+      parentDir,
+      version: '1',
+      accounts: async () => ({ ok: true, accounts: [{ chain: 'near', path: "m/44'/397'/0'", address: 'b'.repeat(64) }] }),
+    })
+    const session = bridge.addSession()
+    const state = client()
+    state.socket.write(`${hello(session.token)}${getAccounts(1)}`)
+    await answered(state)
+    expect(JSON.stringify(state.lines[0])).toContain(`near: ${'b'.repeat(64)}`)
+  })
+
+  it('drops an answer whose session ended while it was being worked out', async () => {
+    bridge.close()
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    bridge = await startMcpBridge({
+      parentDir,
+      version: '1',
+      accounts: async () => {
+        await held
+        return { ok: true, accounts: [] }
+      },
+    })
+    const session = bridge.addSession()
+    const state = client()
+    state.socket.write(`${hello(session.token)}${getAccounts(1)}`)
+    await vi.waitFor(() => expect(session.connected()).toBe(true))
+    session.remove()
+    release()
+    await closed(state)
+    expect(state.lines).toEqual([])
+  })
+})
+
 describe('startMcpBridge tokens', () => {
   it('remembers that a token connected, but not for a bad hello or another token', async () => {
     const [session, other] = [bridge.addSession(), bridge.addSession()]

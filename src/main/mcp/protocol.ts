@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import type { Account, AccountChain } from '../../shared/accounts'
 import type { ChatPlan } from '../../shared/ipc'
+import type { VaultResult } from '../../shared/vault'
 
 /** The server's name in the agent's tool names (`mcp__ottopus-ink__*`). Not `ottopus`: that's another product's connector. */
 export const MCP_SERVER_NAME = 'ottopus-ink'
@@ -64,10 +66,40 @@ const toolAnswer = (answer: string, isError = false) => ({ content: [{ type: 'te
 /** Every tool's answer until the wallet exists. */
 const NOT_SET_UP = toolAnswer('The wallet is not set up yet.')
 
-/** What the app hands the MCP server. Main passes these in, so this code never reaches the vault itself. */
+/** What each address is for, so an agent doesn't send a token to the wrong chain's address. */
+const CHAIN_LABELS: Record<AccountChain, string> = {
+  near: 'NEAR. Also the NEAR Intents account',
+  evm: 'one address for Base, Ethereum, Arbitrum and the other EVM chains',
+  solana: 'Solana',
+  bitcoin: 'Bitcoin, native SegWit',
+  tron: 'Tron',
+  sui: 'Sui',
+  aptos: 'Aptos',
+}
+
+/** What the app can tell an agent. Main passes these in, so this code never reaches the vault itself. */
 export interface McpHandlers {
   /** Gets each plan the session's agent proposes. */
   onPlan?: (plan: ChatPlan) => void
+  /** The wallet's public addresses, or why there are none. */
+  accounts?: () => Promise<VaultResult<{ accounts: Account[] }>>
+}
+
+async function accountsAnswer(read: McpHandlers['accounts']): Promise<object> {
+  if (!read) return NOT_SET_UP
+  let answer: VaultResult<{ accounts: Account[] }>
+  try {
+    answer = await read()
+  } catch {
+    return toolAnswer('Ink couldn’t read the addresses right now. Try again.', true)
+  }
+  if (answer.ok) {
+    const lines = answer.accounts.map(({ chain, address }) => `${chain}: ${address} (${CHAIN_LABELS[chain]})`)
+    return toolAnswer(['The wallet’s own addresses, one for each chain. They are public.', ...lines].join('\n'))
+  }
+  if (answer.reason === 'no-vault') return NOT_SET_UP
+  if (answer.reason === 'locked') return toolAnswer('Ink is locked. Ask the person to unlock Ink, then try again.', true)
+  return toolAnswer('Ink couldn’t read the addresses right now. Try again.', true)
 }
 
 /** Longer than any asset, amount or address. */
@@ -132,7 +164,7 @@ export function parseErrorResponse(): object {
  * server doesn't have gets a proper error rather than silence: Claude Code opens
  * with `server/discover` and falls back to `initialize` only when told no.
  */
-export async function handleMcpMessage(message: unknown, version: string, { onPlan }: McpHandlers = {}): Promise<object | null> {
+export async function handleMcpMessage(message: unknown, version: string, { onPlan, accounts }: McpHandlers = {}): Promise<object | null> {
   if (!isRecord(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     const id = isRecord(message) && (typeof message.id === 'string' || typeof message.id === 'number') ? message.id : null
     return rpcError(id, INVALID_REQUEST, 'Not a JSON-RPC 2.0 request')
@@ -169,6 +201,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         onPlan?.(plan)
         return result(toolAnswer(`Plan ${plan.id} is a placeholder. The wallet is not set up yet, so it can't be reviewed or signed.`))
       }
+      if (params.name === 'get_accounts') return result(await accountsAnswer(accounts))
       return result(NOT_SET_UP)
     }
     default:

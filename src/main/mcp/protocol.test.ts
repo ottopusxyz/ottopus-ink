@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import type { Account } from '../../shared/accounts'
 import { INK_TOOLS, type ChatPlan } from '../../shared/ipc'
-import { handleMcpMessage } from './protocol'
+import { handleMcpMessage, type McpHandlers } from './protocol'
 
 const ask = async (method: string, params?: unknown, id: unknown = 1) =>
   (await handleMcpMessage({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) }, '1.2.3')) as Record<string, unknown>
@@ -52,6 +53,59 @@ describe('handleMcpMessage', () => {
     expect((await ask('tools/call', { name, arguments: {} })).result).toEqual({
       content: [{ type: 'text', text: 'The wallet is not set up yet.' }],
       isError: false,
+    })
+  })
+
+  describe('get_accounts', () => {
+    const ACCOUNTS: Account[] = [
+      { chain: 'near', path: "m/44'/397'/0'", address: 'a'.repeat(64) },
+      { chain: 'evm', path: "m/44'/60'/0'/0/0", address: '0xBbEC2620Cb01adae3f96e1fa39f997f06BFb7Ca0' },
+      { chain: 'bitcoin', path: "m/84'/0'/0'/0/0", address: 'bc1qg6ucjz7kgdedam7v5yarecy54uqw82yym06z3q' },
+    ]
+    const call = async (accounts: McpHandlers['accounts']) =>
+      ((await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_accounts' } }, '1', { accounts })) as {
+        result: { content: { text: string }[]; isError: boolean }
+      }).result
+
+    it('lists each real address with what it is for', async () => {
+      const result = await call(async () => ({ ok: true, accounts: ACCOUNTS }))
+      expect(result.isError).toBe(false)
+      const text = result.content[0]!.text
+      for (const { chain, address } of ACCOUNTS) expect(text).toContain(`${chain}: ${address}`)
+      expect(text).toContain('NEAR Intents account')
+      expect(text).toContain('Base, Ethereum, Arbitrum')
+    })
+
+    it('tells the agent to have the person unlock Ink, and gives no address, while locked', async () => {
+      const result = await call(async () => ({ ok: false, reason: 'locked' }))
+      expect(result).toEqual({ content: [{ type: 'text', text: 'Ink is locked. Ask the person to unlock Ink, then try again.' }], isError: true })
+    })
+
+    it('says the wallet is not set up when there is none, or no way to read it', async () => {
+      const notSetUp = { content: [{ type: 'text', text: 'The wallet is not set up yet.' }], isError: false }
+      expect(await call(async () => ({ ok: false, reason: 'no-vault' }))).toEqual(notSetUp)
+      expect(await call(undefined)).toEqual(notSetUp)
+    })
+
+    it('gives a plain error, with nothing from inside, when reading fails', async () => {
+      const failed = await call(async () => {
+        throw new Error('secret detail')
+      })
+      expect(failed.isError).toBe(true)
+      expect(failed.content[0]!.text).not.toContain('secret')
+      expect((await call(async () => ({ ok: false, reason: 'signer-stopped' }))).isError).toBe(true)
+    })
+
+    it('is the only tool that reads the wallet', async () => {
+      let reads = 0
+      const accounts = async () => {
+        reads++
+        return { ok: true as const, accounts: ACCOUNTS }
+      }
+      for (const name of ['get_portfolio', 'get_quote', 'get_plan', 'cancel_plan']) {
+        await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } }, '1', { accounts })
+      }
+      expect(reads).toBe(0)
     })
   })
 

@@ -2,7 +2,7 @@
 
 A desktop universal wallet whose brain is the coding agent you already have installed (Claude Code, Codex or OpenCode). The agent proposes plans; you review and sign them in the app. Cross-chain value moves through NEAR Intents.
 
-> Work in progress for the NEAR hackathon. Nothing here holds keys yet.
+> Work in progress for the NEAR hackathon. The vault and its addresses are built but have no screens yet, and nothing signs yet. Don't give it a recovery phrase that holds real funds.
 
 ## Rules that never change
 
@@ -34,10 +34,36 @@ npm 11 runs only approved install scripts. Electron's (which downloads its binar
 | `src/main` | Electron main: windows, IPC, agent drivers, plan engine | Yes |
 | `src/preload` | The only bridge the renderer gets (`window.ink`) | Yes |
 | `src/renderer` | React UI. Display only: no Node, sandboxed, strict CSP | No |
-| `src/signer` | Separate utility process; the only place keys will live | Yes |
+| `src/signer` | Separate utility process; the only place the decrypted seed lives | Yes |
 | `src/shared` | Types and pure helpers used by more than one process | n/a |
 
 The renderer may import only from `src/shared` and its own files; a lint rule enforces it.
+
+## The vault
+
+One recovery phrase per install, 12 or 24 words.
+
+- **Encryption:** the seed is encrypted with your password, using scrypt (N=2^17, r=8, p=1) and AES-256-GCM, in `vault.bin` in the app's data folder.
+- **Password:** every unlock needs it. An OS keyring can be read by other programs running as you, including an agent, so it never stands in for the password.
+- **Keyring:** when there's a real one, it adds a second layer around the file, so a copy of the file alone can't be attacked. Linux's `basic_text` isn't a real one, so there the password is the only layer. A vault sealed with a keyring can't be opened if that keyring is lost, and you'd restore from your words.
+- **Backup check:** a new vault isn't saved until you've given back three of its words. Ink never replaces an existing vault.
+- **Locking:** Ink locks after 10 minutes with no input to its windows, and when the computer sleeps or the screen locks. Bytes are wiped on lock. JavaScript can't wipe strings, so the phrase and password can stay in memory for a while after you type them.
+
+## Accounts
+
+The phrase gives one account on each chain, at the path most wallets use, so restoring the same phrase in another wallet shows the same addresses. Tests check each one against that chain's reference library.
+
+| Chain | Path | Address |
+|---|---|---|
+| NEAR | `m/44'/397'/0'` | Implicit account (64 hex), which is also your NEAR Intents account |
+| EVM | `m/44'/60'/0'/0/0` | One `0x` address on every EVM chain |
+| Solana | `m/44'/501'/0'/0'` | Base58 |
+| Bitcoin | `m/84'/0'/0'/0/0` | Native SegWit `bc1q…` |
+| Tron | `m/44'/195'/0'/0/0` | `T…` |
+| Sui | `m/44'/784'/0'/0'/0'` | `0x…` |
+| Aptos | `m/44'/637'/0'/0'/0'` | `0x…`, until you rotate its key |
+
+Addresses are worked out in the signer and are only available while unlocked. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
 
 ## Prior work
 

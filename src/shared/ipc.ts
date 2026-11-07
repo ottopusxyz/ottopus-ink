@@ -1,3 +1,6 @@
+import type { Account } from './accounts'
+import type { BackupAnswer, NewPhrase, VaultRequest, VaultResult, VaultStatus, VaultWordCount } from './vault'
+
 /**
  * The IPC contract between the renderer (through the preload bridge) and the
  * main process. Every channel the renderer can reach is listed here; the main
@@ -21,6 +24,16 @@ export const IPC = {
   chatEvent: 'chat:event',
   /** Main to renderer: the signer's status, sent on every change. */
   signerStatus: 'signer:status',
+  vaultStatus: 'vault:status',
+  startVaultCreate: 'vault:start-create',
+  finishVaultCreate: 'vault:finish-create',
+  cancelVaultCreate: 'vault:cancel-create',
+  restoreVault: 'vault:restore',
+  unlockVault: 'vault:unlock',
+  lockVault: 'vault:lock',
+  vaultAccounts: 'vault:accounts',
+  /** Main to renderer: the vault's status, sent on every change. */
+  vaultStatusChanged: 'vault:status-changed',
 } as const
 
 export type SignerStatus = 'starting' | 'ready' | 'stopped'
@@ -180,8 +193,22 @@ export interface InkBridge {
   onChatEvent(listener: (chatId: string, event: ChatEvent) => void): () => void
   /** Calls listener on every signer status change; returns an unsubscribe. */
   onSignerStatus(listener: (status: SignerStatus) => void): () => void
+  vaultStatus(): Promise<VaultStatus>
+  /** Makes a new recovery phrase to show once. Nothing is saved until finishVaultCreate. */
+  startVaultCreate(words: VaultWordCount): Promise<VaultResult<NewPhrase>>
+  /** Checks the words asked for, saves the vault under the password, and unlocks it. */
+  finishVaultCreate(password: string, answers: BackupAnswer[]): Promise<VaultResult>
+  cancelVaultCreate(): Promise<void>
+  /** Saves a vault from a phrase the person already has, and unlocks it. */
+  restoreVault(words: string, password: string): Promise<VaultResult>
+  unlockVault(password: string): Promise<VaultResult>
+  lockVault(): Promise<void>
+  /** The address on each chain, while unlocked. Fails with 'locked' otherwise. */
+  vaultAccounts(): Promise<VaultResult<{ accounts: Account[] }>>
+  /** Calls listener whenever the vault's status changes; returns an unsubscribe. */
+  onVaultStatus(listener: (status: VaultStatus) => void): () => void
 }
 
 /** Messages between main and the signer utility process. */
-export type SignerRequest = { type: 'ping'; id: number }
-export type SignerResponse = { type: 'pong'; id: number }
+export type SignerRequest = { type: 'ping'; id: number } | { type: 'vault'; id: number; request: VaultRequest }
+export type SignerResponse = { type: 'pong'; id: number } | { type: 'vault'; id: number; result: VaultResult<object> }

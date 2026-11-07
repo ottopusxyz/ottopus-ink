@@ -115,10 +115,12 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     isUnlocked: () => unlocked,
 
     startCreate: (words) =>
-      oneAtATime(async () => {
+      oneAtATime<NewPhrase>(async () => {
         if (store.exists()) return fail('exists')
         if (words !== 12 && words !== 24) return fail('bad-input')
-        return (await ask({ op: 'begin-create', words })) as VaultResult<NewPhrase>
+        const begun = (await ask({ op: 'begin-create', words })) as VaultResult<NewPhrase>
+        // Only what the page needs, so nothing else the signer might add can reach it.
+        return begun.ok ? { ok: true, words: begun.words, check: begun.check } : begun
       }),
 
     finishCreate: (password, answers) =>

@@ -163,6 +163,15 @@ describe('creating', () => {
     expectOk(await service.finishCreate(PASSWORD, answersFor(phrase)))
   })
 
+  it('passes the page only the words and which to check', async () => {
+    const service = createVaultService({
+      store: createVaultStore({ file, box: noKeyring }),
+      ask: async () => ({ ok: true, words: ['a'], check: [0], entropy: 'not for the page' }),
+      onStatus: () => {},
+    })
+    expect(await service.startCreate(12)).toEqual({ ok: true, words: ['a'], check: [0] })
+  })
+
   it('refuses to start over a vault that exists', async () => {
     const { service } = setup()
     await createVault(service)

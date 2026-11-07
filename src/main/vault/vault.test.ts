@@ -266,6 +266,36 @@ describe('unlocking and locking', () => {
     expect(service.status().state).toBe('locked')
   })
 
+  it.each([
+    ['creating', async (service: ReturnType<typeof createVaultService>) => service.finishCreate(PASSWORD, answersFor(expectOk(await service.startCreate(12))))],
+    ['restoring', async (service: ReturnType<typeof createVaultService>) => service.restore(entropyToMnemonic(new Uint8Array(randomBytes(16)), wordlist), PASSWORD)],
+  ])('stays locked if a lock arrives while %s is answered', async (_name, run) => {
+    const signer = createVaultState({ logN: 10 })
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let sealed = false
+    const service = createVaultService({
+      store: createVaultStore({ file, box: noKeyring }),
+      ask: async (request) => {
+        const result = await signer.handle(request)
+        // The signer has sealed and answered, and the answer is still on its way to main.
+        if (request.op === 'finish' && result.ok) {
+          sealed = true
+          await held
+        }
+        return result
+      },
+      onStatus: () => {},
+    })
+    const saving = run(service)
+    await vi.waitFor(() => expect(sealed).toBe(true))
+    await service.lock()
+    release()
+    expect(await saving).toEqual({ ok: false, reason: 'locked-meanwhile' })
+    expect(service.status().state).toBe('none')
+    expect(signer.isUnlocked()).toBe(false)
+  })
+
   it('does one thing at a time, except locking', async () => {
     const { service } = setup()
     await createVault(service)

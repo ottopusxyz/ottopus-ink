@@ -73,14 +73,14 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     }
   }
 
-  const openStored = async (password: string): Promise<VaultResult> => {
+  /** before is the lock count when the whole action began, so a lock at any point in it wins. */
+  const openStored = async (password: string, before = locks): Promise<VaultResult> => {
     let blob: string
     try {
       blob = store.read()
     } catch (error) {
       return fail(error instanceof VaultStoreError && error.reason !== 'exists' ? error.reason : 'damaged')
     }
-    const before = locks
     const opened = await ask({ op: 'unlock', blob, password })
     if (!opened.ok) return opened
     if (locks !== before) return fail('locked-meanwhile')
@@ -90,14 +90,17 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
 
   /** Saves what the signer is holding, then opens the saved copy, which proves it can be read before the person relies on it. */
   const save = async (password: string, answers: BackupAnswer[]): Promise<VaultResult> => {
+    const before = locks
     const sealed = (await ask({ op: 'finish', password, answers })) as VaultResult<{ blob: string }>
     if (!sealed.ok) return sealed
+    // A lock that landed while the answer was on its way has already wiped the signer. Saving now would unlock again.
+    if (locks !== before) return fail('locked-meanwhile')
     try {
       store.write(sealed.blob)
     } catch (error) {
       return fail(error instanceof VaultStoreError && error.reason !== 'damaged' ? error.reason : 'write-failed')
     }
-    const opened = await openStored(password)
+    const opened = await openStored(password, before)
     if (opened.ok) return opened
     if (opened.reason === 'wrong-password' || opened.reason === 'damaged' || opened.reason === 'keyring-unavailable') {
       // This is the file just written, and the signer still holds the seed, so nothing is lost by trying again.

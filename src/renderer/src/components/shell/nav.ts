@@ -13,6 +13,7 @@ export const SHORTCUTS = [
   { action: 'new-chat', key: 'n', label: 'New chat' },
   { action: 'search', key: 'k', label: 'Search chats' },
   { action: 'settings', key: ',', label: 'Settings' },
+  { action: 'lock', key: 'l', label: 'Lock' },
 ] as const
 
 export type ShortcutAction = (typeof SHORTCUTS)[number]['action']

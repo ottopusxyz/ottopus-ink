@@ -1,0 +1,360 @@
+import { useState, type FormEvent } from 'react'
+import type { NewPhrase, VaultWordCount } from '../../../../shared/vault'
+import { Otto } from '@/components/brand/otto'
+import { EyeIcon } from '@/components/shell/icons'
+import { Button, Callout, Input } from '@/components/ui'
+import { passwordProblem, phraseProblem, phraseWords, vaultMessage, wrongAnswers } from '@/lib/wallet'
+import { Field, FormError, PhraseInput, WalletHeading, WalletPanel } from './wallet-panel'
+
+type Step =
+  | { kind: 'welcome' }
+  | { kind: 'words'; phrase: NewPhrase; shown: boolean }
+  | { kind: 'check'; phrase: NewPhrase }
+  | { kind: 'password'; phrase: NewPhrase }
+  | { kind: 'restore' }
+
+/**
+ * First launch: make a recovery phrase or bring one. Nothing is saved until the
+ * backup check and the password are done; main then reports the vault as
+ * unlocked and the app takes over from here.
+ */
+export function SetupScreen() {
+  const [step, setStep] = useState<Step>({ kind: 'welcome' })
+  const [size, setSize] = useState<VaultWordCount>(12)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const go = (next: Step) => {
+    setError(null)
+    setStep(next)
+  }
+
+  const startCreate = async () => {
+    setBusy(true)
+    const result = await window.ink.startVaultCreate(size).finally(() => setBusy(false))
+    if (result.ok) go({ kind: 'words', phrase: { words: result.words, check: result.check }, shown: false })
+    else setError(vaultMessage(result.reason))
+  }
+
+  const cancel = () => {
+    void window.ink.cancelVaultCreate()
+    go({ kind: 'welcome' })
+  }
+
+  return (
+    <WalletPanel>
+      {step.kind === 'welcome' ? (
+        <Welcome size={size} onSize={setSize} busy={busy} error={error} onCreate={startCreate} onRestore={() => go({ kind: 'restore' })} />
+      ) : step.kind === 'words' ? (
+        <ShowWords
+          phrase={step.phrase}
+          shown={step.shown}
+          onShow={() => setStep({ ...step, shown: true })}
+          onDone={() => go({ kind: 'check', phrase: step.phrase })}
+          onCancel={cancel}
+        />
+      ) : step.kind === 'check' ? (
+        <CheckWords
+          phrase={step.phrase}
+          error={error}
+          onBack={() => go({ kind: 'words', phrase: step.phrase, shown: false })}
+          onDone={() => go({ kind: 'password', phrase: step.phrase })}
+        />
+      ) : step.kind === 'password' ? (
+        <CreatePassword
+          busy={busy}
+          error={error}
+          onBack={() => go({ kind: 'check', phrase: step.phrase })}
+          onSubmit={async (password) => {
+            setBusy(true)
+            setError(null)
+            const answers = step.phrase.check.map((index) => ({ index, word: step.phrase.words[index] ?? '' }))
+            const result = await window.ink.finishVaultCreate(password, answers).finally(() => setBusy(false))
+            if (result.ok) return
+            if (result.reason === 'backup-mismatch') {
+              setStep({ kind: 'check', phrase: step.phrase })
+              setError(vaultMessage(result.reason))
+            } else if (result.reason === 'nothing-pending') {
+              setStep({ kind: 'welcome' })
+              setError(vaultMessage(result.reason))
+            } else setError(vaultMessage(result.reason))
+          }}
+        />
+      ) : (
+        <Restore
+          busy={busy}
+          error={error}
+          onCancel={() => go({ kind: 'welcome' })}
+          onSubmit={async (words, password) => {
+            setBusy(true)
+            setError(null)
+            const result = await window.ink.restoreVault(words, password).finally(() => setBusy(false))
+            if (!result.ok) setError(vaultMessage(result.reason))
+          }}
+        />
+      )}
+    </WalletPanel>
+  )
+}
+
+function Welcome({
+  size,
+  onSize,
+  busy,
+  error,
+  onCreate,
+  onRestore,
+}: {
+  size: VaultWordCount
+  onSize: (size: VaultWordCount) => void
+  busy: boolean
+  error: string | null
+  onCreate: () => void
+  onRestore: () => void
+}) {
+  return (
+    <>
+      <Otto pose="ink" size={120} animated label="Otto" />
+      <WalletHeading title="Set up your wallet">
+        One recovery phrase gives you an address on NEAR, Ethereum and other EVM chains, Solana, Bitcoin, Tron, Sui and
+        Aptos. It’s encrypted with your password and never leaves this computer.
+      </WalletHeading>
+      <Callout severity="caution" title="Ink is still being built" compact>
+        Don’t use a recovery phrase that holds real funds yet.
+      </Callout>
+      <FormError message={error} />
+      <div className="flex flex-col gap-2.5">
+        <Button variant="primary" size="lg" fullWidth disabled={busy} onClick={onCreate}>
+          {busy ? 'Making your phrase…' : 'Create a new wallet'}
+        </Button>
+        <label className="flex items-center gap-2 self-center text-[13px] text-[var(--ot-text-2)]">
+          <input type="checkbox" checked={size === 24} onChange={(event) => onSize(event.target.checked ? 24 : 12)} />
+          Use 24 words instead of 12
+        </label>
+        <Button variant="secondary" size="lg" fullWidth disabled={busy} onClick={onRestore}>
+          I already have a recovery phrase
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function ShowWords({
+  phrase,
+  shown,
+  onShow,
+  onDone,
+  onCancel,
+}: {
+  phrase: NewPhrase
+  shown: boolean
+  onShow: () => void
+  onDone: () => void
+  onCancel: () => void
+}) {
+  return (
+    <>
+      <WalletHeading title="Write down your recovery phrase">
+        These {phrase.words.length} words are your wallet. With them you can restore it here or in another wallet.
+      </WalletHeading>
+      <Callout severity="caution" title="Keep them on paper, somewhere safe" compact>
+        Anyone who has these words can take everything in the wallet. Don’t photograph them or store them online. Ink
+        can’t show them to you again.
+      </Callout>
+      <div className="relative">
+        <ol
+          aria-label="Recovery phrase"
+          aria-hidden={!shown}
+          className={`m-0 grid list-none grid-cols-3 gap-2 rounded-[14px] border border-[var(--ot-border)] bg-[var(--ot-card)] p-4 ${shown ? '' : 'select-none blur-[6px]'}`}
+        >
+          {phrase.words.map((word, index) => (
+            <li key={index} className="flex items-baseline gap-2 rounded-[8px] bg-[var(--ot-surface-2)] px-2.5 py-1.5">
+              <span className="w-5 text-right font-mono text-[11px] text-[var(--ot-text-3)]">{index + 1}</span>
+              <span className="font-mono text-[14px] text-[var(--ot-text)]">{shown ? word : '•••••'}</span>
+            </li>
+          ))}
+        </ol>
+        {shown ? null : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Button variant="secondary" onClick={onShow}>
+              <EyeIcon />
+              Show the words
+            </Button>
+          </div>
+        )}
+      </div>
+      <div className="flex justify-between gap-2">
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button variant="primary" disabled={!shown} onClick={onDone}>
+          I’ve written them down
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function CheckWords({
+  phrase,
+  error,
+  onBack,
+  onDone,
+}: {
+  phrase: NewPhrase
+  error: string | null
+  onBack: () => void
+  onDone: () => void
+}) {
+  const [typed, setTyped] = useState<Record<number, string>>({})
+  const [wrong, setWrong] = useState<number[]>([])
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    const asked = Object.fromEntries(phrase.check.map((index) => [index, typed[index] ?? '']))
+    const mistakes = wrongAnswers(phrase.words, asked)
+    setWrong(mistakes)
+    if (mistakes.length === 0) onDone()
+  }
+
+  return (
+    <form className="flex flex-col gap-5" onSubmit={submit}>
+      <WalletHeading title="Check your backup">Type these words from what you wrote down, so you know your copy is right.</WalletHeading>
+      <FormError message={error} />
+      {phrase.check.map((index, n) => (
+        <Field key={index} label={`Word ${index + 1}`} error={wrong.includes(index) ? 'That’s not this word. Check your copy.' : null}>
+          <Input
+            mono
+            autoFocus={n === 0}
+            autoComplete="off"
+            spellCheck={false}
+            invalid={wrong.includes(index)}
+            value={typed[index] ?? ''}
+            onChange={(event) => setTyped({ ...typed, [index]: event.target.value })}
+          />
+        </Field>
+      ))}
+      <div className="flex justify-between gap-2">
+        <Button variant="ghost" onClick={onBack}>
+          See the words again
+        </Button>
+        <Button variant="primary" type="submit" disabled={phrase.check.some((index) => !phraseWords(typed[index] ?? '').length)}>
+          Continue
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function PasswordFields({ password, confirm, onPassword, onConfirm, shownError }: {
+  password: string
+  confirm: string
+  onPassword: (value: string) => void
+  onConfirm: (value: string) => void
+  shownError: string | null
+}) {
+  return (
+    <>
+      <Field label="Password" hint="At least 12 characters. Ink asks for it every time it unlocks.">
+        <Input type="password" autoComplete="new-password" value={password} onChange={(event) => onPassword(event.target.value)} />
+      </Field>
+      <Field label="Type it again" error={shownError}>
+        <Input type="password" autoComplete="new-password" invalid={Boolean(shownError)} value={confirm} onChange={(event) => onConfirm(event.target.value)} />
+      </Field>
+    </>
+  )
+}
+
+function CreatePassword({
+  busy,
+  error,
+  onBack,
+  onSubmit,
+}: {
+  busy: boolean
+  error: string | null
+  onBack: () => void
+  onSubmit: (password: string) => void
+}) {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [tried, setTried] = useState(false)
+  const problem = passwordProblem(password, confirm)
+
+  return (
+    <form
+      className="flex flex-col gap-5"
+      onSubmit={(event) => {
+        event.preventDefault()
+        setTried(true)
+        if (!problem) onSubmit(password)
+      }}
+    >
+      <WalletHeading title="Choose a password">
+        It encrypts the wallet on this computer. Nobody can reset it, but your recovery phrase can always restore the wallet.
+      </WalletHeading>
+      <FormError message={error} />
+      <PasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} shownError={tried ? problem : null} />
+      <div className="flex justify-between gap-2">
+        <Button variant="ghost" disabled={busy} onClick={onBack}>
+          Back
+        </Button>
+        <Button variant="primary" type="submit" disabled={busy}>
+          {busy ? 'Encrypting your wallet…' : 'Create wallet'}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function Restore({
+  busy,
+  error,
+  onCancel,
+  onSubmit,
+}: {
+  busy: boolean
+  error: string | null
+  onCancel: () => void
+  onSubmit: (words: string, password: string) => void
+}) {
+  const [words, setWords] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [tried, setTried] = useState(false)
+  const wordsProblem = phraseProblem(words)
+  const problem = passwordProblem(password, confirm)
+
+  return (
+    <form
+      className="flex flex-col gap-5"
+      onSubmit={(event) => {
+        event.preventDefault()
+        setTried(true)
+        if (!wordsProblem && !problem) onSubmit(words, password)
+      }}
+    >
+      <WalletHeading title="Restore your wallet">
+        Type your 12 or 24 word recovery phrase, with a space between words. You’ll get the same addresses as any
+        other wallet that uses it.
+      </WalletHeading>
+      <FormError message={error} />
+      <Field
+        label="Recovery phrase"
+        error={tried ? wordsProblem : null}
+        hint={`${phraseWords(words).length} words`}
+      >
+        <PhraseInput autoFocus value={words} onChange={(event) => setWords(event.target.value)} aria-invalid={tried && Boolean(wordsProblem)} />
+      </Field>
+      <PasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} shownError={tried ? problem : null} />
+      <div className="flex justify-between gap-2">
+        <Button variant="ghost" disabled={busy} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button variant="primary" type="submit" disabled={busy}>
+          {busy ? 'Restoring…' : 'Restore wallet'}
+        </Button>
+      </div>
+    </form>
+  )
+}

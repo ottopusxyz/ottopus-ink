@@ -79,3 +79,30 @@ export const ArrowRightIcon = icon(<path d="M5 12h14M13 6l6 6-6 6" />)
 export const StakeIcon = icon(<path d="M12 3v18M6 9l6-6 6 6" />)
 export const CloseIcon = icon(<path d="M7 7l10 10M17 7 7 17" />)
 export const ListIcon = icon(<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />)
+export const LockIcon = icon(
+  <>
+    <rect x="5" y="11" width="14" height="9" rx="2" />
+    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </>,
+)
+export const CopyIcon = icon(
+  <>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+  </>,
+)
+export const QrIcon = icon(
+  <>
+    <rect x="4" y="4" width="6" height="6" rx="1" />
+    <rect x="14" y="4" width="6" height="6" rx="1" />
+    <rect x="4" y="14" width="6" height="6" rx="1" />
+    <path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h.01M18 14h2" />
+  </>,
+)
+export const ReceiveIcon = icon(<path d="M12 4v12M6 10l6 6 6-6M5 20h14" />)
+export const EyeIcon = icon(
+  <>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </>,
+)

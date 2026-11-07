@@ -4,7 +4,8 @@ import { cn } from '@/lib/cn'
 
 export interface AppShellProps {
   mac: boolean
-  sidebar: ReactNode
+  /** Left out while there's no wallet or it's locked: those screens are the whole window. */
+  sidebar?: ReactNode
   children: ReactNode
 }
 
@@ -21,7 +22,7 @@ export function AppShell({ mac, sidebar, children }: AppShellProps) {
         <span className="font-display text-[16px] font-bold tracking-[-0.02em]">Ottopus Ink</span>
       </header>
       <div className="ink-body">
-        {sidebar}
+        {sidebar ?? null}
         {children}
       </div>
     </div>

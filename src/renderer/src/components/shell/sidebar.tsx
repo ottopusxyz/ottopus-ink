@@ -8,6 +8,7 @@ import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
 import {
   ActivityIcon,
   CheckIcon,
+  LockIcon,
   PlugIcon,
   PlusIcon,
   SearchIcon,
@@ -33,6 +34,7 @@ export interface SidebarProps {
   onOpenChat: (id: string) => void
   onPage: (page: PageId) => void
   onSettings: () => void
+  onLock: () => void
 }
 
 /**
@@ -51,6 +53,7 @@ export function Sidebar({
   onOpenChat,
   onPage,
   onSettings,
+  onLock,
 }: SidebarProps) {
   const [query, setQuery] = useState('')
   const shown = useMemo(() => filterChats(chats, query), [chats, query])
@@ -126,6 +129,11 @@ export function Sidebar({
         <SlidersIcon />
         <span className="ink-side-item__label">Settings</span>
         <kbd className="ink-kbd">{shortcutLabel('settings', mac)}</kbd>
+      </button>
+      <button type="button" className="ink-side-item ink-side-item--page" onClick={onLock}>
+        <LockIcon />
+        <span className="ink-side-item__label">Lock</span>
+        <kbd className="ink-kbd">{shortcutLabel('lock', mac)}</kbd>
       </button>
 
       {openChat ? <LockIndicator chat={openChat} /> : null}

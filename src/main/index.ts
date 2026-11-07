@@ -1,19 +1,22 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
 import { detectAgents } from './agents/detect'
 import { agentEnv, readNamedShellEnv } from './agents/login-env'
 import { run, stopRuns } from './agents/run'
 import { detectEntries } from './external/detect'
-import { createSignIns } from './external/sign-ins'
+import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
 import { appMenuTemplate } from './menu'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
+import { createAutoLock } from './vault/auto-lock'
+import { createVaultService, type VaultService } from './vault/service'
+import { createVaultStore } from './vault/store'
 
 const devServerUrl = process.env.ELECTRON_RENDERER_URL
 const rendererIndex = join(import.meta.dirname, '../renderer/index.html')
@@ -21,6 +24,7 @@ const rendererIndex = join(import.meta.dirname, '../renderer/index.html')
 const appEntry = devServerUrl ?? pathToFileURL(rendererIndex).href
 const signer = new SignerHost(join(import.meta.dirname, 'signer.js'), (status) => {
   sendToWindows(IPC.signerStatus, status)
+  if (status === 'stopped') vault?.signerStopped()
 })
 
 function sendToWindows(channel: string, ...args: unknown[]): void {
@@ -111,6 +115,32 @@ function getMcpBridge(): Promise<McpBridge> {
   return mcpBridge
 }
 
+const osSecretBox: SecretBox = {
+  // Without a keyring, Linux "encrypts" with a key anyone can look up.
+  canKeep: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
+  seal: (text) => safeStorage.encryptString(text),
+  open: (data) => safeStorage.decryptString(data),
+}
+
+let vault: VaultService | null = null
+
+function getVault(): VaultService {
+  vault ??= createVaultService({
+    store: createVaultStore({ file: join(app.getPath('userData'), 'vault.bin'), box: osSecretBox }),
+    ask: (request) => signer.askVault(request),
+    onStatus: (status) => {
+      if (status.state === 'unlocked') autoLock.noteInput()
+      sendToWindows(IPC.vaultStatusChanged, status)
+    },
+  })
+  return vault
+}
+
+const autoLock = createAutoLock({
+  isUnlocked: () => vault?.isUnlocked() === true,
+  lock: () => void vault?.lock(),
+})
+
 let externalTools: ExternalTools | null = null
 
 function getExternalTools(): ExternalTools {
@@ -121,12 +151,7 @@ function getExternalTools(): ExternalTools {
     readEnv: readNamedShellEnv,
     signIns: createSignIns({
       file: join(app.getPath('userData'), 'external-sign-ins.bin'),
-      box: {
-        // Without a keyring, Linux "encrypts" with a key anyone can look up.
-        canKeep: () => safeStorage.isEncryptionAvailable() && !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text'),
-        seal: (text) => safeStorage.encryptString(text),
-        open: (data) => safeStorage.decryptString(data),
-      },
+      box: osSecretBox,
       // oauth.ts has checked the address: https, or this computer for a server that's here too.
       openBrowser: (url) => shell.openExternal(url),
     }),
@@ -235,6 +260,41 @@ function registerIpc(): void {
     return getExternalTools().signOut(id)
   })
 
+  ipcMain.handle(IPC.vaultStatus, (event) => {
+    assertAppFrame(event)
+    return getVault().status()
+  })
+
+  ipcMain.handle(IPC.startVaultCreate, (event, words: unknown) => {
+    assertAppFrame(event)
+    return getVault().startCreate(words)
+  })
+
+  ipcMain.handle(IPC.finishVaultCreate, (event, password: unknown, answers: unknown) => {
+    assertAppFrame(event)
+    return getVault().finishCreate(password, answers)
+  })
+
+  ipcMain.handle(IPC.cancelVaultCreate, (event) => {
+    assertAppFrame(event)
+    return getVault().cancelCreate()
+  })
+
+  ipcMain.handle(IPC.restoreVault, (event, words: unknown, password: unknown) => {
+    assertAppFrame(event)
+    return getVault().restore(words, password)
+  })
+
+  ipcMain.handle(IPC.unlockVault, (event, password: unknown) => {
+    assertAppFrame(event)
+    return getVault().unlock(password)
+  })
+
+  ipcMain.handle(IPC.lockVault, (event) => {
+    assertAppFrame(event)
+    return getVault().lock()
+  })
+
   ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {
     assertAppFrame(event)
     if (typeof chatId !== 'string' || typeof text !== 'string') throw new Error('Bad message')
@@ -264,6 +324,8 @@ app.on('second-instance', () => {
 
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-attach-webview', (event) => event.preventDefault())
+  // Real input only: a page's script can't raise this to keep the wallet unlocked.
+  contents.on('input-event', () => autoLock.noteInput())
 })
 
 void app.whenReady().then(() => {
@@ -279,6 +341,9 @@ void app.whenReady().then(() => {
 
   registerIpc()
   signer.start()
+  autoLock.start()
+  powerMonitor.on('suspend', () => void vault?.lock())
+  powerMonitor.on('lock-screen', () => void vault?.lock())
   createMainWindow()
 
   app.on('activate', () => {

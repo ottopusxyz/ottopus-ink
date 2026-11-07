@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC, type ChatEvent, type InkBridge, type SignerStatus } from '../shared/ipc'
+import type { VaultStatus } from '../shared/vault'
 
 /**
  * The renderer's only door to the app. Each method maps to one IPC channel;
@@ -32,6 +33,20 @@ const bridge: InkBridge = {
     ipcRenderer.on(IPC.signerStatus, handler)
     return () => {
       ipcRenderer.removeListener(IPC.signerStatus, handler)
+    }
+  },
+  vaultStatus: () => ipcRenderer.invoke(IPC.vaultStatus),
+  startVaultCreate: (words) => ipcRenderer.invoke(IPC.startVaultCreate, words),
+  finishVaultCreate: (password, answers) => ipcRenderer.invoke(IPC.finishVaultCreate, password, answers),
+  cancelVaultCreate: () => ipcRenderer.invoke(IPC.cancelVaultCreate),
+  restoreVault: (words, password) => ipcRenderer.invoke(IPC.restoreVault, words, password),
+  unlockVault: (password) => ipcRenderer.invoke(IPC.unlockVault, password),
+  lockVault: () => ipcRenderer.invoke(IPC.lockVault),
+  onVaultStatus: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: VaultStatus) => listener(status)
+    ipcRenderer.on(IPC.vaultStatusChanged, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC.vaultStatusChanged, handler)
     }
   },
 }

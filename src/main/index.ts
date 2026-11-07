@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
 import { detectAgents } from './agents/detect'
@@ -298,6 +298,14 @@ function registerIpc(): void {
   ipcMain.handle(IPC.vaultAccounts, (event) => {
     assertAppFrame(event)
     return getVault().accounts()
+  })
+
+  ipcMain.handle(IPC.copyAddress, async (event, chain: unknown) => {
+    assertAppFrame(event)
+    const answer = await getVault().address(chain)
+    if (!answer.ok) return answer
+    clipboard.writeText(answer.address)
+    return { ok: true }
   })
 
   ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {

@@ -1,4 +1,4 @@
-import type { Account } from './accounts'
+import type { Account, AccountChain } from './accounts'
 import type { BackupAnswer, NewPhrase, VaultRequest, VaultResult, VaultStatus, VaultWordCount } from './vault'
 
 /**
@@ -32,6 +32,7 @@ export const IPC = {
   unlockVault: 'vault:unlock',
   lockVault: 'vault:lock',
   vaultAccounts: 'vault:accounts',
+  copyAddress: 'vault:copy-address',
   /** Main to renderer: the vault's status, sent on every change. */
   vaultStatusChanged: 'vault:status-changed',
 } as const
@@ -205,6 +206,8 @@ export interface InkBridge {
   lockVault(): Promise<void>
   /** The address on each chain, while unlocked. Fails with 'locked' otherwise. */
   vaultAccounts(): Promise<VaultResult<{ accounts: Account[] }>>
+  /** Main puts that chain's address on the clipboard itself, so the page can't swap in another one. */
+  copyAddress(chain: AccountChain): Promise<VaultResult>
   /** Calls listener whenever the vault's status changes; returns an unsubscribe. */
   onVaultStatus(listener: (status: VaultStatus) => void): () => void
 }

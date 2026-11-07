@@ -43,6 +43,7 @@ const bridge: InkBridge = {
   unlockVault: (password) => ipcRenderer.invoke(IPC.unlockVault, password),
   lockVault: () => ipcRenderer.invoke(IPC.lockVault),
   vaultAccounts: () => ipcRenderer.invoke(IPC.vaultAccounts),
+  copyAddress: (chain) => ipcRenderer.invoke(IPC.copyAddress, chain),
   onVaultStatus: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, status: VaultStatus) => listener(status)
     ipcRenderer.on(IPC.vaultStatusChanged, handler)

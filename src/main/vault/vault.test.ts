@@ -375,6 +375,17 @@ describe('accounts', () => {
     await restoring
   })
 
+  it('give one chain’s address for main to copy, and refuse anything that is not a chain', async () => {
+    const { service, asked } = setup()
+    expect(await service.address('near')).toEqual({ ok: false, reason: 'locked' })
+    await createVault(service)
+    const { accounts } = expectOk(await service.accounts())
+    expect(await service.address('bitcoin')).toEqual({ ok: true, address: accounts.find((account) => account.chain === 'bitcoin')!.address })
+    asked.length = 0
+    for (const chain of ['dogecoin', 'toString', 7, null, { chain: 'near' }]) expect(await service.address(chain)).toEqual({ ok: false, reason: 'bad-input' })
+    expect(asked).toEqual([])
+  })
+
   it('are not given out if the vault locks while they are asked for', async () => {
     const { service } = setup()
     await createVault(service)

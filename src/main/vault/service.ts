@@ -1,4 +1,4 @@
-import type { Account } from '../../shared/accounts'
+import { ACCOUNT_CHAINS, type Account, type AccountChain } from '../../shared/accounts'
 import { MAX_PASSWORD_LENGTH, type BackupAnswer, type NewPhrase, type VaultFailure, type VaultRequest, type VaultResult, type VaultStatus } from '../../shared/vault'
 import { VaultStoreError, type VaultStore } from './store'
 
@@ -23,6 +23,8 @@ export interface VaultService {
   lock(): Promise<void>
   /** The public address on each chain. Read only, so it doesn't wait behind other actions. */
   accounts(): Promise<VaultResult<{ accounts: Account[] }>>
+  /** One chain's address, for main to copy. The chain comes from the page, so it's checked. */
+  address(chain: unknown): Promise<VaultResult<{ address: string }>>
   isUnlocked(): boolean
   /** The signer went away, and took any seed with it. */
   signerStopped(): void
@@ -113,6 +115,13 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     return opened
   }
 
+  const accounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {
+    if (!unlocked) return fail('locked')
+    const before = locks
+    const answer = (await ask({ op: 'accounts' })) as VaultResult<{ accounts: Account[] }>
+    return locks === before ? answer : fail('locked')
+  }
+
   return {
     status,
     isUnlocked: () => unlocked,
@@ -164,11 +173,14 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
       await ask({ op: 'lock' })
     },
 
-    async accounts() {
-      if (!unlocked) return fail('locked')
-      const before = locks
-      const answer = (await ask({ op: 'accounts' })) as VaultResult<{ accounts: Account[] }>
-      return locks === before ? answer : fail('locked')
+    accounts,
+
+    async address(chain) {
+      if (typeof chain !== 'string' || !ACCOUNT_CHAINS.includes(chain as AccountChain)) return fail('bad-input')
+      const answer = await accounts()
+      if (!answer.ok) return answer
+      const account = answer.accounts.find((each) => each.chain === chain)
+      return account ? { ok: true, address: account.address } : fail('bad-input')
     },
 
     signerStopped() {

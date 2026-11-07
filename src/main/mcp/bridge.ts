@@ -88,14 +88,15 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
       })
     }
 
-    const onRequest = (session: BridgeSession, line: string) => {
+    const onRequest = async (session: BridgeSession, line: string) => {
       let response: object | null
       try {
-        response = handleMcpMessage(JSON.parse(line), version, session.onPlan)
+        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan })
       } catch {
         response = parseErrorResponse()
       }
-      if (!response) return
+      // Answers can take a moment now, and the session may have ended meanwhile.
+      if (!response || connection.destroyed || session.connection !== connection) return
       connection.write(`${JSON.stringify(response)}\n`)
       if (connection.writableLength > MAX_UNREAD_CHARS) connection.destroy()
     }
@@ -108,7 +109,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
         for (const line of lines) {
           if (connection.destroyed) return
           if (!helloed) onHello(line)
-          else if (line) onRequest(helloed, line)
+          else if (line) void onRequest(helloed, line)
         }
       }
       if (buffer.length > MAX_LINE_CHARS) connection.destroy()

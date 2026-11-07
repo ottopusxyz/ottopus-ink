@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { INK_TOOLS, type ChatPlan } from '../../shared/ipc'
 import { handleMcpMessage } from './protocol'
 
-const ask = (method: string, params?: unknown, id: unknown = 1) =>
-  handleMcpMessage({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) }, '1.2.3') as Record<string, unknown>
+const ask = async (method: string, params?: unknown, id: unknown = 1) =>
+  (await handleMcpMessage({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) }, '1.2.3')) as Record<string, unknown>
 
 const errorCode = (response: Record<string, unknown>) => (response.error as { code: number } | undefined)?.code
 
 describe('handleMcpMessage', () => {
-  it('introduces itself under the Ink name, with tools only', () => {
-    const { result } = ask('initialize', { protocolVersion: '2025-06-18' })
+  it('introduces itself under the Ink name, with tools only', async () => {
+    const { result } = (await ask('initialize', { protocolVersion: '2025-06-18' }))
     expect(result).toEqual({
       protocolVersion: '2025-06-18',
       capabilities: { tools: {} },
@@ -17,14 +17,14 @@ describe('handleMcpMessage', () => {
     })
   })
 
-  it('answers with its newest protocol when it does not know the one asked for', () => {
+  it('answers with its newest protocol when it does not know the one asked for', async () => {
     for (const params of [{ protocolVersion: '1999-01-01' }, { protocolVersion: 7 }, {}, 'text', undefined]) {
-      expect(ask('initialize', params).result).toMatchObject({ protocolVersion: '2025-11-25' })
+      expect((await ask('initialize', params)).result).toMatchObject({ protocolVersion: '2025-11-25' })
     }
   })
 
-  it('lists exactly the six tools, each with a closed schema', () => {
-    const { tools } = ask('tools/list').result as { tools: { name: string; inputSchema: Record<string, unknown> }[] }
+  it('lists exactly the six tools, each with a closed schema', async () => {
+    const { tools } = (await ask('tools/list')).result as { tools: { name: string; inputSchema: Record<string, unknown> }[] }
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       'cancel_plan',
       'create_plan',
@@ -38,33 +38,33 @@ describe('handleMcpMessage', () => {
     }
   })
 
-  it('has exactly the tools the page knows by name', () => {
-    const { tools } = ask('tools/list').result as { tools: { name: string }[] }
+  it('has exactly the tools the page knows by name', async () => {
+    const { tools } = (await ask('tools/list')).result as { tools: { name: string }[] }
     expect(tools.map((tool) => tool.name).sort()).toEqual([...INK_TOOLS].sort())
   })
 
-  it('offers nothing that signs or sends', () => {
-    const { tools } = ask('tools/list').result as { tools: { name: string }[] }
+  it('offers nothing that signs or sends', async () => {
+    const { tools } = (await ask('tools/list')).result as { tools: { name: string }[] }
     expect(tools.filter((tool) => /sign|send|broadcast|transfer|key|seed/i.test(tool.name))).toEqual([])
   })
 
-  it.each(['get_accounts', 'get_portfolio', 'get_quote', 'get_plan', 'cancel_plan'])('%s responds', (name) => {
-    expect(ask('tools/call', { name, arguments: {} }).result).toEqual({
+  it.each(['get_accounts', 'get_portfolio', 'get_quote', 'get_plan', 'cancel_plan'])('%s responds', async (name) => {
+    expect((await ask('tools/call', { name, arguments: {} })).result).toEqual({
       content: [{ type: 'text', text: 'The wallet is not set up yet.' }],
       isError: false,
     })
   })
 
   describe('create_plan', () => {
-    const propose = (args: unknown) => {
+    const propose = async (args: unknown) => {
       const plans: ChatPlan[] = []
       const message = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_plan', arguments: args } }
-      const { result } = handleMcpMessage(message, '1', (plan) => plans.push(plan)) as { result: { content: { text: string }[]; isError: boolean } }
+      const { result } = (await handleMcpMessage(message, '1', { onPlan: (plan) => plans.push(plan) })) as { result: { content: { text: string }[]; isError: boolean } }
       return { plans, result }
     }
 
-    it('hands over a draft plan and tells the agent it is a placeholder', () => {
-      const { plans, result } = propose({ outcome: 'swap', asset: 'ETH', amount: '0.1', to_asset: 'USDC', to_chain: 'base' })
+    it('hands over a draft plan and tells the agent it is a placeholder', async () => {
+      const { plans, result } = (await propose({ outcome: 'swap', asset: 'ETH', amount: '0.1', to_asset: 'USDC', to_chain: 'base' }))
       expect(plans).toEqual([
         {
           id: expect.any(String) as string,
@@ -83,8 +83,8 @@ describe('handleMcpMessage', () => {
       expect(result.content[0]?.text).toContain("can't be reviewed or signed")
     })
 
-    it('takes a stake with no target', () => {
-      expect(propose({ outcome: 'stake', asset: 'NEAR', amount: '10' }).plans).toHaveLength(1)
+    it('takes a stake with no target', async () => {
+      expect((await propose({ outcome: 'stake', asset: 'NEAR', amount: '10' })).plans).toHaveLength(1)
     })
 
     it.each([
@@ -108,48 +108,48 @@ describe('handleMcpMessage', () => {
       ['a lookalike letter in an address', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'аlice.near' }],
       ['a zero-width character', { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice​.near' }],
       ['a control character', { outcome: 'send', asset: 'NEAR\u0007', amount: '1', to: 'alice.near' }],
-    ])('refuses %s and hands over no plan', (_name, args) => {
-      const { plans, result } = propose(args)
+    ])('refuses %s and hands over no plan', async (_name, args) => {
+      const { plans, result } = (await propose(args))
       expect(plans).toEqual([])
       expect(result.isError).toBe(true)
     })
   })
 
-  it('accepts a call with no arguments at all', () => {
-    expect(ask('tools/call', { name: 'get_accounts' }).result).toBeDefined()
+  it('accepts a call with no arguments at all', async () => {
+    expect((await ask('tools/call', { name: 'get_accounts' })).result).toBeDefined()
   })
 
-  it('refuses a tool it does not have, including names on the object prototype', () => {
+  it('refuses a tool it does not have, including names on the object prototype', async () => {
     for (const name of ['sign_transaction', 'constructor', '__proto__', 7, undefined]) {
-      expect(errorCode(ask('tools/call', { name }))).toBe(-32602)
+      expect(errorCode((await ask('tools/call', { name })))).toBe(-32602)
     }
-    expect(errorCode(ask('tools/call', 'get_accounts'))).toBe(-32602)
+    expect(errorCode((await ask('tools/call', 'get_accounts')))).toBe(-32602)
   })
 
-  it('refuses arguments that are not an object', () => {
+  it('refuses arguments that are not an object', async () => {
     for (const args of ['text', 7, [1], null]) {
-      expect(errorCode(ask('tools/call', { name: 'get_accounts', arguments: args }))).toBe(-32602)
+      expect(errorCode((await ask('tools/call', { name: 'get_accounts', arguments: args })))).toBe(-32602)
     }
   })
 
-  it('says no to a method it does not have, so Claude Code falls back from server/discover', () => {
-    expect(errorCode(ask('server/discover', {}, 'probe-1'))).toBe(-32601)
-    expect(ask('server/discover', {}, 'probe-1').id).toBe('probe-1')
-    expect(errorCode(ask('__proto__'))).toBe(-32601)
+  it('says no to a method it does not have, so Claude Code falls back from server/discover', async () => {
+    expect(errorCode((await ask('server/discover', {}, 'probe-1')))).toBe(-32601)
+    expect((await ask('server/discover', {}, 'probe-1')).id).toBe('probe-1')
+    expect(errorCode((await ask('__proto__')))).toBe(-32601)
   })
 
-  it('answers ping, and nothing to a notification', () => {
-    expect(ask('ping').result).toEqual({})
-    expect(handleMcpMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }, '1')).toBeNull()
-    expect(handleMcpMessage({ jsonrpc: '2.0', method: 'tools/call', params: { name: 'get_accounts' } }, '1')).toBeNull()
+  it('answers ping, and nothing to a notification', async () => {
+    expect((await ask('ping')).result).toEqual({})
+    expect((await handleMcpMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }, '1'))).toBeNull()
+    expect((await handleMcpMessage({ jsonrpc: '2.0', method: 'tools/call', params: { name: 'get_accounts' } }, '1'))).toBeNull()
   })
 
-  it('refuses anything that is not a JSON-RPC request', () => {
+  it('refuses anything that is not a JSON-RPC request', async () => {
     for (const message of [null, 7, 'text', [], [{ jsonrpc: '2.0', id: 1, method: 'ping' }], {}, { method: 'ping', id: 1 }, { jsonrpc: '2.0', id: 1 }]) {
-      expect(errorCode(handleMcpMessage(message, '1') as Record<string, unknown>)).toBe(-32600)
+      expect(errorCode((await handleMcpMessage(message, '1')) as Record<string, unknown>)).toBe(-32600)
     }
     for (const id of [null, {}, [1], true]) {
-      expect(errorCode(ask('ping', undefined, id))).toBe(-32600)
+      expect(errorCode((await ask('ping', undefined, id)))).toBe(-32600)
     }
   })
 })

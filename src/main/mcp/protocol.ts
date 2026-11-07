@@ -64,6 +64,12 @@ const toolAnswer = (answer: string, isError = false) => ({ content: [{ type: 'te
 /** Every tool's answer until the wallet exists. */
 const NOT_SET_UP = toolAnswer('The wallet is not set up yet.')
 
+/** What the app hands the MCP server. Main passes these in, so this code never reaches the vault itself. */
+export interface McpHandlers {
+  /** Gets each plan the session's agent proposes. */
+  onPlan?: (plan: ChatPlan) => void
+}
+
 /** Longer than any asset, amount or address. */
 const MAX_PLAN_FIELD_CHARS = 256
 
@@ -126,7 +132,7 @@ export function parseErrorResponse(): object {
  * server doesn't have gets a proper error rather than silence: Claude Code opens
  * with `server/discover` and falls back to `initialize` only when told no.
  */
-export function handleMcpMessage(message: unknown, version: string, onPlan?: (plan: ChatPlan) => void): object | null {
+export async function handleMcpMessage(message: unknown, version: string, { onPlan }: McpHandlers = {}): Promise<object | null> {
   if (!isRecord(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     const id = isRecord(message) && (typeof message.id === 'string' || typeof message.id === 'number') ? message.id : null
     return rpcError(id, INVALID_REQUEST, 'Not a JSON-RPC 2.0 request')

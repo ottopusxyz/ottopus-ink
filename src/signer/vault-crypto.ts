@@ -115,17 +115,21 @@ function parse(blob: string, minLogN: number): Parsed {
 export async function openEntropy(blob: string, password: string, minLogN: number = DEFAULT_LOG_N): Promise<Uint8Array> {
   const { kdf, iv, tag, data } = parse(blob, minLogN)
   const key = await deriveKey(password, kdf)
-  let plain: Buffer | null = null
+  // Every buffer that holds decrypted bytes, so each is wiped even when the password turns out wrong.
+  const plain: Buffer[] = []
   try {
     const decipher = createDecipheriv(CIPHER, key, Buffer.from(iv, 'base64'), { authTagLength: TAG_BYTES })
     decipher.setAAD(additionalData(kdf, iv))
     decipher.setAuthTag(Buffer.from(tag, 'base64'))
-    plain = Buffer.concat([decipher.update(Buffer.from(data, 'base64')), decipher.final()])
-    return Uint8Array.from(plain)
+    plain.push(decipher.update(Buffer.from(data, 'base64')))
+    plain.push(decipher.final())
+    const joined = Buffer.concat(plain)
+    plain.push(joined)
+    return Uint8Array.from(joined)
   } catch {
     throw new VaultCryptoError('wrong-password')
   } finally {
     wipe(key)
-    wipe(plain)
+    for (const bytes of plain) wipe(bytes)
   }
 }

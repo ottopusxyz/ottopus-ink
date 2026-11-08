@@ -54,6 +54,8 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
   let unlocked = false
   let busy = false
   let phraseWaiting = false
+  /** Moves on whenever the signer lets go of a new phrase: a lock, a stopped signer or a cancel. */
+  let phraseDrops = 0
   /** Moves on with every lock, so an unlock answered just before one can't undo it. */
   let locks = 0
 
@@ -135,8 +137,12 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
       oneAtATime<NewPhrase>(async () => {
         if (store.exists()) return fail('exists')
         if (words !== 12 && words !== 24) return fail('bad-input')
+        const before = phraseDrops
         const begun = (await ask({ op: 'begin-create', words })) as VaultResult<NewPhrase>
         if (!begun.ok) return begun
+        // A lock or cancel that landed while the answer was on its way has already wiped this
+        // phrase in the signer. Showing it would have the person copy words that open nothing.
+        if (phraseDrops !== before) return fail('locked-meanwhile')
         phraseWaiting = true
         // Only what the page needs, so nothing else the signer might add can reach it.
         return { ok: true, words: begun.words, check: begun.check }
@@ -154,6 +160,7 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
       }),
 
     async cancelCreate() {
+      phraseDrops++
       phraseWaiting = false
       announce()
       await ask({ op: 'cancel' })
@@ -184,6 +191,7 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
       locks++
       unlocked = false
       // The signer forgets a waiting phrase when it locks, and the page has to hear that.
+      phraseDrops++
       phraseWaiting = false
       announce()
       await ask({ op: 'lock' })
@@ -202,6 +210,7 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     signerStopped() {
       locks++
       unlocked = false
+      phraseDrops++
       phraseWaiting = false
       announce()
     },

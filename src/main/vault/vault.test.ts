@@ -155,6 +155,38 @@ describe('creating', () => {
     if (signerForgets) expect(await service.finishCreate(PASSWORD, answersFor(phrase))).toEqual({ ok: false, reason: 'nothing-pending' })
   })
 
+  it.each([
+    ['a lock', (service: ReturnType<typeof createVaultService>) => service.lock()],
+    ['the signer stopping', async (service: ReturnType<typeof createVaultService>) => service.signerStopped()],
+    ['a cancel', (service: ReturnType<typeof createVaultService>) => service.cancelCreate()],
+  ])('gives the page no words if %s lands while the new phrase is on its way', async (_name, drop) => {
+    const signer = createVaultState({ logN: 10 })
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let made = false
+    const statuses: VaultStatus[] = []
+    const service = createVaultService({
+      store: createVaultStore({ file, box: noKeyring }),
+      ask: async (request) => {
+        const result = await signer.handle(request)
+        // The signer has made the phrase, and its answer is still on the way to main.
+        if (request.op === 'begin-create') {
+          made = true
+          await held
+        }
+        return result
+      },
+      onStatus: (status) => statuses.push(status),
+    })
+    const starting = service.startCreate(12)
+    await vi.waitFor(() => expect(made).toBe(true))
+    await drop(service)
+    release()
+    expect(await starting).toEqual({ ok: false, reason: 'locked-meanwhile' })
+    expect(service.status().phraseWaiting).toBe(false)
+    expect(statuses.some((status) => status.phraseWaiting)).toBe(false)
+  })
+
   it('stops waiting when the person restores a phrase instead', async () => {
     const { service } = setup()
     expectOk(await service.startCreate(12))

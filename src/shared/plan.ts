@@ -82,3 +82,38 @@ export interface PlanCore {
   summary: string
   steps: PlanStep[]
 }
+
+export type PlanFailure =
+  /** The request isn't a plan Ink can make: a bad amount or a missing or malformed field. */
+  | 'bad-request'
+  /** It would pay an address that is neither the person's own nor one they typed. */
+  | 'recipient-not-allowed'
+  /** Too many plans too quickly, or too many kept at once. */
+  | 'too-many'
+  /** No plan with that id belongs to whoever asked. */
+  | 'not-found'
+  /** The plan's status doesn't allow that move. */
+  | 'cannot-move'
+
+/** What an agent's chat learns about one of its plans. */
+export interface PlanSummary {
+  id: string
+  status: PlanStatus
+  summary: string
+  intent: PlanIntent
+  recipient: PlanRecipient | null
+}
+
+export type PlanToolResult =
+  | { ok: true; plan: PlanSummary }
+  | { ok: false; reason: PlanFailure | 'locked' | 'no-vault' | 'unavailable'; status?: PlanStatus }
+
+/**
+ * What an agent's chat can do with plans, with main deciding everything that
+ * matters: who made the plan, whose addresses count, and what the person typed.
+ */
+export interface PlanTools {
+  create(intent: PlanIntent): Promise<PlanToolResult>
+  get(id: string): Promise<PlanToolResult>
+  cancel(id: string): Promise<PlanToolResult>
+}

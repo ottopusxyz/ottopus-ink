@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { Account } from '../../shared/accounts'
-import { PLAN_STATUSES, type PlanCore, type PlanCreator, type PlanIntent, type PlanStatus } from '../../shared/plan'
+import { PLAN_STATUSES, type PlanCore, type PlanCreator, type PlanFailure, type PlanIntent, type PlanStatus } from '../../shared/plan'
 import { PlanIntegrityError } from './canonical'
 import { planHash } from './hash'
 import { allowedRecipient } from './recipients'
@@ -25,18 +25,6 @@ const MAX_AMOUNT_CHARS = 79
  * read as something else.
  */
 const WORD = /^[!-~]{1,256}$/
-
-export type PlanFailure =
-  /** The request isn't a plan Ink can make: a bad amount or a missing field. */
-  | 'bad-request'
-  /** It would pay an address that is neither the person's own nor one they typed. */
-  | 'recipient-not-allowed'
-  /** This chat made too many plans too quickly, or the store is full. */
-  | 'too-many'
-  /** No plan with that id belongs to whoever asked. */
-  | 'not-found'
-  /** The plan's status doesn't allow that move. */
-  | 'cannot-move'
 
 export type PlanResult<T = object> = ({ ok: true } & T) | { ok: false; reason: PlanFailure; status?: PlanStatus }
 

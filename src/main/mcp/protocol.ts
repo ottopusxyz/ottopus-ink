@@ -63,8 +63,19 @@ const TOOLS = [
 
 const toolAnswer = (answer: string, isError = false) => ({ content: [{ type: 'text', text: answer }], isError })
 
-/** Every tool's answer until the wallet exists. */
+/** get_accounts' answer when there is no wallet on this computer yet. */
 const NOT_SET_UP = toolAnswer('The wallet is not set up yet.')
+
+/**
+ * What each tool that isn't built yet says. Each is true whatever state the wallet is
+ * in, so it never contradicts get_accounts in the same chat.
+ */
+const NOT_BUILT: Record<string, ReturnType<typeof toolAnswer>> = {
+  get_portfolio: toolAnswer('Ink can’t read balances yet.'),
+  get_quote: toolAnswer('Ink can’t get quotes yet.'),
+  get_plan: toolAnswer('Ink can’t track plans yet.'),
+  cancel_plan: toolAnswer('Ink can’t track plans yet, so there is nothing to cancel. Nothing was signed.'),
+}
 
 /** What each address is for, so an agent doesn't send a token to the wrong chain's address. */
 const CHAIN_LABELS: Record<AccountChain, string> = {
@@ -199,10 +210,10 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         const plan = planFrom(params.arguments)
         if (!plan) return result(toolAnswer('Those plan details do not match the schema. Each value must be one word of plain ASCII, a send needs to, and a swap needs to_asset.', true))
         onPlan?.(plan)
-        return result(toolAnswer(`Plan ${plan.id} is a placeholder. The wallet is not set up yet, so it can't be reviewed or signed.`))
+        return result(toolAnswer(`Plan ${plan.id} is a placeholder: Ink can’t review or sign plans yet.`))
       }
       if (params.name === 'get_accounts') return result(await accountsAnswer(accounts))
-      return result(NOT_SET_UP)
+      return result(NOT_BUILT[params.name as string] ?? NOT_SET_UP)
     }
     default:
       return rpcError(id, METHOD_NOT_FOUND, 'No such method')

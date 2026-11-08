@@ -49,11 +49,21 @@ describe('handleMcpMessage', () => {
     expect(tools.filter((tool) => /sign|send|broadcast|transfer|key|seed/i.test(tool.name))).toEqual([])
   })
 
-  it.each(['get_accounts', 'get_portfolio', 'get_quote', 'get_plan', 'cancel_plan'])('%s responds', async (name) => {
-    expect((await ask('tools/call', { name, arguments: {} })).result).toEqual({
+  it('answers get_accounts with no way to read the wallet as not set up', async () => {
+    expect((await ask('tools/call', { name: 'get_accounts', arguments: {} })).result).toEqual({
       content: [{ type: 'text', text: 'The wallet is not set up yet.' }],
       isError: false,
     })
+  })
+
+  it.each([
+    ['get_portfolio', 'Ink can’t read balances yet.'],
+    ['get_quote', 'Ink can’t get quotes yet.'],
+    ['get_plan', 'Ink can’t track plans yet.'],
+    ['cancel_plan', 'Ink can’t track plans yet, so there is nothing to cancel. Nothing was signed.'],
+  ])('%s says it isn’t built yet, and never that the wallet isn’t set up', async (name, text) => {
+    const answer = (await ask('tools/call', { name, arguments: {} })).result
+    expect(answer).toEqual({ content: [{ type: 'text', text }], isError: false })
   })
 
   describe('get_accounts', () => {
@@ -134,7 +144,7 @@ describe('handleMcpMessage', () => {
       ])
       expect(result.isError).toBe(false)
       expect(result.content[0]?.text).toContain(plans[0]?.id)
-      expect(result.content[0]?.text).toContain("can't be reviewed or signed")
+      expect(result.content[0]?.text).toBe(`Plan ${plans[0]?.id} is a placeholder: Ink can’t review or sign plans yet.`)
     })
 
     it('takes a stake with no target', async () => {

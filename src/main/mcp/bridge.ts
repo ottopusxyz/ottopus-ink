@@ -97,8 +97,9 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, acco
       } catch {
         response = parseErrorResponse()
       }
-      // Answers can take a moment now, and the session may have ended meanwhile.
-      if (!response || connection.destroyed || session.connection !== connection) return
+      // An answer that takes a moment may find its connection gone: removing the session
+      // and a restarted shim taking over both destroy it. It only ever goes to the asker.
+      if (!response || connection.destroyed) return
       connection.write(`${JSON.stringify(response)}\n`)
       if (connection.writableLength > MAX_UNREAD_CHARS) connection.destroy()
     }

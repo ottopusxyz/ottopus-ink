@@ -100,26 +100,49 @@ describe('startMcpBridge accounts', () => {
     expect(JSON.stringify(state.lines[0])).toContain(`near: ${'b'.repeat(64)}`)
   })
 
-  it('drops an answer whose session ended while it was being worked out', async () => {
+  /** A bridge whose get_accounts waits until released, and says when it has been asked. */
+  async function holdingBridge() {
     bridge.close()
     let release = () => {}
     const held = new Promise<void>((resolve) => (release = resolve))
+    const asked = { count: 0 }
     bridge = await startMcpBridge({
       parentDir,
       version: '1',
       accounts: async () => {
+        asked.count++
         await held
-        return { ok: true, accounts: [] }
+        return { ok: true, accounts: [{ chain: 'near', path: "m/44'/397'/0'", address: 'c'.repeat(64) }] }
       },
     })
+    return { release, asked }
+  }
+
+  it('gives a removed session nothing, even an answer it was already waiting for', async () => {
+    const { release, asked } = await holdingBridge()
     const session = bridge.addSession()
     const state = client()
     state.socket.write(`${hello(session.token)}${getAccounts(1)}`)
-    await vi.waitFor(() => expect(session.connected()).toBe(true))
+    await vi.waitFor(() => expect(asked.count).toBe(1))
     session.remove()
     release()
     await closed(state)
     expect(state.lines).toEqual([])
+  })
+
+  it('sends a late answer only to the connection that asked, not to a shim that took over', async () => {
+    const { release, asked } = await holdingBridge()
+    const session = bridge.addSession()
+    const first = client()
+    first.socket.write(`${hello(session.token)}${getAccounts(1)}`)
+    await vi.waitFor(() => expect(asked.count).toBe(1))
+    const second = client()
+    second.socket.write(`${hello(session.token)}${ping(2)}`)
+    await closed(first)
+    await answered(second)
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(second.lines).toEqual([{ jsonrpc: '2.0', id: 2, result: {} }])
   })
 })
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ACCOUNT_CHAINS } from '../../../shared/accounts'
 import type { VaultFailure } from '../../../shared/vault'
 import { qrShape } from './qr'
-import { addressParts, CHAIN_INFO, passwordProblem, phraseProblem, phraseWords, vaultMessage, wrongAnswers } from './wallet'
+import { addressParts, CHAIN_INFO, passwordProblem, phraseDropped, phraseProblem, phraseWords, vaultMessage, wrongAnswers } from './wallet'
 
 describe('wallet copy', () => {
   it('describes every chain Ink holds a key for', () => {
@@ -84,5 +84,19 @@ describe('qrShape', () => {
 
   it('is the same every time for the same text', () => {
     expect(qrShape('abc')).toEqual(qrShape('abc'))
+  })
+})
+
+describe('phraseDropped', () => {
+  it('is true only when a waiting phrase goes away while a step still relies on it', () => {
+    for (const step of ['words', 'check', 'password']) {
+      expect(phraseDropped(true, false, step)).toBe(true)
+      expect(phraseDropped(false, false, step)).toBe(false)
+      expect(phraseDropped(true, true, step)).toBe(false)
+      expect(phraseDropped(false, true, step)).toBe(false)
+    }
+    // Back at the start or restoring, nothing on screen depends on it.
+    expect(phraseDropped(true, false, 'welcome')).toBe(false)
+    expect(phraseDropped(true, false, 'restore')).toBe(false)
   })
 })

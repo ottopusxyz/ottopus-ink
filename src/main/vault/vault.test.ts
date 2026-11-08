@@ -93,7 +93,7 @@ describe('the vault file', () => {
     const outer = JSON.parse(readFileSync(file, 'utf8')) as { keyring: boolean; data: string }
     expect(outer.keyring).toBe(false)
     expect(box.seal).not.toHaveBeenCalled()
-    expect(service.status()).toEqual({ state: 'unlocked', keyring: false })
+    expect(service.status()).toEqual({ state: 'unlocked', keyring: false, phraseWaiting: false })
   })
 
   it('never replaces a vault that is already there', () => {
@@ -128,6 +128,40 @@ describe('the vault file', () => {
 })
 
 describe('creating', () => {
+  const waiting = (statuses: VaultStatus[]) => statuses.map((status) => status.phraseWaiting)
+
+  it('tells the page a new phrase is waiting, and keeps it waiting through a wrong backup check', async () => {
+    const { service, statuses } = setup()
+    const phrase = expectOk(await service.startCreate(12))
+    expect(statuses.at(-1)).toEqual({ state: 'none', keyring: true, phraseWaiting: true })
+    expect(await service.finishCreate(PASSWORD, [])).toEqual({ ok: false, reason: 'backup-mismatch' })
+    expect(service.status().phraseWaiting).toBe(true)
+    expectOk(await service.finishCreate(PASSWORD, answersFor(phrase)))
+    expect(statuses.at(-1)).toEqual({ state: 'unlocked', keyring: true, phraseWaiting: false })
+  })
+
+  // A stopped signer is replaced by a new process holding nothing; this harness keeps the same signer state, so
+  // only lock and cancel can show here that the words on the page no longer open anything.
+  it.each([
+    ['a lock', (service: ReturnType<typeof setup>['service']) => service.lock(), true],
+    ['the signer stopping', async (service: ReturnType<typeof setup>['service']) => service.signerStopped(), false],
+    ['cancelling', (service: ReturnType<typeof setup>['service']) => service.cancelCreate(), true],
+  ])('tells the page when %s throws the waiting phrase away, though the state stays none', async (_name, end, signerForgets) => {
+    const { service, statuses } = setup()
+    const phrase = expectOk(await service.startCreate(12))
+    await end(service)
+    expect(statuses.at(-1)).toEqual({ state: 'none', keyring: true, phraseWaiting: false })
+    expect(waiting(statuses)).toEqual([true, false])
+    if (signerForgets) expect(await service.finishCreate(PASSWORD, answersFor(phrase))).toEqual({ ok: false, reason: 'nothing-pending' })
+  })
+
+  it('stops waiting when the person restores a phrase instead', async () => {
+    const { service } = setup()
+    expectOk(await service.startCreate(12))
+    expectOk(await service.restore(entropyToMnemonic(new Uint8Array(randomBytes(16)), wordlist), PASSWORD))
+    expect(service.status()).toEqual({ state: 'unlocked', keyring: true, phraseWaiting: false })
+  })
+
   it('saves nothing until the backup check passes', async () => {
     const { service } = setup()
     const phrase = expectOk(await service.startCreate(12))
@@ -143,8 +177,8 @@ describe('creating', () => {
     const { service, statuses, asked } = setup()
     await createVault(service)
     expect(asked).toEqual(['begin-create', 'finish', 'unlock'])
-    expect(service.status()).toEqual({ state: 'unlocked', keyring: true })
-    expect(statuses.at(-1)).toEqual({ state: 'unlocked', keyring: true })
+    expect(service.status()).toEqual({ state: 'unlocked', keyring: true, phraseWaiting: false })
+    expect(statuses.at(-1)).toEqual({ state: 'unlocked', keyring: true, phraseWaiting: false })
   })
 
   it('removes a file it cannot read back, and can try again with the same phrase', async () => {
@@ -249,7 +283,7 @@ describe('unlocking and locking', () => {
   it('can read a vault saved without a keyring after a keyring appears', async () => {
     await createVault(setup(noKeyring).service)
     const { service } = setup(keyringBox)
-    expect(service.status()).toEqual({ state: 'locked', keyring: false })
+    expect(service.status()).toEqual({ state: 'locked', keyring: false, phraseWaiting: false })
     expectOk(await service.unlock(PASSWORD))
   })
 
@@ -341,7 +375,8 @@ describe('unlocking and locking', () => {
     await createVault(service)
     await service.lock()
     await service.lock()
-    expect(statuses.map((status) => status.state)).toEqual(['unlocked', 'locked'])
+    // The first is the new phrase waiting, still with no vault: a real change the page needs.
+    expect(statuses.map((status) => status.state)).toEqual(['none', 'unlocked', 'locked'])
   })
 })
 

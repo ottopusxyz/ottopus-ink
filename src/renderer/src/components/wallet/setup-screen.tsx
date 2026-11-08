@@ -3,7 +3,7 @@ import type { NewPhrase, VaultWordCount } from '../../../../shared/vault'
 import { Otto } from '@/components/brand/otto'
 import { EyeIcon } from '@/components/shell/icons'
 import { Button, Callout, Input } from '@/components/ui'
-import { passwordProblem, phraseProblem, phraseWords, vaultMessage, wrongAnswers } from '@/lib/wallet'
+import { passwordProblem, PHRASE_DROPPED, phraseDropped, phraseProblem, phraseWords, vaultMessage, wrongAnswers } from '@/lib/wallet'
 import { Field, FormError, PhraseInput, WalletHeading, WalletPanel } from './wallet-panel'
 
 type Step =
@@ -18,11 +18,23 @@ type Step =
  * backup check and the password are done; main then reports the vault as
  * unlocked and the app takes over from here.
  */
-export function SetupScreen() {
+export function SetupScreen({ phraseWaiting }: { phraseWaiting: boolean }) {
   const [step, setStep] = useState<Step>({ kind: 'welcome' })
   const [size, setSize] = useState<VaultWordCount>(12)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // A lock or a stopped signer throws a waiting phrase away without changing the vault's
+  // state, so main's phraseWaiting is the only sign. Once it goes, the words on screen
+  // open nothing, and the person must not go on copying them down.
+  const [seenWaiting, setSeenWaiting] = useState(phraseWaiting)
+  if (phraseWaiting !== seenWaiting) {
+    setSeenWaiting(phraseWaiting)
+    if (phraseDropped(seenWaiting, phraseWaiting, step.kind)) {
+      setStep({ kind: 'welcome' })
+      setError(PHRASE_DROPPED)
+    }
+  }
 
   const go = (next: Step) => {
     setError(null)
@@ -74,9 +86,10 @@ export function SetupScreen() {
             if (result.reason === 'backup-mismatch') {
               setStep({ kind: 'check', phrase: step.phrase })
               setError(vaultMessage(result.reason))
-            } else if (result.reason === 'nothing-pending') {
+            } else if (result.reason === 'nothing-pending' || result.reason === 'locked-meanwhile') {
+              // Either way the signer no longer holds this phrase.
               setStep({ kind: 'welcome' })
-              setError(vaultMessage(result.reason))
+              setError(result.reason === 'locked-meanwhile' ? PHRASE_DROPPED : vaultMessage(result.reason))
             } else setError(vaultMessage(result.reason))
           }}
         />

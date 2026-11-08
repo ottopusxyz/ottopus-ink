@@ -53,10 +53,15 @@ function parseAnswers(value: unknown): BackupAnswer[] | null {
 export function createVaultService({ store, ask, onStatus }: VaultServiceOptions): VaultService {
   let unlocked = false
   let busy = false
+  let phraseWaiting = false
   /** Moves on with every lock, so an unlock answered just before one can't undo it. */
   let locks = 0
 
-  const status = (): VaultStatus => ({ state: !store.exists() ? 'none' : unlocked ? 'unlocked' : 'locked', keyring: store.usesKeyring() })
+  const status = (): VaultStatus => ({
+    state: !store.exists() ? 'none' : unlocked ? 'unlocked' : 'locked',
+    keyring: store.usesKeyring(),
+    phraseWaiting,
+  })
   let last = JSON.stringify(status())
   const announce = () => {
     const now = status()
@@ -131,8 +136,10 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
         if (store.exists()) return fail('exists')
         if (words !== 12 && words !== 24) return fail('bad-input')
         const begun = (await ask({ op: 'begin-create', words })) as VaultResult<NewPhrase>
+        if (!begun.ok) return begun
+        phraseWaiting = true
         // Only what the page needs, so nothing else the signer might add can reach it.
-        return begun.ok ? { ok: true, words: begun.words, check: begun.check } : begun
+        return { ok: true, words: begun.words, check: begun.check }
       }),
 
     finishCreate: (password, answers) =>
@@ -140,10 +147,15 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
         const parsed = parseAnswers(answers)
         if (!isPassword(password) || !parsed) return fail('bad-input')
         if (store.exists()) return fail('exists')
-        return save(password, parsed)
+        const saved = await save(password, parsed)
+        // Saved, or already gone from the signer: either way no phrase waits any more.
+        if (saved.ok || saved.reason === 'nothing-pending') phraseWaiting = false
+        return saved
       }),
 
     async cancelCreate() {
+      phraseWaiting = false
+      announce()
       await ask({ op: 'cancel' })
     },
 
@@ -153,6 +165,8 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
         if (store.exists()) return fail('exists')
         const begun = await ask({ op: 'begin-restore', words })
         if (!begun.ok) return begun
+        // The signer has let go of any new phrase to hold this one instead.
+        phraseWaiting = false
         const saved = await save(password, [])
         // Unlike a new phrase, the person has this one and can type it again, so nothing should stay waiting.
         if (!saved.ok) await ask({ op: 'cancel' })
@@ -169,6 +183,8 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     async lock() {
       locks++
       unlocked = false
+      // The signer forgets a waiting phrase when it locks, and the page has to hear that.
+      phraseWaiting = false
       announce()
       await ask({ op: 'lock' })
     },
@@ -186,6 +202,7 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     signerStopped() {
       locks++
       unlocked = false
+      phraseWaiting = false
       announce()
     },
   }

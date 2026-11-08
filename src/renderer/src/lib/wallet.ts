@@ -21,7 +21,7 @@ const MESSAGES: Record<VaultFailure, string> = {
   busy: 'Ink is still finishing the last step. Try again in a moment.',
   exists: 'There’s already a wallet on this computer, and Ink won’t replace it.',
   'no-vault': 'There’s no wallet on this computer yet.',
-  'nothing-pending': 'This setup was cancelled, or Ink locked. Start again.',
+  'nothing-pending': 'This setup was cancelled or Ink locked, so those words won’t open a wallet. Cross them out, then start again.',
   'weak-password': `Use a password of at least ${MIN_PASSWORD_LENGTH} characters.`,
   'invalid-words': 'These aren’t a valid 12 or 24 word recovery phrase. Check each word and their order.',
   'backup-mismatch': 'Those words don’t match. Check them against what you wrote down.',
@@ -35,6 +35,19 @@ const MESSAGES: Record<VaultFailure, string> = {
 }
 
 export const vaultMessage = (reason: VaultFailure): string => MESSAGES[reason]
+
+/** Shown when a lock or a stopped signer throws away the phrase on screen. */
+export const PHRASE_DROPPED = 'Ink locked, so the words it showed you were thrown away and won’t open a wallet. Cross them out, then start again.'
+
+/** The setup steps that show, check or save a phrase the signer is holding. */
+const HOLDS_PHRASE = new Set(['words', 'check', 'password'])
+
+/**
+ * Whether the phrase this setup step is about was just thrown away: main said a
+ * phrase was waiting and now says none is, while the step still relies on it.
+ */
+export const phraseDropped = (wasWaiting: boolean, nowWaiting: boolean, step: string): boolean =>
+  wasWaiting && !nowWaiting && HOLDS_PHRASE.has(step)
 
 /** Counted the way the signer counts, in whole characters after normalising. */
 const passwordLength = (password: string) => [...password.normalize('NFKC')].length

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Otto } from '@/components/brand/otto'
 import { Button, Input } from '@/components/ui'
-import { vaultMessage } from '@/lib/wallet'
+import { autoLockNote, vaultMessage } from '@/lib/wallet'
 import { Field, FormError, WalletHeading, WalletPanel } from './wallet-panel'
 
 /** The whole window while locked. Main reports the unlock, and the app comes back where it was. */
@@ -36,7 +36,7 @@ export function LockScreen() {
         </Button>
       </form>
       <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-3)]">
-        Ink locks itself after 10 minutes without use, and when your computer sleeps or its screen locks.
+        {autoLockNote(navigator.userAgent)}
       </p>
     </WalletPanel>
   )

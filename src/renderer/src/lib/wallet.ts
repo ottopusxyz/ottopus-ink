@@ -99,3 +99,14 @@ export function addressParts(address: string, edge = 6): { start: string; middle
   if (address.length <= edge * 2) return { start: address, middle: '', end: '' }
   return { start: address.slice(0, edge), middle: address.slice(edge, -edge), end: address.slice(-edge) }
 }
+
+/**
+ * What locks Ink by itself on this computer. Electron reports a screen lock only on
+ * macOS and Windows, so on Linux only the idle limit and sleep do.
+ */
+export function autoLockNote(userAgent: string): string {
+  const seesScreenLock = /Macintosh|Windows/.test(userAgent)
+  return seesScreenLock
+    ? 'Ink locks itself after 10 minutes without use, and when your computer sleeps or its screen locks.'
+    : 'Ink locks itself after 10 minutes without use, and when your computer sleeps.'
+}

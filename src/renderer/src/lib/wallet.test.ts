@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ACCOUNT_CHAINS } from '../../../shared/accounts'
 import type { VaultFailure } from '../../../shared/vault'
 import { qrShape } from './qr'
-import { addressParts, CHAIN_INFO, passwordProblem, phraseDropped, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from './wallet'
+import { addressParts, autoLockNote, CHAIN_INFO, passwordProblem, phraseDropped, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from './wallet'
 
 describe('wallet copy', () => {
   it('describes every chain Ink holds a key for', () => {
@@ -106,5 +106,16 @@ describe('phraseDropped', () => {
     // Back at the start or restoring, nothing on screen depends on it.
     expect(phraseDropped(true, false, 'welcome')).toBe(false)
     expect(phraseDropped(true, false, 'restore')).toBe(false)
+  })
+})
+
+describe('autoLockNote', () => {
+  it('promises a lock on screen lock only where Electron reports one', () => {
+    const linux = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Electron/45.2.1 Safari/537.36'
+    const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Electron/45.2.1 Safari/537.36'
+    const windows = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Electron/45.2.1 Safari/537.36'
+    expect(autoLockNote(linux)).not.toContain('screen')
+    expect(autoLockNote(linux)).toContain('sleeps')
+    for (const agent of [mac, windows]) expect(autoLockNote(agent)).toContain('its screen locks')
   })
 })

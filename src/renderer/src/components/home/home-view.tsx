@@ -110,9 +110,9 @@ export function HomeView({
               onClick={onPortfolio}
             >
               <span className="ink-eyebrow">Portfolio</span>
-              <span className="text-[14px] font-semibold">No wallet yet</span>
+              <span className="text-[14px] font-semibold">Balances aren’t shown yet</span>
               <span className="text-[12px] leading-[1.45] text-[var(--ot-text-2)]">
-                Balances on every chain show here once your wallet is set up.
+                Ink can’t read balances yet. Your addresses are on Receive.
               </span>
             </button>
           </div>

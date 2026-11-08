@@ -34,7 +34,7 @@ export function PlanCard({ plan }: { plan: ChatPlan }) {
         </dl>
       ) : null}
       <p className="m-0 text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">
-        A placeholder. The wallet isn't set up yet, so this can't be reviewed or signed.
+        A placeholder: Ink can’t review or sign plans yet.
       </p>
     </Card>
   )

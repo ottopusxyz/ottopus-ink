@@ -9,8 +9,8 @@ export type PlaceholderPage = Exclude<PageId, 'receive'>
 const COPY: Record<PlaceholderPage, { title: string; empty: string; description: string }> = {
   portfolio: {
     title: 'Portfolio',
-    empty: 'No balances yet',
-    description: 'Balances on every chain and what you hold in NEAR Intents show here as each chain lands.',
+    empty: 'Balances aren’t shown yet',
+    description: 'Ink can’t read balances yet. Your addresses are on Receive.',
   },
   activity: {
     title: 'Activity',

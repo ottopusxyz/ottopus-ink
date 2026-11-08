@@ -1,16 +1,16 @@
 import { useState, type FormEvent } from 'react'
-import type { NewPhrase, VaultWordCount } from '../../../../shared/vault'
+import type { BackupAnswer, NewPhrase, VaultWordCount } from '../../../../shared/vault'
 import { Otto } from '@/components/brand/otto'
 import { EyeIcon } from '@/components/shell/icons'
 import { Button, Callout, Input } from '@/components/ui'
-import { passwordProblem, PHRASE_DROPPED, phraseDropped, phraseProblem, phraseWords, vaultMessage, wrongAnswers } from '@/lib/wallet'
+import { passwordProblem, PHRASE_DROPPED, phraseDropped, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from '@/lib/wallet'
 import { Field, FormError, PhraseInput, WalletHeading, WalletPanel } from './wallet-panel'
 
 type Step =
   | { kind: 'welcome' }
   | { kind: 'words'; phrase: NewPhrase; shown: boolean }
   | { kind: 'check'; phrase: NewPhrase }
-  | { kind: 'password'; phrase: NewPhrase }
+  | { kind: 'password'; phrase: NewPhrase; answers: BackupAnswer[] }
   | { kind: 'restore' }
 
 /**
@@ -70,7 +70,7 @@ export function SetupScreen({ phraseWaiting }: { phraseWaiting: boolean }) {
           phrase={step.phrase}
           error={error}
           onBack={() => go({ kind: 'words', phrase: step.phrase, shown: false })}
-          onDone={() => go({ kind: 'password', phrase: step.phrase })}
+          onDone={(answers) => go({ kind: 'password', phrase: step.phrase, answers })}
         />
       ) : step.kind === 'password' ? (
         <CreatePassword
@@ -80,8 +80,8 @@ export function SetupScreen({ phraseWaiting }: { phraseWaiting: boolean }) {
           onSubmit={async (password) => {
             setBusy(true)
             setError(null)
-            const answers = step.phrase.check.map((index) => ({ index, word: step.phrase.words[index] ?? '' }))
-            const result = await window.ink.finishVaultCreate(password, answers).finally(() => setBusy(false))
+            // The person's own words: the signer checks them against the phrase it holds.
+            const result = await window.ink.finishVaultCreate(password, step.answers).finally(() => setBusy(false))
             if (result.ok) return
             if (result.reason === 'backup-mismatch') {
               setStep({ kind: 'check', phrase: step.phrase })
@@ -217,7 +217,7 @@ function CheckWords({
   phrase: NewPhrase
   error: string | null
   onBack: () => void
-  onDone: () => void
+  onDone: (answers: BackupAnswer[]) => void
 }) {
   const [typed, setTyped] = useState<Record<number, string>>({})
   const [wrong, setWrong] = useState<number[]>([])
@@ -227,7 +227,7 @@ function CheckWords({
     const asked = Object.fromEntries(phrase.check.map((index) => [index, typed[index] ?? '']))
     const mistakes = wrongAnswers(phrase.words, asked)
     setWrong(mistakes)
-    if (mistakes.length === 0) onDone()
+    if (mistakes.length === 0) onDone(typedAnswers(phrase.check, typed))
   }
 
   return (

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ACCOUNT_CHAINS } from '../../../shared/accounts'
 import type { VaultFailure } from '../../../shared/vault'
 import { qrShape } from './qr'
-import { addressParts, CHAIN_INFO, passwordProblem, phraseDropped, phraseProblem, phraseWords, vaultMessage, wrongAnswers } from './wallet'
+import { addressParts, CHAIN_INFO, passwordProblem, phraseDropped, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from './wallet'
 
 describe('wallet copy', () => {
   it('describes every chain Ink holds a key for', () => {
@@ -45,6 +45,14 @@ describe('typed phrases', () => {
     expect(phraseProblem('word '.repeat(12))).toBeNull()
     expect(phraseProblem('word '.repeat(24))).toBeNull()
     expect(phraseProblem('')).toMatch(/This has 0/)
+  })
+
+  it('sends the signer what was typed for each asked-for word, not the phrase’s own words', () => {
+    expect(typedAnswers([1, 3], { 1: ' CD ', 3: 'xyz', 0: 'ignored' })).toEqual([
+      { index: 1, word: ' CD ' },
+      { index: 3, word: 'xyz' },
+    ])
+    expect(typedAnswers([2], {})).toEqual([{ index: 2, word: '' }])
   })
 
   it('finds the backup words typed wrong', () => {

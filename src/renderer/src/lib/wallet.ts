@@ -1,5 +1,5 @@
 import type { AccountChain } from '../../../shared/accounts'
-import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, type VaultFailure } from '../../../shared/vault'
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, type BackupAnswer, type VaultFailure } from '../../../shared/vault'
 
 /** What each chain's address is for, and anything to know before sending to it the first time. */
 export const CHAIN_INFO: Record<AccountChain, { name: string; note: string }> = {
@@ -75,6 +75,14 @@ export function phraseProblem(text: string): string | null {
   if (count === 12 || count === 24) return null
   return `A recovery phrase has 12 or 24 words. This has ${count}.`
 }
+
+/**
+ * What the person typed for each asked-for word, as the signer's backup check takes it.
+ * The signer compares these with the phrase it holds, so they must be the person's own
+ * words: answers rebuilt from the phrase on the page would always pass.
+ */
+export const typedAnswers = (check: readonly number[], typed: Readonly<Record<number, string>>): BackupAnswer[] =>
+  check.map((index) => ({ index, word: typed[index] ?? '' }))
 
 /** Which of the asked-for words were typed wrong, by their position in the phrase. */
 export function wrongAnswers(words: readonly string[], typed: Readonly<Record<number, string>>): number[] {

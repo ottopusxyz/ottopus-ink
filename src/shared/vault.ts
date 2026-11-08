@@ -13,6 +13,12 @@ export interface VaultStatus {
   state: VaultState
   /** Whether the vault is, or would be, also sealed with the OS keyring. A password is needed either way. */
   keyring: boolean
+  /**
+   * A new phrase is being shown and waits for its backup check and password. It goes
+   * false when it's saved or cancelled, and when a lock or a stopped signer throws it
+   * away, which is the page's cue that the words on screen no longer open anything.
+   */
+  phraseWaiting: boolean
 }
 
 export type VaultFailure =

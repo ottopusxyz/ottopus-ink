@@ -1,6 +1,7 @@
 /** The pages the sidebar's lower group opens. Chats are listed above them. */
 export const PAGES = [
   { id: 'portfolio', label: 'Portfolio' },
+  { id: 'receive', label: 'Receive' },
   { id: 'activity', label: 'Activity' },
 ] as const
 
@@ -13,6 +14,7 @@ export const SHORTCUTS = [
   { action: 'new-chat', key: 'n', label: 'New chat' },
   { action: 'search', key: 'k', label: 'Search chats' },
   { action: 'settings', key: ',', label: 'Settings' },
+  { action: 'lock', key: 'l', label: 'Lock' },
 ] as const
 
 export type ShortcutAction = (typeof SHORTCUTS)[number]['action']

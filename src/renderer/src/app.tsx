@@ -8,14 +8,20 @@ import { SettingsDialog } from '@/components/settings/settings-dialog'
 import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
+import { LockScreen } from '@/components/wallet/lock-screen'
+import { ReceiveView } from '@/components/wallet/receive-view'
+import { SetupScreen } from '@/components/wallet/setup-screen'
 import { chooseAgent } from '@/lib/agents'
 import { HOME_DRAFT, isWorking, withDraft, type Drafts } from '@/lib/chats'
 import { latestOnly } from '@/lib/latest'
 import { useChats } from '@/lib/use-chats'
+import { useVault } from '@/lib/use-vault'
 
 const mac = navigator.userAgent.includes('Mac')
 
 export function App() {
+  const vault = useVault()
+  const unlocked = vault?.state === 'unlocked'
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [signer, setSigner] = useState<SignerStatus | null>(null)
   const [view, setView] = useState<View>({ kind: 'home' })
@@ -90,17 +96,20 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    // Shortcuts belong to the unlocked app. While it's locked or not set up, they'd open what's hidden.
+    if (!unlocked) return
     const onKey = (event: KeyboardEvent) => {
       const action = actionForShortcut(event)
       if (!action) return
       event.preventDefault()
       if (action === 'new-chat') newChat()
       else if (action === 'search') searchRef.current?.focus()
+      else if (action === 'lock') void window.ink.lockVault()
       else setSettingsOpen(true)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [newChat])
+  }, [newChat, unlocked])
 
   const send = () => {
     const text = draft.trim()
@@ -117,7 +126,14 @@ export function App() {
 
   const openChat = (chatId: string) => setView({ kind: 'chat', chatId })
 
+  const page = view.kind === 'page' ? view.page : null
   const agentPicker = <AgentPicker agents={agents} selected={selectedAgent} onSelect={setAgentPick} />
+
+  // Nothing of the app shows until the wallet is set up and unlocked. Chats and
+  // drafts live on above this, so unlocking comes back where it was.
+  if (!vault) return <AppShell mac={mac}>{null}</AppShell>
+  if (vault.state === 'none') return <AppShell mac={mac}><SetupScreen phraseWaiting={vault.phraseWaiting} /></AppShell>
+  if (vault.state === 'locked') return <AppShell mac={mac}><LockScreen /></AppShell>
 
   return (
     <AppShell
@@ -134,11 +150,14 @@ export function App() {
           onOpenChat={openChat}
           onPage={(page) => setView({ kind: 'page', page })}
           onSettings={() => setSettingsOpen(true)}
+          onLock={() => void window.ink.lockVault()}
         />
       }
     >
-      {view.kind === 'page' ? (
-        <PageView page={view.page} />
+      {page === 'receive' ? (
+        <ReceiveView />
+      ) : page ? (
+        <PageView page={page} onReceive={() => setView({ kind: 'page', page: 'receive' })} />
       ) : current ? (
         <ChatView
           chat={current}

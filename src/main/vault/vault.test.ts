@@ -93,7 +93,7 @@ describe('the vault file', () => {
     const outer = JSON.parse(readFileSync(file, 'utf8')) as { keyring: boolean; data: string }
     expect(outer.keyring).toBe(false)
     expect(box.seal).not.toHaveBeenCalled()
-    expect(service.status()).toEqual({ state: 'unlocked', keyring: false })
+    expect(service.status()).toEqual({ state: 'unlocked', keyring: false, phraseWaiting: false })
   })
 
   it('never replaces a vault that is already there', () => {
@@ -128,6 +128,72 @@ describe('the vault file', () => {
 })
 
 describe('creating', () => {
+  const waiting = (statuses: VaultStatus[]) => statuses.map((status) => status.phraseWaiting)
+
+  it('tells the page a new phrase is waiting, and keeps it waiting through a wrong backup check', async () => {
+    const { service, statuses } = setup()
+    const phrase = expectOk(await service.startCreate(12))
+    expect(statuses.at(-1)).toEqual({ state: 'none', keyring: true, phraseWaiting: true })
+    expect(await service.finishCreate(PASSWORD, [])).toEqual({ ok: false, reason: 'backup-mismatch' })
+    expect(service.status().phraseWaiting).toBe(true)
+    expectOk(await service.finishCreate(PASSWORD, answersFor(phrase)))
+    expect(statuses.at(-1)).toEqual({ state: 'unlocked', keyring: true, phraseWaiting: false })
+  })
+
+  // A stopped signer is replaced by a new process holding nothing; this harness keeps the same signer state, so
+  // only lock and cancel can show here that the words on the page no longer open anything.
+  it.each([
+    ['a lock', (service: ReturnType<typeof setup>['service']) => service.lock(), true],
+    ['the signer stopping', async (service: ReturnType<typeof setup>['service']) => service.signerStopped(), false],
+    ['cancelling', (service: ReturnType<typeof setup>['service']) => service.cancelCreate(), true],
+  ])('tells the page when %s throws the waiting phrase away, though the state stays none', async (_name, end, signerForgets) => {
+    const { service, statuses } = setup()
+    const phrase = expectOk(await service.startCreate(12))
+    await end(service)
+    expect(statuses.at(-1)).toEqual({ state: 'none', keyring: true, phraseWaiting: false })
+    expect(waiting(statuses)).toEqual([true, false])
+    if (signerForgets) expect(await service.finishCreate(PASSWORD, answersFor(phrase))).toEqual({ ok: false, reason: 'nothing-pending' })
+  })
+
+  it.each([
+    ['a lock', (service: ReturnType<typeof createVaultService>) => service.lock()],
+    ['the signer stopping', async (service: ReturnType<typeof createVaultService>) => service.signerStopped()],
+    ['a cancel', (service: ReturnType<typeof createVaultService>) => service.cancelCreate()],
+  ])('gives the page no words if %s lands while the new phrase is on its way', async (_name, drop) => {
+    const signer = createVaultState({ logN: 10 })
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let made = false
+    const statuses: VaultStatus[] = []
+    const service = createVaultService({
+      store: createVaultStore({ file, box: noKeyring }),
+      ask: async (request) => {
+        const result = await signer.handle(request)
+        // The signer has made the phrase, and its answer is still on the way to main.
+        if (request.op === 'begin-create') {
+          made = true
+          await held
+        }
+        return result
+      },
+      onStatus: (status) => statuses.push(status),
+    })
+    const starting = service.startCreate(12)
+    await vi.waitFor(() => expect(made).toBe(true))
+    await drop(service)
+    release()
+    expect(await starting).toEqual({ ok: false, reason: 'locked-meanwhile' })
+    expect(service.status().phraseWaiting).toBe(false)
+    expect(statuses.some((status) => status.phraseWaiting)).toBe(false)
+  })
+
+  it('stops waiting when the person restores a phrase instead', async () => {
+    const { service } = setup()
+    expectOk(await service.startCreate(12))
+    expectOk(await service.restore(entropyToMnemonic(new Uint8Array(randomBytes(16)), wordlist), PASSWORD))
+    expect(service.status()).toEqual({ state: 'unlocked', keyring: true, phraseWaiting: false })
+  })
+
   it('saves nothing until the backup check passes', async () => {
     const { service } = setup()
     const phrase = expectOk(await service.startCreate(12))
@@ -143,8 +209,8 @@ describe('creating', () => {
     const { service, statuses, asked } = setup()
     await createVault(service)
     expect(asked).toEqual(['begin-create', 'finish', 'unlock'])
-    expect(service.status()).toEqual({ state: 'unlocked', keyring: true })
-    expect(statuses.at(-1)).toEqual({ state: 'unlocked', keyring: true })
+    expect(service.status()).toEqual({ state: 'unlocked', keyring: true, phraseWaiting: false })
+    expect(statuses.at(-1)).toEqual({ state: 'unlocked', keyring: true, phraseWaiting: false })
   })
 
   it('removes a file it cannot read back, and can try again with the same phrase', async () => {
@@ -249,7 +315,7 @@ describe('unlocking and locking', () => {
   it('can read a vault saved without a keyring after a keyring appears', async () => {
     await createVault(setup(noKeyring).service)
     const { service } = setup(keyringBox)
-    expect(service.status()).toEqual({ state: 'locked', keyring: false })
+    expect(service.status()).toEqual({ state: 'locked', keyring: false, phraseWaiting: false })
     expectOk(await service.unlock(PASSWORD))
   })
 
@@ -341,7 +407,8 @@ describe('unlocking and locking', () => {
     await createVault(service)
     await service.lock()
     await service.lock()
-    expect(statuses.map((status) => status.state)).toEqual(['unlocked', 'locked'])
+    // The first is the new phrase waiting, still with no vault: a real change the page needs.
+    expect(statuses.map((status) => status.state)).toEqual(['none', 'unlocked', 'locked'])
   })
 })
 
@@ -373,6 +440,55 @@ describe('accounts', () => {
     const restoring = service.restore('word', PASSWORD)
     expectOk(await service.accounts())
     await restoring
+  })
+
+  it('give one chain’s address for main to copy, and refuse anything that is not a chain', async () => {
+    const { service, asked } = setup()
+    expect(await service.address('near')).toEqual({ ok: false, reason: 'locked' })
+    await createVault(service)
+    const { accounts } = expectOk(await service.accounts())
+    expect(await service.address('bitcoin')).toEqual({ ok: true, address: accounts.find((account) => account.chain === 'bitcoin')!.address })
+    asked.length = 0
+    for (const chain of ['dogecoin', 'toString', 7, null, { chain: 'near' }]) expect(await service.address(chain)).toEqual({ ok: false, reason: 'bad-input' })
+    expect(asked).toEqual([])
+  })
+
+  it('send the signer one request for a burst of reads', async () => {
+    const { service, asked } = setup()
+    await createVault(service)
+    asked.length = 0
+    const answers = await Promise.all(Array.from({ length: 20 }, () => service.accounts()))
+    expect(asked.filter((op) => op === 'accounts')).toHaveLength(1)
+    for (const answer of answers) expect(answer).toEqual(answers[0])
+    expect(answers[0]?.ok).toBe(true)
+  })
+
+  it('start a new read after a lock rather than share one from before it', async () => {
+    const signer = createVaultState({ logN: 10 })
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let holdNext = false
+    const service = createVaultService({
+      store: createVaultStore({ file, box: noKeyring }),
+      ask: async (request) => {
+        const result = await signer.handle(request)
+        if (request.op === 'accounts' && holdNext) {
+          holdNext = false
+          await held
+        }
+        return result
+      },
+      onStatus: () => {},
+    })
+    await createVault(service)
+    holdNext = true
+    const before = service.accounts()
+    await service.lock()
+    expectOk(await service.unlock(PASSWORD))
+    const after = await service.accounts()
+    expect(after.ok).toBe(true)
+    release()
+    expect(await before).toEqual({ ok: false, reason: 'locked' })
   })
 
   it('are not given out if the vault locks while they are asked for', async () => {

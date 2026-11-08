@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
 import { detectAgents } from './agents/detect'
@@ -15,6 +15,7 @@ import { appMenuTemplate } from './menu'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
 import { createAutoLock } from './vault/auto-lock'
+import { copyAddress } from './vault/copy-address'
 import { createVaultService, type VaultService } from './vault/service'
 import { createVaultStore } from './vault/store'
 
@@ -108,6 +109,11 @@ function getMcpBridge(): Promise<McpBridge> {
     // Private to the user on Linux. macOS has no such folder, so the app's own data folder.
     parentDir: process.env.XDG_RUNTIME_DIR ?? app.getPath('userData'),
     version: app.getVersion(),
+    // Public addresses only, and only while unlocked. The agent's tools get this function, never the vault.
+    accounts: async () => {
+      const wallet = getVault()
+      return wallet.status().state === 'none' ? { ok: false, reason: 'no-vault' } : wallet.accounts()
+    },
   }).catch((error: unknown) => {
     mcpBridge = null
     throw error
@@ -298,6 +304,17 @@ function registerIpc(): void {
   ipcMain.handle(IPC.vaultAccounts, (event) => {
     assertAppFrame(event)
     return getVault().accounts()
+  })
+
+  ipcMain.handle(IPC.copyAddress, (event, chain: unknown) => {
+    assertAppFrame(event)
+    return copyAddress(chain, {
+      // Looked up each time, since the window may close while the signer answers.
+      // Only for the window in front: otherwise a page could write the clipboard in the background.
+      focused: () => BrowserWindow.fromWebContents(event.sender)?.isFocused() === true,
+      address: (asked) => getVault().address(asked),
+      write: (text) => clipboard.writeText(text),
+    })
   })
 
   ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {

@@ -4,7 +4,7 @@ import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startMcpBridge, type McpBridge } from './bridge'
+import { MAX_IN_FLIGHT, MAX_IN_FLIGHT_PER_CONNECTION, startMcpBridge, type McpBridge } from './bridge'
 
 let parentDir: string
 let bridge: McpBridge
@@ -80,6 +80,100 @@ describe('startMcpBridge plans', () => {
     await answered(state)
     expect(mine).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outcome: 'send', asset: 'NEAR' }))
     expect(theirs).not.toHaveBeenCalled()
+  })
+})
+
+describe('startMcpBridge accounts', () => {
+  const getAccounts = (id: number) => `${JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'get_accounts' } })}\n`
+
+  it('answers get_accounts from what main passes in', async () => {
+    bridge.close()
+    bridge = await startMcpBridge({
+      parentDir,
+      version: '1',
+      accounts: async () => ({ ok: true, accounts: [{ chain: 'near', path: "m/44'/397'/0'", address: 'b'.repeat(64) }] }),
+    })
+    const session = bridge.addSession()
+    const state = client()
+    state.socket.write(`${hello(session.token)}${getAccounts(1)}`)
+    await answered(state)
+    expect(JSON.stringify(state.lines[0])).toContain(`near: ${'b'.repeat(64)}`)
+  })
+
+  /** A bridge whose get_accounts waits until released, and says when it has been asked. */
+  async function holdingBridge() {
+    bridge.close()
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const asked = { count: 0 }
+    bridge = await startMcpBridge({
+      parentDir,
+      version: '1',
+      accounts: async () => {
+        asked.count++
+        await held
+        return { ok: true, accounts: [{ chain: 'near', path: "m/44'/397'/0'", address: 'c'.repeat(64) }] }
+      },
+    })
+    return { release, asked }
+  }
+
+  it('turns away requests past the per-connection limit at once, instead of starting work for each', async () => {
+    const { release, asked } = await holdingBridge()
+    const session = bridge.addSession()
+    const state = client()
+    const extra = 4
+    state.socket.write(hello(session.token) + Array.from({ length: MAX_IN_FLIGHT_PER_CONNECTION + extra }, (_, i) => getAccounts(i + 1)).join(''))
+    await answered(state, extra)
+    expect(asked.count).toBe(MAX_IN_FLIGHT_PER_CONNECTION)
+    expect(state.lines.map((line) => (line.error as { code: number }).code)).toEqual(Array(extra).fill(-32000))
+    expect(state.lines.map((line) => line.id)).toEqual(Array.from({ length: extra }, (_, i) => MAX_IN_FLIGHT_PER_CONNECTION + i + 1))
+    release()
+    await answered(state, MAX_IN_FLIGHT_PER_CONNECTION + extra)
+    expect(state.lines.filter((line) => 'result' in line)).toHaveLength(MAX_IN_FLIGHT_PER_CONNECTION)
+  })
+
+  it('turns away requests past the limit across every connection', async () => {
+    const { release, asked } = await holdingBridge()
+    const full = MAX_IN_FLIGHT / MAX_IN_FLIGHT_PER_CONNECTION
+    for (let n = 0; n < full; n++) {
+      const state = client()
+      state.socket.write(hello(bridge.addSession().token) + Array.from({ length: MAX_IN_FLIGHT_PER_CONNECTION }, (_, i) => getAccounts(i + 1)).join(''))
+    }
+    await vi.waitFor(() => expect(asked.count).toBe(MAX_IN_FLIGHT))
+    const late = client()
+    late.socket.write(`${hello(bridge.addSession().token)}${getAccounts(1)}${getAccounts(2)}`)
+    await answered(late, 2)
+    expect(late.lines.map((line) => (line.error as { code: number }).code)).toEqual([-32000, -32000])
+    expect(asked.count).toBe(MAX_IN_FLIGHT)
+    release()
+  })
+
+  it('gives a removed session nothing, even an answer it was already waiting for', async () => {
+    const { release, asked } = await holdingBridge()
+    const session = bridge.addSession()
+    const state = client()
+    state.socket.write(`${hello(session.token)}${getAccounts(1)}`)
+    await vi.waitFor(() => expect(asked.count).toBe(1))
+    session.remove()
+    release()
+    await closed(state)
+    expect(state.lines).toEqual([])
+  })
+
+  it('sends a late answer only to the connection that asked, not to a shim that took over', async () => {
+    const { release, asked } = await holdingBridge()
+    const session = bridge.addSession()
+    const first = client()
+    first.socket.write(`${hello(session.token)}${getAccounts(1)}`)
+    await vi.waitFor(() => expect(asked.count).toBe(1))
+    const second = client()
+    second.socket.write(`${hello(session.token)}${ping(2)}`)
+    await closed(first)
+    await answered(second)
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(second.lines).toEqual([{ jsonrpc: '2.0', id: 2, result: {} }])
   })
 })
 

@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import type { ChatPlan } from '../../shared/ipc'
-import { handleMcpMessage, parseErrorResponse } from './protocol'
+import { handleMcpMessage, parseErrorResponse, rpcError, type McpHandlers, type RpcId } from './protocol'
 
 export interface McpBridgeOptions {
   /** Where the socket's private folder goes. It must be the user's own. */
@@ -12,6 +12,8 @@ export interface McpBridgeOptions {
   version: string
   /** How long a new connection gets to prove itself. */
   helloTimeoutMs?: number
+  /** The wallet's public addresses, for get_accounts. Main passes this in so agent code never imports the vault. */
+  accounts?: McpHandlers['accounts']
 }
 
 export interface McpSession {
@@ -35,6 +37,30 @@ const MAX_LINE_CHARS = 1024 * 1024
 /** Replies a reader isn't taking are dropped with the connection, not piled up here. */
 const MAX_UNREAD_CHARS = 1024 * 1024
 
+/**
+ * Requests one connection may have waiting for an answer. An agent is untrusted, and
+ * one that sends without waiting would otherwise start work, some of it in the signer,
+ * for every line. More get an error at once rather than a place in a queue.
+ */
+export const MAX_IN_FLIGHT_PER_CONNECTION = 16
+
+/** The same across every connection, so many sessions together can't pile up work either. */
+export const MAX_IN_FLIGHT = 64
+
+/** JSON-RPC's range for server errors. */
+const BUSY = -32000
+
+/** The id of a request line, to answer it with an error without handling it. */
+function idOf(line: string): RpcId | undefined {
+  try {
+    const message: unknown = JSON.parse(line)
+    if (typeof message !== 'object' || message === null || !('id' in message)) return undefined
+    return typeof message.id === 'string' || typeof message.id === 'number' ? message.id : null
+  } catch {
+    return null
+  }
+}
+
 const hash = (token: string) => createHash('sha256').update(token).digest('hex')
 
 interface BridgeSession {
@@ -51,7 +77,7 @@ interface BridgeSession {
  * The socket sits in a new 0700 folder and is itself 0600. Only hashes of tokens
  * are kept, so a lookup doesn't compare against the secret.
  */
-export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: McpBridgeOptions): Promise<McpBridge> {
+export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, accounts }: McpBridgeOptions): Promise<McpBridge> {
   mkdirSync(parentDir, { recursive: true })
   const dir = mkdtempSync(join(parentDir, 'ottopus-ink-'))
   const socketPath = join(dir, 'mcp.sock')
@@ -59,6 +85,8 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
   /** Each live session's connection, by the hash of its token. */
   const sessions = new Map<string, BridgeSession>()
   const connections = new Set<Socket>()
+  /** Requests being worked on, across every connection. */
+  let inFlight = 0
 
   const server = createServer((connection) => {
     connections.add(connection)
@@ -66,6 +94,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
     connection.on('error', () => undefined)
     connection.once('close', () => connections.delete(connection))
 
+    let connectionInFlight = 0
     const helloTimer = setTimeout(() => connection.destroy(), helloTimeoutMs)
     connection.once('close', () => clearTimeout(helloTimer))
     let helloed: BridgeSession | null = null
@@ -88,16 +117,33 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
       })
     }
 
-    const onRequest = (session: BridgeSession, line: string) => {
-      let response: object | null
-      try {
-        response = handleMcpMessage(JSON.parse(line), version, session.onPlan)
-      } catch {
-        response = parseErrorResponse()
-      }
-      if (!response) return
+    const reply = (response: object) => {
       connection.write(`${JSON.stringify(response)}\n`)
       if (connection.writableLength > MAX_UNREAD_CHARS) connection.destroy()
+    }
+
+    const onRequest = async (session: BridgeSession, line: string) => {
+      if (connectionInFlight >= MAX_IN_FLIGHT_PER_CONNECTION || inFlight >= MAX_IN_FLIGHT) {
+        // A notification has no id and wants no answer, so it's simply not handled.
+        const id = idOf(line)
+        if (id !== undefined) reply(rpcError(id, BUSY, 'Too many requests at once. Wait for answers before sending more.'))
+        return
+      }
+      connectionInFlight++
+      inFlight++
+      let response: object | null
+      try {
+        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, accounts })
+      } catch {
+        response = parseErrorResponse()
+      } finally {
+        connectionInFlight--
+        inFlight--
+      }
+      // An answer that takes a moment may find its connection gone: removing the session
+      // and a restarted shim taking over both destroy it. It only ever goes to the asker.
+      if (!response || connection.destroyed) return
+      reply(response)
     }
 
     connection.on('data', (chunk: string) => {
@@ -108,7 +154,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000 }: Mc
         for (const line of lines) {
           if (connection.destroyed) return
           if (!helloed) onHello(line)
-          else if (line) onRequest(helloed, line)
+          else if (line) void onRequest(helloed, line)
         }
       }
       if (buffer.length > MAX_LINE_CHARS) connection.destroy()

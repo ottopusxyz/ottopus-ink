@@ -192,7 +192,7 @@ function AgentTab({
   )
 }
 
-const NEEDS_WALLET = 'This works once wallets are set up in Ink.'
+const NEEDS_WALLET = 'This isn’t built yet.'
 
 function WalletTab() {
   const [confirm, setConfirm] = useState('above')
@@ -206,7 +206,7 @@ function WalletTab() {
       <NotSavedYet />
       <Setting
         title="Back up your recovery phrase"
-        description="Twelve words. You write them down, then pick three back to check."
+        description="See your 12 or 24 words again, after entering your password."
       >
         <Tooltip text={NEEDS_WALLET}>
           <Button size="sm" variant="primary" aria-disabled>

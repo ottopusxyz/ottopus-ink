@@ -1,4 +1,4 @@
-import type { Account } from '../../shared/accounts'
+import { ACCOUNT_CHAINS, type Account, type AccountChain } from '../../shared/accounts'
 import { MAX_PASSWORD_LENGTH, type BackupAnswer, type NewPhrase, type VaultFailure, type VaultRequest, type VaultResult, type VaultStatus } from '../../shared/vault'
 import { VaultStoreError, type VaultStore } from './store'
 
@@ -23,6 +23,8 @@ export interface VaultService {
   lock(): Promise<void>
   /** The public address on each chain. Read only, so it doesn't wait behind other actions. */
   accounts(): Promise<VaultResult<{ accounts: Account[] }>>
+  /** One chain's address, for main to copy. The chain comes from the page, so it's checked. */
+  address(chain: unknown): Promise<VaultResult<{ address: string }>>
   isUnlocked(): boolean
   /** The signer went away, and took any seed with it. */
   signerStopped(): void
@@ -51,10 +53,17 @@ function parseAnswers(value: unknown): BackupAnswer[] | null {
 export function createVaultService({ store, ask, onStatus }: VaultServiceOptions): VaultService {
   let unlocked = false
   let busy = false
+  let phraseWaiting = false
+  /** Moves on whenever the signer lets go of a new phrase: a lock, a stopped signer or a cancel. */
+  let phraseDrops = 0
   /** Moves on with every lock, so an unlock answered just before one can't undo it. */
   let locks = 0
 
-  const status = (): VaultStatus => ({ state: !store.exists() ? 'none' : unlocked ? 'unlocked' : 'locked', keyring: store.usesKeyring() })
+  const status = (): VaultStatus => ({
+    state: !store.exists() ? 'none' : unlocked ? 'unlocked' : 'locked',
+    keyring: store.usesKeyring(),
+    phraseWaiting,
+  })
   let last = JSON.stringify(status())
   const announce = () => {
     const now = status()
@@ -113,6 +122,26 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     return opened
   }
 
+  /**
+   * The read in progress, shared by everyone who asks meanwhile, so a burst sends the
+   * signer one request. It belongs to one unlock: after a lock, a new read starts.
+   */
+  let reading: { locks: number; answer: Promise<VaultResult<{ accounts: Account[] }>> } | null = null
+  const accounts = (): Promise<VaultResult<{ accounts: Account[] }>> => {
+    if (!unlocked) return Promise.resolve(fail('locked'))
+    if (reading && reading.locks === locks) return reading.answer
+    const before = locks
+    const asked = ask({ op: 'accounts' }) as Promise<VaultResult<{ accounts: Account[] }>>
+    const answer = asked.then((result) => (locks === before ? result : fail('locked')))
+    const current = { locks: before, answer }
+    reading = current
+    const done = () => {
+      if (reading === current) reading = null
+    }
+    answer.then(done, done)
+    return answer
+  }
+
   return {
     status,
     isUnlocked: () => unlocked,
@@ -121,9 +150,15 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
       oneAtATime<NewPhrase>(async () => {
         if (store.exists()) return fail('exists')
         if (words !== 12 && words !== 24) return fail('bad-input')
+        const before = phraseDrops
         const begun = (await ask({ op: 'begin-create', words })) as VaultResult<NewPhrase>
+        if (!begun.ok) return begun
+        // A lock or cancel that landed while the answer was on its way has already wiped this
+        // phrase in the signer. Showing it would have the person copy words that open nothing.
+        if (phraseDrops !== before) return fail('locked-meanwhile')
+        phraseWaiting = true
         // Only what the page needs, so nothing else the signer might add can reach it.
-        return begun.ok ? { ok: true, words: begun.words, check: begun.check } : begun
+        return { ok: true, words: begun.words, check: begun.check }
       }),
 
     finishCreate: (password, answers) =>
@@ -131,10 +166,16 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
         const parsed = parseAnswers(answers)
         if (!isPassword(password) || !parsed) return fail('bad-input')
         if (store.exists()) return fail('exists')
-        return save(password, parsed)
+        const saved = await save(password, parsed)
+        // Saved, or already gone from the signer: either way no phrase waits any more.
+        if (saved.ok || saved.reason === 'nothing-pending') phraseWaiting = false
+        return saved
       }),
 
     async cancelCreate() {
+      phraseDrops++
+      phraseWaiting = false
+      announce()
       await ask({ op: 'cancel' })
     },
 
@@ -144,6 +185,8 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
         if (store.exists()) return fail('exists')
         const begun = await ask({ op: 'begin-restore', words })
         if (!begun.ok) return begun
+        // The signer has let go of any new phrase to hold this one instead.
+        phraseWaiting = false
         const saved = await save(password, [])
         // Unlike a new phrase, the person has this one and can type it again, so nothing should stay waiting.
         if (!saved.ok) await ask({ op: 'cancel' })
@@ -160,20 +203,28 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     async lock() {
       locks++
       unlocked = false
+      // The signer forgets a waiting phrase when it locks, and the page has to hear that.
+      phraseDrops++
+      phraseWaiting = false
       announce()
       await ask({ op: 'lock' })
     },
 
-    async accounts() {
-      if (!unlocked) return fail('locked')
-      const before = locks
-      const answer = (await ask({ op: 'accounts' })) as VaultResult<{ accounts: Account[] }>
-      return locks === before ? answer : fail('locked')
+    accounts,
+
+    async address(chain) {
+      if (typeof chain !== 'string' || !ACCOUNT_CHAINS.includes(chain as AccountChain)) return fail('bad-input')
+      const answer = await accounts()
+      if (!answer.ok) return answer
+      const account = answer.accounts.find((each) => each.chain === chain)
+      return account ? { ok: true, address: account.address } : fail('bad-input')
     },
 
     signerStopped() {
       locks++
       unlocked = false
+      phraseDrops++
+      phraseWaiting = false
       announce()
     },
   }

@@ -2,7 +2,7 @@
 
 A desktop universal wallet whose brain is the coding agent you already have installed (Claude Code, Codex or OpenCode). The agent proposes plans; you review and sign them in the app. Cross-chain value moves through NEAR Intents.
 
-> Work in progress for the NEAR hackathon. The vault and its addresses are built but have no screens yet, and nothing signs yet. Don't give it a recovery phrase that holds real funds.
+> Work in progress for the NEAR hackathon. You can set up, lock and unlock the wallet and see your addresses, but nothing signs yet. Don't give it a recovery phrase that holds real funds.
 
 ## Rules that never change
 
@@ -47,7 +47,7 @@ One recovery phrase per install, 12 or 24 words.
 - **Password:** every unlock needs it. An OS keyring can be read by other programs running as you, including an agent, so it never stands in for the password.
 - **Keyring:** when there's a real one, it adds a second layer around the file, so a copy of the file alone can't be attacked. Linux's `basic_text` isn't a real one, so there the password is the only layer. A vault sealed with a keyring can't be opened if that keyring is lost, and you'd restore from your words.
 - **Backup check:** a new vault isn't saved until you've given back three of its words. Ink never replaces an existing vault.
-- **Locking:** Ink locks after 10 minutes with no input to its windows, and when the computer sleeps or the screen locks. Bytes are wiped on lock. JavaScript can't wipe strings, so the phrase and password can stay in memory for a while after you type them.
+- **Locking:** Ink locks after 10 minutes with no input to its windows, and when the computer sleeps. On macOS and Windows it also locks when the screen locks; Electron doesn't report a screen lock on Linux. Bytes are wiped on lock. JavaScript can't wipe strings, so the phrase and password can stay in memory for a while after you type them.
 
 ## Accounts
 
@@ -63,7 +63,7 @@ The phrase gives one account on each chain, at the path most wallets use, so res
 | Sui | `m/44'/784'/0'/0'/0'` | `0x…` |
 | Aptos | `m/44'/637'/0'/0'/0'` | `0x…`, until you rotate its key |
 
-Addresses are worked out in the signer and are only available while unlocked. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
+Addresses are worked out in the signer and are only available while unlocked. The Receive page shows each one with a QR code. Its Copy button has main copy the address the signer gave rather than text from the page, and only while Ink's window is in front. The page still draws the address and its QR code, so compare the first and last characters after you paste. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
 
 ## Prior work
 

@@ -122,11 +122,24 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     return opened
   }
 
-  const accounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {
-    if (!unlocked) return fail('locked')
+  /**
+   * The read in progress, shared by everyone who asks meanwhile, so a burst sends the
+   * signer one request. It belongs to one unlock: after a lock, a new read starts.
+   */
+  let reading: { locks: number; answer: Promise<VaultResult<{ accounts: Account[] }>> } | null = null
+  const accounts = (): Promise<VaultResult<{ accounts: Account[] }>> => {
+    if (!unlocked) return Promise.resolve(fail('locked'))
+    if (reading && reading.locks === locks) return reading.answer
     const before = locks
-    const answer = (await ask({ op: 'accounts' })) as VaultResult<{ accounts: Account[] }>
-    return locks === before ? answer : fail('locked')
+    const asked = ask({ op: 'accounts' }) as Promise<VaultResult<{ accounts: Account[] }>>
+    const answer = asked.then((result) => (locks === before ? result : fail('locked')))
+    const current = { locks: before, answer }
+    reading = current
+    const done = () => {
+      if (reading === current) reading = null
+    }
+    answer.then(done, done)
+    return answer
   }
 
   return {

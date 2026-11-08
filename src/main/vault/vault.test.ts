@@ -453,6 +453,44 @@ describe('accounts', () => {
     expect(asked).toEqual([])
   })
 
+  it('send the signer one request for a burst of reads', async () => {
+    const { service, asked } = setup()
+    await createVault(service)
+    asked.length = 0
+    const answers = await Promise.all(Array.from({ length: 20 }, () => service.accounts()))
+    expect(asked.filter((op) => op === 'accounts')).toHaveLength(1)
+    for (const answer of answers) expect(answer).toEqual(answers[0])
+    expect(answers[0]?.ok).toBe(true)
+  })
+
+  it('start a new read after a lock rather than share one from before it', async () => {
+    const signer = createVaultState({ logN: 10 })
+    let release = () => {}
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let holdNext = false
+    const service = createVaultService({
+      store: createVaultStore({ file, box: noKeyring }),
+      ask: async (request) => {
+        const result = await signer.handle(request)
+        if (request.op === 'accounts' && holdNext) {
+          holdNext = false
+          await held
+        }
+        return result
+      },
+      onStatus: () => {},
+    })
+    await createVault(service)
+    holdNext = true
+    const before = service.accounts()
+    await service.lock()
+    expectOk(await service.unlock(PASSWORD))
+    const after = await service.accounts()
+    expect(after.ok).toBe(true)
+    release()
+    expect(await before).toEqual({ ok: false, reason: 'locked' })
+  })
+
   it('are not given out if the vault locks while they are asked for', async () => {
     const { service } = setup()
     await createVault(service)

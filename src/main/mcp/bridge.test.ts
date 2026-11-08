@@ -4,7 +4,7 @@ import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startMcpBridge, type McpBridge } from './bridge'
+import { MAX_IN_FLIGHT, MAX_IN_FLIGHT_PER_CONNECTION, startMcpBridge, type McpBridge } from './bridge'
 
 let parentDir: string
 let bridge: McpBridge
@@ -117,6 +117,37 @@ describe('startMcpBridge accounts', () => {
     })
     return { release, asked }
   }
+
+  it('turns away requests past the per-connection limit at once, instead of starting work for each', async () => {
+    const { release, asked } = await holdingBridge()
+    const session = bridge.addSession()
+    const state = client()
+    const extra = 4
+    state.socket.write(hello(session.token) + Array.from({ length: MAX_IN_FLIGHT_PER_CONNECTION + extra }, (_, i) => getAccounts(i + 1)).join(''))
+    await answered(state, extra)
+    expect(asked.count).toBe(MAX_IN_FLIGHT_PER_CONNECTION)
+    expect(state.lines.map((line) => (line.error as { code: number }).code)).toEqual(Array(extra).fill(-32000))
+    expect(state.lines.map((line) => line.id)).toEqual(Array.from({ length: extra }, (_, i) => MAX_IN_FLIGHT_PER_CONNECTION + i + 1))
+    release()
+    await answered(state, MAX_IN_FLIGHT_PER_CONNECTION + extra)
+    expect(state.lines.filter((line) => 'result' in line)).toHaveLength(MAX_IN_FLIGHT_PER_CONNECTION)
+  })
+
+  it('turns away requests past the limit across every connection', async () => {
+    const { release, asked } = await holdingBridge()
+    const full = MAX_IN_FLIGHT / MAX_IN_FLIGHT_PER_CONNECTION
+    for (let n = 0; n < full; n++) {
+      const state = client()
+      state.socket.write(hello(bridge.addSession().token) + Array.from({ length: MAX_IN_FLIGHT_PER_CONNECTION }, (_, i) => getAccounts(i + 1)).join(''))
+    }
+    await vi.waitFor(() => expect(asked.count).toBe(MAX_IN_FLIGHT))
+    const late = client()
+    late.socket.write(`${hello(bridge.addSession().token)}${getAccounts(1)}${getAccounts(2)}`)
+    await answered(late, 2)
+    expect(late.lines.map((line) => (line.error as { code: number }).code)).toEqual([-32000, -32000])
+    expect(asked.count).toBe(MAX_IN_FLIGHT)
+    release()
+  })
 
   it('gives a removed session nothing, even an answer it was already waiting for', async () => {
     const { release, asked } = await holdingBridge()

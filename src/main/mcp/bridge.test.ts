@@ -70,7 +70,21 @@ describe('startMcpBridge socket', () => {
 })
 
 describe('startMcpBridge plans', () => {
-  it('hands a plan only to the session whose token proposed it', async () => {
+  it('hands a plan only to the session whose token proposed it, owned by that session', async () => {
+    bridge.close()
+    const owners: string[] = []
+    bridge = await startMcpBridge({
+      parentDir,
+      version: '1',
+      plans: ({ owner }) => ({
+        create: async (intent) => {
+          owners.push(owner)
+          return { ok: true, plan: { id: 'plan-1', status: 'draft', summary: 'Send 1 NEAR to alice.near', intent, recipient: null } }
+        },
+        get: async () => ({ ok: false, reason: 'not-found' }),
+        cancel: async () => ({ ok: false, reason: 'not-found' }),
+      }),
+    })
     const [mine, theirs] = [vi.fn(), vi.fn()]
     const session = bridge.addSession({ onPlan: mine })
     bridge.addSession({ onPlan: theirs })
@@ -80,6 +94,9 @@ describe('startMcpBridge plans', () => {
     await answered(state)
     expect(mine).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outcome: 'send', asset: 'NEAR' }))
     expect(theirs).not.toHaveBeenCalled()
+    expect(owners).toHaveLength(1)
+    expect(owners[0]).toMatch(/^[0-9a-f]{64}$/)
+    expect(owners[0]).not.toBe(session.token)
   })
 })
 

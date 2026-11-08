@@ -2,7 +2,9 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
+import type { Account } from '../shared/accounts'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
+import type { VaultResult } from '../shared/vault'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
 import { detectAgents } from './agents/detect'
 import { agentEnv, readNamedShellEnv } from './agents/login-env'
@@ -12,6 +14,8 @@ import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
 import { appMenuTemplate } from './menu'
+import { agentPlanTools } from './plans/agent-tools'
+import { createPlanStore } from './plans/store'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
 import { createAutoLock } from './vault/auto-lock'
@@ -101,6 +105,15 @@ function assertAppFrame(event: IpcMainInvokeEvent): void {
 /** The last detection, shared by every caller until a refresh asks for a new one. */
 let agents: Promise<AgentStatus[]> | null = null
 
+/** Every plan made while the app runs. */
+const plans = createPlanStore()
+
+/** The wallet's public addresses, for the agent's tools and plans. */
+const ownAccounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {
+  const wallet = getVault()
+  return wallet.status().state === 'none' ? { ok: false, reason: 'no-vault' } : wallet.accounts()
+}
+
 /** Started with the first chat, so the app opens no socket until something needs one. */
 let mcpBridge: Promise<McpBridge> | null = null
 
@@ -110,10 +123,8 @@ function getMcpBridge(): Promise<McpBridge> {
     parentDir: process.env.XDG_RUNTIME_DIR ?? app.getPath('userData'),
     version: app.getVersion(),
     // Public addresses only, and only while unlocked. The agent's tools get this function, never the vault.
-    accounts: async () => {
-      const wallet = getVault()
-      return wallet.status().state === 'none' ? { ok: false, reason: 'no-vault' } : wallet.accounts()
-    },
+    accounts: ownAccounts,
+    plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts }),
   }).catch((error: unknown) => {
     mcpBridge = null
     throw error

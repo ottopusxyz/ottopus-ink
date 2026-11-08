@@ -24,6 +24,15 @@ const MAX_OPEN_CHATS = 4
 const chats = new Map<string, ChatSession>()
 
 /**
+ * What the person typed in each chat, newest last, as the page sent it. A plan
+ * may pay an address only if it's the person's own or appears here, so this is
+ * the one place the agent's own words can never reach.
+ */
+const typedIn = new Map<string, string[]>()
+/** Enough of a conversation for the addresses someone gave; older messages make way. */
+const TYPED_KEPT = 50
+
+/**
  * Starts a chat with an agent detection found ready. Which binary runs comes
  * from detection, never from the renderer. Returns the chat's id; onEvent gets
  * everything that happens in it until an `ended` event.
@@ -44,10 +53,13 @@ export function startChat(
   let over = false
   // Nothing an unchecked session proposes reaches the person.
   let locked = false
+  const typed: string[] = []
+  typedIn.set(chatId, typed)
   const tools = bridge.addSession({
     onPlan: (plan) => {
       if (!over && locked) onEvent(chatId, { type: 'plan', plan })
     },
+    typed: () => typed,
   })
   const watchLock = lockWatcher(tools.connected, external.serverNames)
   let externalTools: string[] = []
@@ -65,6 +77,7 @@ export function startChat(
       if (event.type === 'ended') {
         over = true
         chats.delete(chatId)
+        typedIn.delete(chatId)
         tools.remove()
       }
       onEvent(chatId, event)
@@ -88,7 +101,13 @@ export function startChat(
 
 export function sendToChat(chatId: string, text: string): void {
   if (text.length > MAX_MESSAGE_CHARS) throw new Error('That message is too long')
-  chatById(chatId).send(text)
+  const chat = chatById(chatId)
+  const typed = typedIn.get(chatId)
+  if (typed) {
+    typed.push(text)
+    if (typed.length > TYPED_KEPT) typed.splice(0, typed.length - TYPED_KEPT)
+  }
+  chat.send(text)
 }
 
 export function stopChatTurn(chatId: string): void {

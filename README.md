@@ -63,7 +63,7 @@ The phrase gives one account on each chain, at the path most wallets use, so res
 | Sui | `m/44'/784'/0'/0'/0'` | `0x…` |
 | Aptos | `m/44'/637'/0'/0'/0'` | `0x…`, until you rotate its key |
 
-Addresses are worked out in the signer and are only available while unlocked. The Receive page shows each one with a QR code. Its Copy button asks main to copy the address the signer gave, so the page can't put a different one on your clipboard. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
+Addresses are worked out in the signer and are only available while unlocked. The Receive page shows each one with a QR code. Its Copy button has main copy the address the signer gave rather than text from the page, and only while Ink's window is in front. The page still draws the address and its QR code, so compare the first and last characters after you paste. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
 
 ## Prior work
 

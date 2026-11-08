@@ -307,6 +307,8 @@ function registerIpc(): void {
 
   ipcMain.handle(IPC.copyAddress, async (event, chain: unknown) => {
     assertAppFrame(event)
+    // Only for the window in front: otherwise this would let a page write the clipboard in the background.
+    if (!BrowserWindow.fromWebContents(event.sender)?.isFocused()) return { ok: false, reason: 'bad-input' }
     const answer = await getVault().address(chain)
     if (!answer.ok) return answer
     clipboard.writeText(answer.address)

@@ -51,8 +51,9 @@ export function ReceiveView() {
           </p>
         </div>
         <Callout severity="info" title="Ink can’t send yet" compact className="max-w-[720px]">
-          Anything you receive stays at these addresses, and any wallet you give your recovery phrase can reach it. Deposit
-          addresses for chains like TON and XRP come with NEAR Intents.
+          Anything you receive stays at these addresses. Another wallet given your recovery phrase reaches them if it uses
+          the same path, shown under each address. Most do, but some use another path for Solana. Deposit addresses for
+          chains like TON and XRP come with NEAR Intents.
         </Callout>
         {loaded.kind === 'loading' ? (
           <p className="m-0 text-[14px] text-[var(--ot-text-3)]">Working out your addresses…</p>

@@ -348,8 +348,8 @@ function Restore({
       }}
     >
       <WalletHeading title="Restore your wallet">
-        Type your 12 or 24 word recovery phrase, with a space between words. You’ll get the same addresses as any
-        other wallet that uses it.
+        Type your 12 or 24 word recovery phrase, with a space between words. You’ll get the same addresses as other
+        wallets that use the same paths, which most do. Some use another path for Solana and show a different address.
       </WalletHeading>
       <FormError message={error} />
       <Field

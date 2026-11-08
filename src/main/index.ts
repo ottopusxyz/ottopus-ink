@@ -15,6 +15,7 @@ import { appMenuTemplate } from './menu'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
 import { createAutoLock } from './vault/auto-lock'
+import { copyAddress } from './vault/copy-address'
 import { createVaultService, type VaultService } from './vault/service'
 import { createVaultStore } from './vault/store'
 
@@ -305,14 +306,15 @@ function registerIpc(): void {
     return getVault().accounts()
   })
 
-  ipcMain.handle(IPC.copyAddress, async (event, chain: unknown) => {
+  ipcMain.handle(IPC.copyAddress, (event, chain: unknown) => {
     assertAppFrame(event)
-    // Only for the window in front: otherwise this would let a page write the clipboard in the background.
-    if (!BrowserWindow.fromWebContents(event.sender)?.isFocused()) return { ok: false, reason: 'bad-input' }
-    const answer = await getVault().address(chain)
-    if (!answer.ok) return answer
-    clipboard.writeText(answer.address)
-    return { ok: true }
+    return copyAddress(chain, {
+      // Looked up each time, since the window may close while the signer answers.
+      // Only for the window in front: otherwise a page could write the clipboard in the background.
+      focused: () => BrowserWindow.fromWebContents(event.sender)?.isFocused() === true,
+      address: (asked) => getVault().address(asked),
+      write: (text) => clipboard.writeText(text),
+    })
   })
 
   ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {

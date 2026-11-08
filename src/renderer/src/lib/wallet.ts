@@ -43,11 +43,12 @@ export const PHRASE_DROPPED = 'Ink locked, so the words it showed you were throw
 const HOLDS_PHRASE = new Set(['words', 'check', 'password'])
 
 /**
- * Whether the phrase this setup step is about was just thrown away: main said a
- * phrase was waiting and now says none is, while the step still relies on it.
+ * Whether this setup step relies on a phrase main says isn't waiting any more. Main
+ * reports the phrase as waiting before it hands the words over, so a step showing words
+ * never sees "not waiting" until the phrase really is gone. Checking the state rather
+ * than watching for a change means no change can slip past while it's being applied.
  */
-export const phraseDropped = (wasWaiting: boolean, nowWaiting: boolean, step: string): boolean =>
-  wasWaiting && !nowWaiting && HOLDS_PHRASE.has(step)
+export const phraseLost = (waiting: boolean, step: string): boolean => !waiting && HOLDS_PHRASE.has(step)
 
 /** Counted the way the signer counts, in whole characters after normalising. */
 const passwordLength = (password: string) => [...password.normalize('NFKC')].length

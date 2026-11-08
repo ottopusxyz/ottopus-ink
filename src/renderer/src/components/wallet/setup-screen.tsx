@@ -3,7 +3,7 @@ import type { BackupAnswer, NewPhrase, VaultWordCount } from '../../../../shared
 import { Otto } from '@/components/brand/otto'
 import { EyeIcon } from '@/components/shell/icons'
 import { Button, Callout, Input } from '@/components/ui'
-import { passwordProblem, PHRASE_DROPPED, phraseDropped, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from '@/lib/wallet'
+import { passwordProblem, PHRASE_DROPPED, phraseLost, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from '@/lib/wallet'
 import { Field, FormError, PhraseInput, WalletHeading, WalletPanel } from './wallet-panel'
 
 type Step =
@@ -25,15 +25,11 @@ export function SetupScreen({ phraseWaiting }: { phraseWaiting: boolean }) {
   const [error, setError] = useState<string | null>(null)
 
   // A lock or a stopped signer throws a waiting phrase away without changing the vault's
-  // state, so main's phraseWaiting is the only sign. Once it goes, the words on screen
+  // state, so main's phraseWaiting is the only sign. Once it's gone, the words on screen
   // open nothing, and the person must not go on copying them down.
-  const [seenWaiting, setSeenWaiting] = useState(phraseWaiting)
-  if (phraseWaiting !== seenWaiting) {
-    setSeenWaiting(phraseWaiting)
-    if (phraseDropped(seenWaiting, phraseWaiting, step.kind)) {
-      setStep({ kind: 'welcome' })
-      setError(PHRASE_DROPPED)
-    }
+  if (phraseLost(phraseWaiting, step.kind)) {
+    setStep({ kind: 'welcome' })
+    setError(PHRASE_DROPPED)
   }
 
   const go = (next: Step) => {

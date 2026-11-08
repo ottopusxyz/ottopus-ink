@@ -5,8 +5,26 @@ import { qrShape } from './qr'
 import { addressParts, autoLockNote, CHAIN_INFO, passwordProblem, phraseDropped, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from './wallet'
 
 describe('wallet copy', () => {
-  it('describes every chain Ink holds a key for', () => {
-    for (const chain of ACCOUNT_CHAINS) expect(CHAIN_INFO[chain].name.length).toBeGreaterThan(0)
+  it('names every chain Ink holds a key for, each under its own chain', () => {
+    expect(Object.fromEntries(ACCOUNT_CHAINS.map((chain) => [chain, CHAIN_INFO[chain].name]))).toEqual({
+      near: 'NEAR',
+      evm: 'Ethereum and EVM chains',
+      solana: 'Solana',
+      bitcoin: 'Bitcoin',
+      tron: 'Tron',
+      sui: 'Sui',
+      aptos: 'Aptos',
+    })
+  })
+
+  it('puts each chain’s warning under that chain', () => {
+    expect(CHAIN_INFO.near.note).toContain('NEAR Intents account')
+    expect(CHAIN_INFO.evm.note).toContain('Base, Ethereum, Arbitrum')
+    expect(CHAIN_INFO.bitcoin.note).toContain('Send bitcoin only')
+    expect(CHAIN_INFO.tron.note).toContain('TRX')
+    expect(CHAIN_INFO.aptos.note).toContain('Aptos')
+    expect(CHAIN_INFO.solana.note).toContain('SOL')
+    expect(CHAIN_INFO.sui.note).toContain('SUI')
   })
 
   it('has a message for every failure', () => {

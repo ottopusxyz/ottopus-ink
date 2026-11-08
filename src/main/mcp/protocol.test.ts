@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Account } from '../../shared/accounts'
+import { ACCOUNT_CHAINS, ACCOUNT_PATHS, type Account } from '../../shared/accounts'
 import { INK_TOOLS, type ChatPlan } from '../../shared/ipc'
 import { handleMcpMessage, type McpHandlers } from './protocol'
 
@@ -67,23 +67,26 @@ describe('handleMcpMessage', () => {
   })
 
   describe('get_accounts', () => {
-    const ACCOUNTS: Account[] = [
-      { chain: 'near', path: "m/44'/397'/0'", address: 'a'.repeat(64) },
-      { chain: 'evm', path: "m/44'/60'/0'/0/0", address: '0xBbEC2620Cb01adae3f96e1fa39f997f06BFb7Ca0' },
-      { chain: 'bitcoin', path: "m/84'/0'/0'/0/0", address: 'bc1qg6ucjz7kgdedam7v5yarecy54uqw82yym06z3q' },
-    ]
+    // Every chain, each with an address that names it, so a label on the wrong line shows.
+    const ACCOUNTS: Account[] = ACCOUNT_CHAINS.map((chain) => ({ chain, path: ACCOUNT_PATHS[chain], address: `${chain}-address` }))
     const call = async (accounts: McpHandlers['accounts']) =>
       ((await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_accounts' } }, '1', { accounts })) as {
         result: { content: { text: string }[]; isError: boolean }
       }).result
 
-    it('lists each real address with what it is for', async () => {
+    it('lists each real address with what it is for, each label on its own chain’s line', async () => {
       const result = await call(async () => ({ ok: true, accounts: ACCOUNTS }))
       expect(result.isError).toBe(false)
-      const text = result.content[0]!.text
-      for (const { chain, address } of ACCOUNTS) expect(text).toContain(`${chain}: ${address}`)
-      expect(text).toContain('NEAR Intents account')
-      expect(text).toContain('Base, Ethereum, Arbitrum')
+      expect(result.content[0]!.text.split('\n')).toEqual([
+        'The wallet’s own addresses, one for each chain. They are public.',
+        'near: near-address (NEAR. Also the NEAR Intents account)',
+        'evm: evm-address (one address for Base, Ethereum, Arbitrum and the other EVM chains)',
+        'solana: solana-address (Solana)',
+        'bitcoin: bitcoin-address (Bitcoin, native SegWit)',
+        'tron: tron-address (Tron)',
+        'sui: sui-address (Sui)',
+        'aptos: aptos-address (Aptos)',
+      ])
     })
 
     it('tells the agent to have the person unlock Ink, and gives no address, while locked', async () => {

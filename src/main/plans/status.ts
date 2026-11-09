@@ -34,10 +34,11 @@ export function isFinal(status: PlanStatus): boolean {
 }
 
 /**
- * The status a plan is in right now. Expiry is worked out from the clock rather
- * than written down, so a plan past its time reads as expired the moment it
- * passes, with no gap while something catches up. A plan the signer has, or the
- * chain has, never expires: its fate is out of Ink's hands.
+ * The status a plan is in right now, by the wall clock. A plan past its time
+ * reads as expired the moment it passes, with no gap while something catches
+ * up; the store then writes that down, so setting the clock back can't revive
+ * it. A plan the signer has, or the chain has, never expires: its fate is out
+ * of Ink's hands.
  */
 export function effectiveStatus(status: PlanStatus, expiresAt: string, now: Date = new Date()): PlanStatus {
   if (!canTransition(status, 'expired')) return status

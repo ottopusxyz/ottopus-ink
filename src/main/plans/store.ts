@@ -52,10 +52,14 @@ interface Entry {
   hash: string
   owner: string
   status: PlanStatus
+  /** When the plan expires on the monotonic clock, which a wall-clock correction can't move. */
+  deadline: number
 }
 
 export interface PlanStoreOptions {
   now?: () => Date
+  /** Milliseconds that only ever go forward, for timing a plan's life whatever the wall clock does. */
+  monotonic?: () => number
   newId?: () => string
 }
 
@@ -84,22 +88,33 @@ const goodAmount = (amount: string) => amount.length <= MAX_AMOUNT_CHARS && AMOU
  * Its status is kept beside the core, outside the hash, and only moves the way
  * the status table allows.
  */
-export function createPlanStore({ now = () => new Date(), newId = randomUUID }: PlanStoreOptions = {}) {
+export function createPlanStore({ now = () => new Date(), monotonic = () => performance.now(), newId = randomUUID }: PlanStoreOptions = {}) {
   const plans = new Map<string, Entry>()
   /** When each owner last made plans, for the per-minute limit. */
   const madeAt = new Map<string, number[]>()
 
+  /**
+   * A plan's status right now. It expires when either clock says its time is up,
+   * and once expired it's written down, so a wall clock set back later can't
+   * bring it back to life.
+   */
+  const statusOf = (entry: Entry): PlanStatus => {
+    const due = monotonic() >= entry.deadline && canTransition(entry.status, 'expired')
+    if (due || effectiveStatus(entry.status, entry.core.expiresAt, now()) === 'expired') entry.status = 'expired'
+    return entry.status
+  }
+
   const view = (id: string, entry: Entry): PlanView => {
     // The core is frozen, so this can't fail unless something is badly wrong; if it does, nothing may use the plan.
     if (planHash(entry.core) !== entry.hash) throw new PlanIntegrityError(`plan ${id} no longer matches its hash`)
-    return { id, hash: entry.hash, status: effectiveStatus(entry.status, entry.core.expiresAt, now()), core: entry.core }
+    return { id, hash: entry.hash, status: statusOf(entry), core: entry.core }
   }
 
   /** Makes room by dropping finished plans, oldest first. False when every plan is still live. */
   const makeRoom = (): boolean => {
     if (plans.size < MAX_PLANS) return true
     for (const [id, entry] of plans) {
-      if (isFinal(effectiveStatus(entry.status, entry.core.expiresAt, now()))) {
+      if (isFinal(statusOf(entry))) {
         plans.delete(id)
         return true
       }
@@ -124,10 +139,12 @@ export function createPlanStore({ now = () => new Date(), newId = randomUUID }: 
       const recipient = intent.to ? allowedRecipient(intent.to, landsOn, own, typed) : null
       if (intent.to && !recipient) return { ok: false, reason: 'recipient-not-allowed' }
 
-      const at = now()
-      const recent = (madeAt.get(owner) ?? []).filter((time) => at.getTime() - time < 60_000)
+      const tick = monotonic()
+      const recent = (madeAt.get(owner) ?? []).filter((time) => tick - time < 60_000)
       if (recent.length >= PLANS_PER_MINUTE || !makeRoom()) return { ok: false, reason: 'too-many' }
-      madeAt.set(owner, [...recent, at.getTime()])
+      madeAt.set(owner, [...recent, tick])
+
+      const at = now()
 
       const core: PlanCore = deepFreeze({
         hashVersion: 1,
@@ -141,7 +158,7 @@ export function createPlanStore({ now = () => new Date(), newId = randomUUID }: 
         // Chain modules add the exact unsigned fields; until they do, a plan is a draft.
         steps: [],
       })
-      const entry: Entry = { core, hash: planHash(core), owner, status: 'draft' }
+      const entry: Entry = { core, hash: planHash(core), owner, status: 'draft', deadline: monotonic() + PLAN_TTL_MS }
       plans.set(core.id, entry)
       return { ok: true, plan: view(core.id, entry) }
     },

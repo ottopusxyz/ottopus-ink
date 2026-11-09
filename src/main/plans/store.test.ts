@@ -10,11 +10,23 @@ const TYPED = ['send 1.5 NEAR to alice.near']
 
 function setup() {
   let time = Date.parse('2026-11-08T00:00:00.000Z')
+  let tick = 1_000
   let ids = 0
-  const store = createPlanStore({ now: () => new Date(time), newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}` })
+  const store = createPlanStore({
+    now: () => new Date(time),
+    monotonic: () => tick,
+    newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
+  })
   const make = (intent: Partial<PlanIntent> = {}, owner = 'chat-1', typed = TYPED) =>
     store.create({ intent: { ...SEND, ...intent }, createdBy: 'agent', owner, own: OWN, typed })
-  return { store, make, advance: (ms: number) => (time += ms) }
+  return {
+    store,
+    make,
+    /** Real time passing: both clocks move. */
+    advance: (ms: number) => ((time += ms), (tick += ms)),
+    /** Someone sets the wall clock; the monotonic one doesn't notice. */
+    setClock: (ms: number) => (time += ms),
+  }
 }
 
 const ok = <T extends object>(result: ({ ok: true } & T) | { ok: false }): T => {
@@ -165,6 +177,48 @@ describe('reading and moving a plan', () => {
     advance(1)
     expect(store.get(plan.id, 'chat-1')?.status).toBe('expired')
     expect(store.move(plan.id, 'chat-1', 'cancelled')).toEqual({ ok: false, reason: 'cannot-move', status: 'expired' })
+  })
+
+  it('stays expired when the wall clock is set back after it expired', () => {
+    const { store, make, advance, setClock } = setup()
+    const draft = ok(make()).plan
+    const approved = ok(make()).plan
+    ok(store.move(approved.id, 'chat-1', 'awaiting_review'))
+    ok(store.move(approved.id, 'chat-1', 'approved'))
+    advance(PLAN_TTL_MS)
+    expect([store.get(draft.id, 'chat-1')?.status, store.get(approved.id, 'chat-1')?.status]).toEqual(['expired', 'expired'])
+    setClock(-60_000)
+    expect([store.get(draft.id, 'chat-1')?.status, store.get(approved.id, 'chat-1')?.status]).toEqual(['expired', 'expired'])
+    expect(store.move(draft.id, 'chat-1', 'awaiting_review')).toEqual({ ok: false, reason: 'cannot-move', status: 'expired' })
+    expect(store.move(approved.id, 'chat-1', 'signing')).toEqual({ ok: false, reason: 'cannot-move', status: 'expired' })
+  })
+
+  it('stays expired when a wall clock that ran ahead is corrected back', () => {
+    const { store, make, setClock } = setup()
+    const { plan } = ok(make())
+    setClock(PLAN_TTL_MS)
+    expect(store.get(plan.id, 'chat-1')?.status).toBe('expired')
+    setClock(-PLAN_TTL_MS)
+    expect(store.get(plan.id, 'chat-1')?.status).toBe('expired')
+    expect(store.move(plan.id, 'chat-1', 'awaiting_review')).toEqual({ ok: false, reason: 'cannot-move', status: 'expired' })
+  })
+
+  it('expires on time even when the wall clock was set back before anyone looked', () => {
+    const { store, make, advance, setClock } = setup()
+    const { plan } = ok(make())
+    setClock(-60 * 60_000)
+    advance(PLAN_TTL_MS - 1)
+    expect(store.get(plan.id, 'chat-1')?.status).toBe('draft')
+    advance(1)
+    expect(store.get(plan.id, 'chat-1')?.status).toBe('expired')
+    expect(store.move(plan.id, 'chat-1', 'awaiting_review')).toEqual({ ok: false, reason: 'cannot-move', status: 'expired' })
+  })
+
+  it('keeps the per-minute limit when the wall clock jumps ahead', () => {
+    const { make, setClock } = setup()
+    for (let i = 0; i < PLANS_PER_MINUTE; i++) ok(make())
+    setClock(60_000)
+    expect(make()).toEqual({ ok: false, reason: 'too-many' })
   })
 
   it('keeps the same hash however often it’s read', () => {

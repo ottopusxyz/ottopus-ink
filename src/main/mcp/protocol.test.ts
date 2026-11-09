@@ -204,6 +204,20 @@ describe('handleMcpMessage', () => {
     })
 
     it.each([
+      ['insufficient-funds', 'get_portfolio'],
+      ['recipient-unknown', 'doesn’t exist'],
+      ['chain-unavailable', 'Try again'],
+    ] as const)('tells the agent what to do when the chain module refuses: %s', async (reason, said) => {
+      const plans: ChatPlan[] = []
+      const refusing: PlanTools = { ...fakePlans([]), create: async () => ({ ok: false, reason }) }
+      const message = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_plan', arguments: { outcome: 'send', asset: 'NEAR', amount: '1', chain: 'near', to: 'alice.near' } } }
+      const { result } = (await handleMcpMessage(message, '1', { onPlan: (plan) => plans.push(plan), plans: refusing })) as { result: { content: { text: string }[]; isError: boolean } }
+      expect(plans).toEqual([])
+      expect(result).toMatchObject({ isError: true })
+      expect(result.content[0]!.text).toContain(said)
+    })
+
+    it.each([
       ['nothing', undefined],
       ['no arguments', {}],
       ['a send with nobody to send to', { outcome: 'send', asset: 'NEAR', amount: '1' }],

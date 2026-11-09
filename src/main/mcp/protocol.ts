@@ -126,6 +126,12 @@ function planRefusal(result: Extract<PlanToolResult, { ok: false }>, id: string 
       return result.status === 'cancelled'
         ? toolAnswer(`Plan ${id} is already cancelled.`, true)
         : toolAnswer(`Plan ${id} is ${STATUS_WORDS[result.status ?? 'draft']}, so it can’t be cancelled.`, true)
+    case 'insufficient-funds':
+      return toolAnswer('The wallet can’t cover that amount and the network fee. Check get_portfolio, then ask the person to send less or add funds.', true)
+    case 'recipient-unknown':
+      return toolAnswer('That account doesn’t exist on the chain, so nothing sent to it would arrive. Check the name with the person.', true)
+    case 'chain-unavailable':
+      return toolAnswer('Ink couldn’t reach the chain to build the plan. Try again in a moment.', true)
     case 'locked':
       return toolAnswer('Ink is locked. Ask the person to unlock Ink, then try again.', true)
     case 'no-vault':

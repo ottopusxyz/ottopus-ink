@@ -2,17 +2,18 @@ import { describe, expect, it } from 'vitest'
 import type { Account } from '../../shared/accounts'
 import type { PlanIntent } from '../../shared/plan'
 import { planHash } from './hash'
-import { createPlanStore, MAX_PLANS, PLAN_TTL_MS, PLANS_PER_MINUTE } from './store'
+import { createPlanStore, MAX_PLANS, PLAN_TTL_MS, PLANS_PER_MINUTE, type BuildSteps } from './store'
 
 const OWN: Account[] = [{ chain: 'near', path: "m/44'/397'/0'", address: 'a'.repeat(64) }]
 const SEND: PlanIntent = { outcome: 'send', asset: 'NEAR', amount: '1.5', chain: 'near', to: 'alice.near', toAsset: null, toChain: null }
 const TYPED = ['send 1.5 NEAR to alice.near']
 
-function setup() {
+function setup(buildSteps?: BuildSteps) {
   let time = Date.parse('2026-11-08T00:00:00.000Z')
   let tick = 1_000
   let ids = 0
   const store = createPlanStore({
+    buildSteps,
     now: () => new Date(time),
     monotonic: () => tick,
     newId: () => `00000000-0000-4000-8000-${String(++ids).padStart(12, '0')}`,
@@ -35,9 +36,9 @@ const ok = <T extends object>(result: ({ ok: true } & T) | { ok: false }): T => 
 }
 
 describe('making a plan', () => {
-  it('gives a draft whose hash covers its fixed core', () => {
+  it('gives a draft whose hash covers its fixed core', async () => {
     const { make } = setup()
-    const { plan } = ok(make())
+    const { plan } = ok(await make())
     expect(plan.status).toBe('draft')
     expect(plan.hash).toBe(planHash(plan.core))
     expect(plan.core).toMatchObject({
@@ -52,45 +53,45 @@ describe('making a plan', () => {
     })
   })
 
-  it('freezes the core, so nothing holding it can change what was hashed', () => {
+  it('freezes the core, so nothing holding it can change what was hashed', async () => {
     const { make } = setup()
-    const { plan } = ok(make())
+    const { plan } = ok(await make())
     expect(() => ((plan.core.intent as { to: string }).to = 'mallory.near')).toThrow(TypeError)
     expect(() => ((plan.core as { summary: string }).summary = 'Send 1.5 NEAR to a friend')).toThrow(TypeError)
     expect(plan.core.intent.to).toBe('alice.near')
   })
 
-  it('gives every plan its own id and hash, even for the same request', () => {
+  it('gives every plan its own id and hash, even for the same request', async () => {
     const { make } = setup()
-    const [one, two] = [ok(make()).plan, ok(make()).plan]
+    const [one, two] = [ok(await make()).plan, ok(await make()).plan]
     expect(one.id).not.toBe(two.id)
     expect(one.hash).not.toBe(two.hash)
   })
 
-  it('refuses a recipient the person never typed and that isn’t theirs', () => {
+  it('refuses a recipient the person never typed and that isn’t theirs', async () => {
     const { make } = setup()
-    expect(make({ to: 'mallory.near' })).toEqual({ ok: false, reason: 'recipient-not-allowed' })
-    expect(make({ outcome: 'swap', toAsset: 'USDC', to: 'mallory.near' })).toEqual({ ok: false, reason: 'recipient-not-allowed' })
-    expect(make({ outcome: 'stake', to: 'evil-pool.near' })).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    expect(await make({ to: 'mallory.near' })).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    expect(await make({ outcome: 'swap', toAsset: 'USDC', to: 'mallory.near' })).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    expect(await make({ outcome: 'stake', to: 'evil-pool.near' })).toEqual({ ok: false, reason: 'recipient-not-allowed' })
   })
 
-  it('allows sending to the person’s own address, typed or not', () => {
+  it('allows sending to the person’s own address, typed or not', async () => {
     const { make } = setup()
-    expect(ok(make({ to: OWN[0]!.address }, 'chat-1', [])).plan.core.recipient).toEqual({ address: OWN[0]!.address, why: 'own' })
+    expect(ok(await make({ to: OWN[0]!.address }, 'chat-1', [])).plan.core.recipient).toEqual({ address: OWN[0]!.address, why: 'own' })
   })
 
-  it('checks a swap’s own address on the chain the funds land on', () => {
+  it('checks a swap’s own address on the chain the funds land on', async () => {
     const { make } = setup()
     const swap = { outcome: 'swap' as const, asset: 'USDC', chain: 'base', toAsset: 'NEAR', to: OWN[0]!.address }
-    expect(ok(make({ ...swap, toChain: 'near' }, 'chat-1', [])).plan.core.recipient?.why).toBe('own')
-    expect(make({ ...swap, toChain: 'solana' }, 'chat-1', [])).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    expect(ok(await make({ ...swap, toChain: 'near' }, 'chat-1', [])).plan.core.recipient?.why).toBe('own')
+    expect(await make({ ...swap, toChain: 'solana' }, 'chat-1', [])).toEqual({ ok: false, reason: 'recipient-not-allowed' })
     // With no target chain, a swap lands on the chain it starts from.
-    expect(make({ ...swap, toChain: null }, 'chat-1', [])).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    expect(await make({ ...swap, toChain: null }, 'chat-1', [])).toEqual({ ok: false, reason: 'recipient-not-allowed' })
   })
 
-  it('leaves a swap with no address paying the person', () => {
+  it('leaves a swap with no address paying the person', async () => {
     const { make } = setup()
-    const { plan } = ok(make({ outcome: 'swap', to: null, toAsset: 'USDC', toChain: 'base' }))
+    const { plan } = ok(await make({ outcome: 'swap', to: null, toAsset: 'USDC', toChain: 'base' }))
     expect(plan.core.recipient).toBeNull()
     expect(plan.core.summary).toBe('Swap 1.5 NEAR on near to USDC on base')
   })
@@ -111,57 +112,97 @@ describe('making a plan', () => {
     ['an overlong field', { toChain: 'x'.repeat(257), outcome: 'swap' as const, toAsset: 'USDC', to: null }],
     ['a send with nobody to pay', { to: null }],
     ['a swap with nothing to get', { outcome: 'swap' as const, to: null, toAsset: null }],
-  ])('refuses %s', (_name, change) => {
+  ])('refuses %s', async (_name, change) => {
     const { make } = setup()
-    expect(make(change)).toEqual({ ok: false, reason: 'bad-request' })
+    expect(await make(change)).toEqual({ ok: false, reason: 'bad-request' })
   })
 
-  it(`makes at most ${PLANS_PER_MINUTE} plans a minute for one chat, and lets others go on`, () => {
+  it(`makes at most ${PLANS_PER_MINUTE} plans a minute for one chat, and lets others go on`, async () => {
     const { make, advance } = setup()
-    for (let i = 0; i < PLANS_PER_MINUTE; i++) ok(make())
-    expect(make()).toEqual({ ok: false, reason: 'too-many' })
-    ok(make({}, 'chat-2'))
+    for (let i = 0; i < PLANS_PER_MINUTE; i++) ok(await make())
+    expect(await make()).toEqual({ ok: false, reason: 'too-many' })
+    ok(await make({}, 'chat-2'))
     advance(60_000)
-    ok(make())
+    ok(await make())
   })
 
-  it('makes room by dropping finished plans, and refuses when none is finished', () => {
+  it('makes room by dropping finished plans, and refuses when none is finished', async () => {
     const { store, make, advance } = setup()
     const ids: string[] = []
     for (let i = 0; i < MAX_PLANS; i++) {
-      ids.push(ok(make({}, `chat-${i}`)).plan.id)
+      ids.push(ok(await make({}, `chat-${i}`)).plan.id)
     }
-    expect(make({}, 'another')).toEqual({ ok: false, reason: 'too-many' })
+    expect(await make({}, 'another')).toEqual({ ok: false, reason: 'too-many' })
     ok(store.move(ids[0]!, 'chat-0', 'cancelled'))
-    ok(make({}, 'another'))
+    ok(await make({}, 'another'))
     expect(store.get(ids[0]!, 'chat-0')).toBeNull()
     advance(PLAN_TTL_MS)
     // Expired plans are finished too.
-    ok(make({}, 'and-another'))
+    ok(await make({}, 'and-another'))
+  })
+})
+
+describe('a plan’s steps', () => {
+  const STEP = { chain: 'near', action: 'transfer', fields: { signerId: 'a'.repeat(64), publicKey: 'ed25519:x', receiverId: 'alice.near', deposit: '1500000000000000000000000' } }
+
+  it('come from the chain module, inside the hash and frozen', async () => {
+    const asked: unknown[] = []
+    const { make } = setup(async (intent, own) => (asked.push([intent, own]), { ok: true, steps: [STEP] }))
+    const { plan } = ok(await make())
+    expect(plan.core.steps).toEqual([STEP])
+    expect(plan.hash).toBe(planHash(plan.core))
+    expect(() => ((plan.core.steps[0]!.fields as Record<string, string>).receiverId = 'mallory.near')).toThrow(TypeError)
+    expect(asked).toEqual([[SEND, OWN]])
+  })
+
+  it('are only built for a plan that passed every check', async () => {
+    let built = 0
+    const { make } = setup(async () => (built++, { ok: true, steps: [] }))
+    await make({ to: 'mallory.near' })
+    await make({ amount: '0' })
+    expect(built).toBe(0)
+  })
+
+  it('make no plan when the chain module says it can’t go through, and still count toward the limit', async () => {
+    const { store, make } = setup(async () => ({ ok: false, reason: 'insufficient-funds' }))
+    for (let i = 0; i < PLANS_PER_MINUTE; i++) expect(await make()).toEqual({ ok: false, reason: 'insufficient-funds' })
+    expect(await make()).toEqual({ ok: false, reason: 'too-many' })
+    expect(store.get('00000000-0000-4000-8000-000000000001', 'chat-1')).toBeNull()
+  })
+
+  it('keep the store’s limit when plans are made while steps are built', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const { make } = setup(async () => (await gate, { ok: true, steps: [] }))
+    const waiting = Array.from({ length: MAX_PLANS + 1 }, (_, i) => make({}, `chat-${i}`))
+    release()
+    const results = await Promise.all(waiting)
+    expect(results.filter((result) => result.ok)).toHaveLength(MAX_PLANS)
+    expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, reason: 'too-many' }])
   })
 })
 
 describe('reading and moving a plan', () => {
-  it('shows a plan only to the chat that made it', () => {
+  it('shows a plan only to the chat that made it', async () => {
     const { store, make } = setup()
-    const { plan } = ok(make())
+    const { plan } = ok(await make())
     expect(store.get(plan.id, 'chat-1')?.hash).toBe(plan.hash)
     expect(store.get(plan.id, 'chat-2')).toBeNull()
     expect(store.move(plan.id, 'chat-2', 'cancelled')).toEqual({ ok: false, reason: 'not-found' })
     expect(store.get('no-such-plan', 'chat-1')).toBeNull()
   })
 
-  it('cancels a draft, and nothing moves it after that', () => {
+  it('cancels a draft, and nothing moves it after that', async () => {
     const { store, make } = setup()
-    const { plan } = ok(make())
+    const { plan } = ok(await make())
     expect(ok(store.move(plan.id, 'chat-1', 'cancelled')).plan.status).toBe('cancelled')
     expect(store.move(plan.id, 'chat-1', 'cancelled')).toEqual({ ok: false, reason: 'cannot-move', status: 'cancelled' })
     expect(store.move(plan.id, 'chat-1', 'awaiting_review')).toEqual({ ok: false, reason: 'cannot-move', status: 'cancelled' })
   })
 
-  it('moves only the way the status table allows', () => {
+  it('moves only the way the status table allows', async () => {
     const { store, make } = setup()
-    const { plan } = ok(make())
+    const { plan } = ok(await make())
     expect(store.move(plan.id, 'chat-1', 'approved')).toEqual({ ok: false, reason: 'cannot-move', status: 'draft' })
     expect(store.move(plan.id, 'chat-1', 'signing')).toEqual({ ok: false, reason: 'cannot-move', status: 'draft' })
     expect(ok(store.move(plan.id, 'chat-1', 'awaiting_review')).plan.status).toBe('awaiting_review')
@@ -169,9 +210,9 @@ describe('reading and moving a plan', () => {
     expect(store.move(plan.id, 'chat-1', 'nonsense' as 'draft')).toEqual({ ok: false, reason: 'not-found' })
   })
 
-  it('reads a plan past its time as expired, and then won’t cancel it', () => {
+  it('reads a plan past its time as expired, and then won’t cancel it', async () => {
     const { store, make, advance } = setup()
-    const { plan } = ok(make())
+    const { plan } = ok(await make())
     advance(PLAN_TTL_MS - 1)
     expect(store.get(plan.id, 'chat-1')?.status).toBe('draft')
     advance(1)
@@ -179,10 +220,10 @@ describe('reading and moving a plan', () => {
     expect(store.move(plan.id, 'chat-1', 'cancelled')).toEqual({ ok: false, reason: 'cannot-move', status: 'expired' })
   })
 
-  it('stays expired when the wall clock is set back after it expired', () => {
+  it('stays expired when the wall clock is set back after it expired', async () => {
     const { store, make, advance, setClock } = setup()
-    const draft = ok(make()).plan
-    const approved = ok(make()).plan
+    const draft = ok(await make()).plan
+    const approved = ok(await make()).plan
     ok(store.move(approved.id, 'chat-1', 'awaiting_review'))
     ok(store.move(approved.id, 'chat-1', 'approved'))
     advance(PLAN_TTL_MS)
@@ -193,9 +234,9 @@ describe('reading and moving a plan', () => {
     expect(store.move(approved.id, 'chat-1', 'signing')).toEqual({ ok: false, reason: 'cannot-move', status: 'expired' })
   })
 
-  it('stays expired when a wall clock that ran ahead is corrected back', () => {
+  it('stays expired when a wall clock that ran ahead is corrected back', async () => {
     const { store, make, setClock } = setup()
-    const { plan } = ok(make())
+    const { plan } = ok(await make())
     setClock(PLAN_TTL_MS)
     expect(store.get(plan.id, 'chat-1')?.status).toBe('expired')
     setClock(-PLAN_TTL_MS)
@@ -203,9 +244,9 @@ describe('reading and moving a plan', () => {
     expect(store.move(plan.id, 'chat-1', 'awaiting_review')).toEqual({ ok: false, reason: 'cannot-move', status: 'expired' })
   })
 
-  it('expires on time even when the wall clock was set back before anyone looked', () => {
+  it('expires on time even when the wall clock was set back before anyone looked', async () => {
     const { store, make, advance, setClock } = setup()
-    const { plan } = ok(make())
+    const { plan } = ok(await make())
     setClock(-60 * 60_000)
     advance(PLAN_TTL_MS - 1)
     expect(store.get(plan.id, 'chat-1')?.status).toBe('draft')
@@ -214,16 +255,16 @@ describe('reading and moving a plan', () => {
     expect(store.move(plan.id, 'chat-1', 'awaiting_review')).toEqual({ ok: false, reason: 'cannot-move', status: 'expired' })
   })
 
-  it('keeps the per-minute limit when the wall clock jumps ahead', () => {
+  it('keeps the per-minute limit when the wall clock jumps ahead', async () => {
     const { make, setClock } = setup()
-    for (let i = 0; i < PLANS_PER_MINUTE; i++) ok(make())
+    for (let i = 0; i < PLANS_PER_MINUTE; i++) ok(await make())
     setClock(60_000)
-    expect(make()).toEqual({ ok: false, reason: 'too-many' })
+    expect(await make()).toEqual({ ok: false, reason: 'too-many' })
   })
 
-  it('keeps the same hash however often it’s read', () => {
+  it('keeps the same hash however often it’s read', async () => {
     const { store, make } = setup()
-    const { plan } = ok(make())
+    const { plan } = ok(await make())
     ok(store.move(plan.id, 'chat-1', 'awaiting_review'))
     expect(store.get(plan.id, 'chat-1')?.hash).toBe(plan.hash)
   })

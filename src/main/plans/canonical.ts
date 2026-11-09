@@ -30,7 +30,15 @@ export function canonicalize(value: unknown): string {
       // String(-0) is "0", which is what RFC 8785 wants.
       return String(value)
     case 'object': {
-      if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`
+      if (Array.isArray(value)) {
+        // Walk every index: map skips holes, which would print [,], not JSON.
+        const items: string[] = []
+        for (let i = 0; i < value.length; i++) {
+          if (!(i in value)) throw new PlanIntegrityError('cannot hash an array with a hole in it')
+          items.push(canonicalize(value[i]))
+        }
+        return `[${items.join(',')}]`
+      }
       const prototype: unknown = Object.getPrototypeOf(value)
       if (prototype !== Object.prototype && prototype !== null) throw new PlanIntegrityError('cannot hash an object that is not plain')
       const entries = Object.entries(value as Record<string, unknown>)

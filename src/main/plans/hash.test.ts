@@ -66,6 +66,11 @@ describe('canonicalize', () => {
     ['a bigint', 10n],
     ['undefined on its own', undefined],
     ['undefined in an array', [undefined]],
+    // Holes are skipped by map, so these once printed [] and [,].
+    ['an array that is only a hole', Array(1)],
+    ['an array of holes', Array(2)],
+    ['an array with a hole in the middle', [1, , 2]], // eslint-disable-line no-sparse-arrays
+    ['a hole nested in an object', { steps: Array(1) }],
     ['a function', () => 1],
     ['a symbol', Symbol('x')],
     ['a Date, whose JSON form is its own choice', new Date(0)],
@@ -104,6 +109,10 @@ const VECTOR_CANONICAL =
 const VECTOR_HASH = 'd5e6ea15abe565b96eaa037e3395955d3f47cb37c198ee4efa80ccf7744c8ca5'
 
 describe('planHash', () => {
+  it('refuses a plan whose steps have a hole', () => {
+    expect(() => planHash({ ...VECTOR, steps: Array(1) })).toThrow(PlanIntegrityError)
+  })
+
   it('matches the independently computed vector', () => {
     expect(canonicalize(VECTOR)).toBe(VECTOR_CANONICAL)
     expect(planHash(VECTOR)).toBe(VECTOR_HASH)

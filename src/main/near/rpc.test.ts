@@ -1,5 +1,6 @@
 import { base58, base64 } from '@scure/base'
 import { describe, expect, it } from 'vitest'
+import { encodeSignedTransaction, encodeTransfer, NearDecodeError, transactionId } from '../../shared/near/transaction'
 import { createNearRpc, NearRpcError } from './rpc'
 
 type Reply = { status?: number; body?: unknown; throws?: boolean }
@@ -47,6 +48,20 @@ const PROTOCOL_CONFIG = {
   },
 }
 const BLOCK = base58.encode(new Uint8Array(32).fill(3))
+
+const SENDER = 'a'.repeat(64)
+const UNSIGNED = encodeTransfer({ signerId: SENDER, publicKey: new Uint8Array(32).fill(1), nonce: 7n, receiverId: 'alice.near', blockHash: new Uint8Array(32).fill(3), deposit: 1n })
+const SIGNED = encodeSignedTransaction(UNSIGNED, new Uint8Array(64))
+const TX_ID = transactionId(UNSIGNED)
+
+/** A final outcome for SIGNED, shaped as mainnet sends one, with any part changed. */
+const outcome = (change: Record<string, unknown> = {}) => ({
+  status: { SuccessValue: '' },
+  transaction: { hash: TX_ID, signer_id: SENDER, receiver_id: 'alice.near', nonce: 7 },
+  transaction_outcome: { id: TX_ID, outcome: { status: { SuccessReceiptId: 'R1' }, executor_id: SENDER } },
+  receipts_outcome: [{ id: 'R1', outcome: { status: { SuccessValue: '' }, executor_id: 'alice.near' } }],
+  ...change,
+})
 
 describe('the NEAR RPC client', () => {
   it('reads an account’s balance exactly, past what a float could hold', async () => {
@@ -138,25 +153,61 @@ describe('the NEAR RPC client', () => {
   })
 
   it('sends a signed transaction, waits for it to be final, and reads how it ended', async () => {
-    const success = { status: { SuccessValue: '' }, transaction: { hash: 'TxHash1' }, transaction_outcome: {}, receipts_outcome: [{ outcome: { status: { SuccessValue: '' } } }] }
-    const { fetch, asked } = fakeFetch({ [A]: [ok(success)] })
-    expect(await rpc(fetch).sendTransaction(Uint8Array.of(1, 2, 3))).toEqual({ transactionId: 'TxHash1', ok: true, failure: null })
-    expect(asked[0]!.request).toMatchObject({ method: 'send_tx', params: { signed_tx_base64: 'AQID', wait_until: 'FINAL' } })
+    const { fetch, asked } = fakeFetch({ [A]: [ok(outcome())] })
+    expect(await rpc(fetch).sendTransaction(SIGNED)).toEqual({ transactionId: TX_ID, ok: true, failure: null })
+    expect(asked[0]!.request).toMatchObject({ method: 'send_tx', params: { signed_tx_base64: base64.encode(SIGNED), wait_until: 'FINAL' } })
+  })
+
+  it('won’t send bytes that aren’t a signed transfer', async () => {
+    const { fetch, asked } = fakeFetch({ [A]: [ok(outcome())] })
+    await expect(rpc(fetch).sendTransaction(Uint8Array.of(1, 2, 3))).rejects.toBeInstanceOf(NearDecodeError)
+    expect(asked).toEqual([])
   })
 
   it('counts a transaction as failed when it or any receipt failed', async () => {
-    const failed = { status: { Failure: { ActionError: { kind: { AccountDoesNotExist: { account_id: 'nobody.near' } } } } }, transaction: { hash: 'TxHash2' }, receipts_outcome: [] }
-    const receiptFailed = { status: { SuccessValue: '' }, transaction: { hash: 'TxHash3' }, receipts_outcome: [{ outcome: { status: { Failure: { x: 1 } } } }] }
+    const failure = { Failure: { ActionError: { kind: { AccountDoesNotExist: { account_id: 'nobody.near' } } } } }
+    const failed = outcome({ status: failure })
+    const receiptFailed = outcome({ receipts_outcome: [{ id: 'R1', outcome: { status: { SuccessValue: '' } } }, { id: 'R2', outcome: { status: { Failure: { x: 1 } } } }] })
     const { fetch } = fakeFetch({ [A]: [ok(failed), ok(receiptFailed)] })
-    const one = await rpc(fetch).sendTransaction(Uint8Array.of(1))
-    expect(one).toMatchObject({ transactionId: 'TxHash2', ok: false })
+    const one = await rpc(fetch).sendTransaction(SIGNED)
+    expect(one).toMatchObject({ transactionId: TX_ID, ok: false })
     expect(one.failure).toContain('AccountDoesNotExist')
-    expect(await rpc(fetch).sendTransaction(Uint8Array.of(1))).toMatchObject({ transactionId: 'TxHash3', ok: false })
+    expect(await rpc(fetch).sendTransaction(SIGNED)).toMatchObject({ transactionId: TX_ID, ok: false })
   })
 
   it('looks up a transaction that was already sent', async () => {
-    const { fetch, asked } = fakeFetch({ [A]: [ok({ status: { SuccessValue: '' }, transaction: { hash: 'TxHash4' }, receipts_outcome: [] })] })
-    expect(await rpc(fetch).transactionStatus('TxHash4', 'a'.repeat(64))).toMatchObject({ ok: true })
-    expect(asked[0]!.request).toMatchObject({ method: 'tx', params: { tx_hash: 'TxHash4', sender_account_id: 'a'.repeat(64), wait_until: 'FINAL' } })
+    const { fetch, asked } = fakeFetch({ [A]: [ok(outcome())] })
+    expect(await rpc(fetch).transactionStatus(TX_ID, SENDER)).toEqual({ transactionId: TX_ID, ok: true, failure: null })
+    expect(asked[0]!.request).toMatchObject({ method: 'tx', params: { tx_hash: TX_ID, sender_account_id: SENDER, wait_until: 'FINAL' } })
+  })
+
+  it('refuses the outcome of another transaction, or of another sender', async () => {
+    const other = base58.encode(new Uint8Array(32).fill(5))
+    for (const wrong of [
+      outcome({ transaction: { hash: other, signer_id: SENDER } }),
+      outcome({ transaction: { hash: TX_ID, signer_id: 'mallory.near' } }),
+      outcome({ transaction_outcome: { id: other, outcome: { status: { SuccessReceiptId: 'R1' } } } }),
+    ]) {
+      const send = fakeFetch({ [A]: [ok(wrong)], [B]: [] })
+      await expect(rpc(send.fetch).sendTransaction(SIGNED)).rejects.toMatchObject({ reason: 'unavailable' })
+      const look = fakeFetch({ [A]: [ok(wrong)], [B]: [] })
+      await expect(rpc(look.fetch).transactionStatus(TX_ID, SENDER)).rejects.toMatchObject({ reason: 'unavailable' })
+    }
+  })
+
+  it('refuses an outcome that isn’t complete, rather than call it a success', async () => {
+    for (const partial of [
+      outcome({ receipts_outcome: [] }),
+      outcome({ receipts_outcome: undefined }),
+      outcome({ receipts_outcome: [{ id: 'R1', outcome: { status: 'Unknown' } }] }),
+      outcome({ receipts_outcome: [{ id: 'R1', outcome: { status: { SuccessValue: '' } } }, { id: 'R2', outcome: {} }] }),
+      outcome({ transaction_outcome: { id: TX_ID, outcome: { status: 'Unknown' } } }),
+      outcome({ transaction_outcome: undefined }),
+      outcome({ status: 'NotStarted' }),
+      outcome({ status: {} }),
+    ]) {
+      const { fetch } = fakeFetch({ [A]: [ok(partial)], [B]: [] })
+      await expect(rpc(fetch).transactionStatus(TX_ID, SENDER)).rejects.toMatchObject({ reason: 'unavailable' })
+    }
   })
 })

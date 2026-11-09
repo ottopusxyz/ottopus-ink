@@ -1,4 +1,5 @@
 import { base58, base64 } from '@scure/base'
+import { decodeTransfer, transactionId as idOf } from '../../shared/near/transaction'
 
 /** Free mainnet RPCs, tried in order. FastNEAR first; NEAR's own as the fallback. */
 export const NEAR_RPC_URLS = ['https://rpc.mainnet.fastnear.com', 'https://rpc.mainnet.near.org'] as const
@@ -104,16 +105,51 @@ function errorName(error: Record<string, unknown>): string {
   return String(cause?.name ?? error.name ?? 'error')
 }
 
-/** Whether a failed status holds a failure anywhere in it: the transaction's own, or any receipt's. */
-function failureOf(outcome: Record<string, unknown>): string | null {
-  const status = outcome.status
+const STATUS_KINDS = ['SuccessValue', 'SuccessReceiptId', 'Failure'] as const
+
+/** The outcome's status once it has run, or null while it hasn't (`Unknown`) or isn't the shape NEAR sends. */
+function finishedStatus(outcome: unknown): Record<string, unknown> | null {
+  const status = isRecord(outcome) && isRecord(outcome.outcome) ? outcome.outcome.status : null
+  return isRecord(status) && STATUS_KINDS.some((kind) => kind in status) ? status : null
+}
+
+/** The first failure in the transaction or any receipt it made, as text, or null when none failed. */
+function failureOf(result: Record<string, unknown>, receipts: unknown[]): string | null {
+  const status = result.status
   if (isRecord(status) && 'Failure' in status) return JSON.stringify(status.Failure)
-  const receipts = Array.isArray(outcome.receipts_outcome) ? outcome.receipts_outcome : []
   for (const receipt of receipts) {
-    const inner = isRecord(receipt) && isRecord(receipt.outcome) ? receipt.outcome.status : null
-    if (isRecord(inner) && 'Failure' in inner) return JSON.stringify(inner.Failure)
+    const inner = finishedStatus(receipt)
+    if (inner && 'Failure' in inner) return JSON.stringify(inner.Failure)
   }
   return null
+}
+
+/** Which transaction an outcome must be about. */
+interface Expected {
+  transactionId: string
+  senderId: string
+}
+
+/**
+ * Reads a final outcome, refusing one about another transaction, or one that
+ * isn't complete: no transaction outcome, no receipt, or a receipt that hasn't run.
+ */
+function outcomeOf(result: unknown, expected: Expected): NearTxOutcome {
+  const status = isRecord(result) ? result.status : null
+  if (!isRecord(result) || !isRecord(result.transaction) || !isRecord(status) || !STATUS_KINDS.some((kind) => kind in status)) {
+    throw new NearRpcError('unavailable', 'the RPC sent no transaction outcome')
+  }
+  const { transaction } = result
+  const about = isRecord(result.transaction_outcome) ? result.transaction_outcome.id : null
+  if (transaction.hash !== expected.transactionId || about !== expected.transactionId || transaction.signer_id !== expected.senderId) {
+    throw new NearRpcError('unavailable', 'the RPC sent the outcome of another transaction')
+  }
+  const receipts = Array.isArray(result.receipts_outcome) ? result.receipts_outcome : []
+  if (!finishedStatus(result.transaction_outcome) || receipts.length === 0 || !receipts.every((receipt) => finishedStatus(receipt))) {
+    throw new NearRpcError('unavailable', 'the RPC sent an outcome that is not complete')
+  }
+  const failure = failureOf(result, receipts)
+  return { transactionId: expected.transactionId, ok: failure === null && 'SuccessValue' in status, failure }
 }
 
 export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, timeoutMs = 8_000, sendTimeoutMs = 60_000 }: NearRpcOptions = {}) {
@@ -220,12 +256,15 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
     },
 
     /**
-     * Sends a signed transaction and waits until it's final. Sending the same
+     * Sends a signed transfer and waits until it's final. Sending the same
      * bytes twice is safe: NEAR runs a nonce once, so a retry on another RPC
-     * can't spend twice.
+     * can't spend twice. The outcome must be about this transaction, whose id
+     * and signer are read from the bytes themselves.
      */
     async sendTransaction(signed: Uint8Array): Promise<NearTxOutcome> {
-      return outcomeOf(await call('send_tx', { signed_tx_base64: base64.encode(signed), wait_until: 'FINAL' }, sendTimeoutMs))
+      const unsigned = signed.subarray(0, signed.length - 65)
+      const expected = { transactionId: idOf(unsigned), senderId: decodeTransfer(unsigned).signerId }
+      return outcomeOf(await call('send_tx', { signed_tx_base64: base64.encode(signed), wait_until: 'FINAL' }, sendTimeoutMs), expected)
     },
 
     /**
@@ -233,17 +272,9 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
      * sending timed out: the transaction may still have gone through.
      */
     async transactionStatus(transactionId: string, senderId: string): Promise<NearTxOutcome> {
-      return outcomeOf(await call('tx', { tx_hash: transactionId, sender_account_id: senderId, wait_until: 'FINAL' }, sendTimeoutMs))
+      return outcomeOf(await call('tx', { tx_hash: transactionId, sender_account_id: senderId, wait_until: 'FINAL' }, sendTimeoutMs), { transactionId, senderId })
     },
   }
-}
-
-function outcomeOf(result: unknown): NearTxOutcome {
-  if (!isRecord(result) || !isRecord(result.transaction) || typeof result.transaction.hash !== 'string' || !isRecord(result.status)) {
-    throw new NearRpcError('unavailable', 'the RPC sent no transaction outcome')
-  }
-  const failure = failureOf(result)
-  return { transactionId: result.transaction.hash, ok: failure === null && 'SuccessValue' in result.status, failure }
 }
 
 export type NearRpc = ReturnType<typeof createNearRpc>

@@ -76,9 +76,9 @@ describe('building a NEAR send', () => {
   })
 
   it('counts what storage holds back as not there to send', async () => {
-    const exact = 1_500_000_000_000_000_000_000_000n + FEE + 182n * STORAGE_YOCTO_PER_BYTE
-    expect((await buildNearSend(SEND, OWN, fakeRpc({ [FROM]: funded(exact, 182n), ...ALICE }).rpc)).ok).toBe(true)
-    expect((await buildNearSend(SEND, OWN, fakeRpc({ [FROM]: funded(exact - 1n, 182n), ...ALICE }).rpc)).ok).toBe(false)
+    const exact = 1_500_000_000_000_000_000_000_000n + FEE + 2_000n * STORAGE_YOCTO_PER_BYTE
+    expect((await buildNearSend(SEND, OWN, fakeRpc({ [FROM]: funded(exact, 2_000n), ...ALICE }).rpc)).ok).toBe(true)
+    expect((await buildNearSend(SEND, OWN, fakeRpc({ [FROM]: funded(exact - 1n, 2_000n), ...ALICE }).rpc)).ok).toBe(false)
   })
 
   it('refuses from an account nothing was sent to yet, which has no NEAR', async () => {

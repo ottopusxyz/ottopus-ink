@@ -4,6 +4,12 @@ import type { NearAccountView, NearRpc } from './rpc'
 /** What NEAR holds back for each byte an account stores: 10^19 yoctoNEAR, so 100 kB is 1 NEAR. */
 export const STORAGE_YOCTO_PER_BYTE = 10n ** 19n
 
+/**
+ * An account storing this many bytes or fewer needs no stake for its storage: nearcore's
+ * ZERO_BALANCE_ACCOUNT_STORAGE_LIMIT (NEP-448). A plain account with one full access key uses 182.
+ */
+export const ZERO_BALANCE_STORAGE_LIMIT = 770n
+
 /** FastNEAR's index of which pools an account has staked with. Only a hint: each balance is read from the pool itself. */
 export const STAKING_INDEX_URL = 'https://api.fastnear.com/v1/account'
 
@@ -70,8 +76,12 @@ async function poolStake(rpc: NearRpc, poolId: string, accountId: string): Promi
   }
 }
 
-/** What storage holds back from the liquid balance: paid from a validator stake first, and never more than the balance. */
+/**
+ * What storage holds back from the liquid balance: nothing for an account small enough to be stored
+ * free, otherwise paid from a validator stake first, and never more than the balance.
+ */
 export function storageHeld({ amount, locked, storageUsage }: NearAccountView): bigint {
+  if (storageUsage <= ZERO_BALANCE_STORAGE_LIMIT) return 0n
   const cost = storageUsage * STORAGE_YOCTO_PER_BYTE
   const fromLiquid = cost > locked ? cost - locked : 0n
   return fromLiquid < amount ? fromLiquid : amount

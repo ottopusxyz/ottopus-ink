@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nearBalance, STORAGE_YOCTO_PER_BYTE } from './balance'
+import { nearBalance, STORAGE_YOCTO_PER_BYTE, storageHeld, ZERO_BALANCE_STORAGE_LIMIT } from './balance'
 import type { NearAccountView, NearRpc } from './rpc'
 
 const ID = 'a'.repeat(64)
@@ -38,22 +38,31 @@ describe('a NEAR balance', () => {
   })
 
   it('holds back what storage costs from what can be sent', async () => {
-    const { rpc } = fakeRpc({ amount: 5n * NEAR, locked: 0n, storageUsage: 182n })
+    const { rpc } = fakeRpc({ amount: 5n * NEAR, locked: 0n, storageUsage: 2_000n })
     const balance = await nearBalance(ID, { rpc, fetch: index({ pools: [] }) })
-    expect(balance.storage).toBe(182n * STORAGE_YOCTO_PER_BYTE)
-    expect(balance.available).toBe(5n * NEAR - 182n * STORAGE_YOCTO_PER_BYTE)
+    expect(balance.storage).toBe(2_000n * STORAGE_YOCTO_PER_BYTE)
+    expect(balance.available).toBe(5n * NEAR - 2_000n * STORAGE_YOCTO_PER_BYTE)
   })
 
   it('pays storage from a validator stake first', async () => {
-    const { rpc } = fakeRpc({ amount: 5n * NEAR, locked: 100n * STORAGE_YOCTO_PER_BYTE, storageUsage: 182n })
+    const { rpc } = fakeRpc({ amount: 5n * NEAR, locked: 1_000n * STORAGE_YOCTO_PER_BYTE, storageUsage: 2_000n })
     const balance = await nearBalance(ID, { rpc, fetch: index({ pools: [] }) })
-    expect(balance.storage).toBe(82n * STORAGE_YOCTO_PER_BYTE)
-    expect(balance.staked).toBe(100n * STORAGE_YOCTO_PER_BYTE)
+    expect(balance.storage).toBe(1_000n * STORAGE_YOCTO_PER_BYTE)
+    expect(balance.staked).toBe(1_000n * STORAGE_YOCTO_PER_BYTE)
   })
 
   it('never goes below zero when storage costs more than the balance', async () => {
-    const { rpc } = fakeRpc({ amount: 1n, locked: 0n, storageUsage: 182n })
+    const { rpc } = fakeRpc({ amount: 1n, locked: 0n, storageUsage: 2_000n })
     expect(await nearBalance(ID, { rpc, fetch: index({ pools: [] }) })).toMatchObject({ available: 0n, storage: 1n })
+  })
+
+  it('holds nothing back for an account small enough that NEAR stores it for free', async () => {
+    // A plain account with one full access key uses 182 bytes. NEAR needs no stake for up to 770 (NEP-448).
+    const small = await nearBalance(ID, { rpc: fakeRpc({ amount: NEAR / 1000n, locked: 0n, storageUsage: 182n }).rpc, fetch: index({ pools: [] }) })
+    expect(small).toMatchObject({ available: NEAR / 1000n, storage: 0n })
+    expect(storageHeld({ amount: NEAR, locked: 0n, storageUsage: ZERO_BALANCE_STORAGE_LIMIT })).toBe(0n)
+    expect(storageHeld({ amount: NEAR, locked: 0n, storageUsage: ZERO_BALANCE_STORAGE_LIMIT + 1n })).toBe(771n * STORAGE_YOCTO_PER_BYTE)
+    expect(ZERO_BALANCE_STORAGE_LIMIT).toBe(770n)
   })
 
   it('adds up stakes read from each pool the index names, ignoring the index’s own numbers', async () => {

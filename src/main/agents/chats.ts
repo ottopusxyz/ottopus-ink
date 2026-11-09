@@ -24,9 +24,14 @@ const MAX_OPEN_CHATS = 4
 const chats = new Map<string, ChatSession>()
 
 /**
- * What the person typed in each chat, newest last, as the page sent it. A plan
- * may pay an address only if it's the person's own or appears here, so this is
- * the one place the agent's own words can never reach.
+ * The messages sent from each chat's box, newest last, as the page sent them. A
+ * plan may pay an address only if it's the person's own or appears here, so this
+ * is the one place the agent's own words can never reach.
+ *
+ * It keeps the agent out, not the page: main can't tell whether a person typed a
+ * message or compromised page code sent it. So this stops a prompt injection
+ * choosing the recipient, but proving a person chose it is left to the review
+ * window, outside the page, where they confirm the recipient before signing.
  */
 const typedIn = new Map<string, string[]>()
 /** Enough of a conversation for the addresses someone gave; older messages make way. */

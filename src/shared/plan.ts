@@ -44,8 +44,10 @@ export interface PlanIntent {
 }
 
 /**
- * Who gets paid, and why that address is allowed: it's one of the person's own,
- * or the person typed it themselves. An agent can never supply one on its own.
+ * Who gets paid, and why that address is allowed: it's the person's own on the
+ * chain the funds land on, or it was sent from the chat's box ("typed"), where
+ * the agent can't write. An agent can never supply one on its own. "Typed" keeps
+ * the agent out, not compromised page code: the review window confirms it.
  */
 export interface PlanRecipient {
   address: string

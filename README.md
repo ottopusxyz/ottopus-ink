@@ -67,7 +67,9 @@ Addresses are worked out in the signer and are only available while unlocked. Th
 
 ## Plans
 
-The agent can only propose a plan. Main builds it, and a plan can pay only one of your own addresses or an address you typed yourself in that chat, never one the agent came up with.
+The agent can only propose a plan. Main builds it, and a plan can pay only your own address on the chain the funds land on, or an address you sent in that chat, never one the agent came up with.
+
+- **What counts as sent:** main records the messages from each chat's box, which the agent can't add to. That keeps a prompt injection from picking the recipient. It can't tell a person typing from compromised page code, so the review window, outside the page, is where you confirm the recipient before anything is signed.
 
 - **The hash:** a plan's fixed part is hashed as SHA-256 over `ottopus-ink/plan/v1`, a NUL byte and its RFC 8785 canonical JSON. Numbers must be whole and amounts are decimal strings, so nothing can round. The signer will recompute this hash before it signs.
 - **Statuses:** draft, awaiting review, approved, signing, submitted, confirmed, failed, cancelled, expired and blocked, and a plan moves between them only as one table allows. Nothing is approved without review, and nothing is signed without approval.

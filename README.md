@@ -2,7 +2,7 @@
 
 A desktop universal wallet whose brain is the coding agent you already have installed (Claude Code, Codex or OpenCode). The agent proposes plans; you review and sign them in the app. Cross-chain value moves through NEAR Intents.
 
-> Work in progress for the NEAR hackathon. You can set up, lock and unlock the wallet and see your addresses, but nothing signs yet. Don't give it a recovery phrase that holds real funds.
+> Work in progress for the NEAR hackathon. You can set up, lock and unlock the wallet, see your addresses, and approve a NEAR send from a chat in the review window. No send has been tried on mainnet yet, and nothing has been audited: don't give it a recovery phrase that holds real funds.
 
 ## Rules that never change
 
@@ -34,6 +34,7 @@ npm 11 runs only approved install scripts. Electron's (which downloads its binar
 | `src/main` | Electron main: windows, IPC, agent drivers, plan engine | Yes |
 | `src/preload` | The only bridge the renderer gets (`window.ink`) | Yes |
 | `src/renderer` | React UI. Display only: no Node, sandboxed, strict CSP | No |
+| `src/renderer/review.html`, `src/preload/review.ts` | The review window's own page and preload, the only place a plan is approved | Yes |
 | `src/signer` | Separate utility process; the only place the decrypted seed lives | Yes |
 | `src/shared` | Types and pure helpers used by more than one process | n/a |
 
@@ -73,7 +74,16 @@ The agent can only propose a plan. Main builds it, and a plan can pay only your 
 - **The hash:** a plan's fixed part is hashed as SHA-256 over `ottopus-ink/plan/v1`, a NUL byte and its RFC 8785 canonical JSON. Numbers must be whole and amounts are decimal strings, so nothing can round. The signer works the hash out again from the plan it's given, and signs only if it matches the hash you approved.
 - **Statuses:** draft, awaiting review, approved, signing, submitted, confirmed, failed, cancelled, expired and blocked, and a plan moves between them only as one table allows. Nothing is approved without review, and nothing is signed without approval.
 - **Expiry and ownership:** a plan expires 30 minutes after it's made if nobody acts on it. Each plan belongs to the chat that made it.
-- **Not built yet:** a plan stays a draft until the review window (#16) shows it and you approve it, so nothing calls the sign path yet. A NEAR send already holds its exact transfer; other plans hold no transaction yet.
+- **Review:** a plan a locked chat makes goes to the review window if Ink can send it. So far that's a NEAR send, which holds its exact transfer. Other plans hold no transaction yet and stay drafts. The chat's plan card follows the plan's status.
+
+## The review window
+
+The only place a plan is approved. It's a separate, always-on-top window with its own page and preload, which expose the review channels and nothing else. Main answers those channels only from that window's own top frame on the review page, and the app's page can't use them, open the window or reach into it.
+
+- **What it shows:** what main decodes from the plan's own step, the bytes the signer reads back and signs, never the agent's words. In order: the network, the recipient in full and in groups, the most that can leave your account (the amount plus the fee ceiling at today's gas price), each action and whether it calls a contract, a "not simulated" badge, then the fee, the paying account, its key, the exact amount in yoctoNEAR and the plan hash. It says whether the recipient is your own account or one you typed in the chat.
+- **Approving:** Approve works only for the plan and hash on show, once the window has been up and in front for 1.5 s. The delay starts again whenever the window takes focus, so a click or key press meant for something else can't approve it. Main also needs a real click or Enter or Space in that window, which Electron reports from the OS within the last second; a script can't make one. Each click approves once, and Ink must be unlocked. On Linux under X11, other programs can fake input, so the click check is weaker there.
+- **Sending:** once approved, main signs and sends the plan as described under NEAR, and the window shows what became of it, with a link to the transaction on nearblocks.io. A send that stopped before signing (NEAR unreachable, an earlier send unanswered) keeps the plan approved, and Try again sends it as approved, with another click.
+- **Rejecting and expiry:** Reject, or closing the window, cancels the plan and signs nothing. A plan nobody approves expires 30 minutes after it was made, and the window shows that. Plans wait their turn and are shown one at a time.
 
 ## NEAR
 

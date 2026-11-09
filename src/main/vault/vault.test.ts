@@ -5,6 +5,9 @@ import { join } from 'node:path'
 import { entropyToMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nearPublicKey, nearTransferStep } from '../../shared/near/transaction'
+import type { PlanCore } from '../../shared/plan'
+import { planHash } from '../../shared/plan-hash'
 import type { NewPhrase, VaultRequest, VaultResult, VaultStatus } from '../../shared/vault'
 import { createVaultState } from '../../signer/vault-state'
 import type { SecretBox } from '../external/sign-ins'
@@ -522,6 +525,78 @@ describe('accounts', () => {
     expectOk(await service.unlock(PASSWORD))
     release()
     expect(await relocked).toEqual({ ok: false, reason: 'locked' })
+  })
+})
+
+describe('signing', () => {
+  const LIVE = [{ nonce: '1', blockHash: '07'.repeat(32) }]
+
+  /** A plan sending from the vault's own NEAR account, and its hash. */
+  async function approvedPlan(service: ReturnType<typeof setup>['service']) {
+    const { accounts } = expectOk(await service.accounts())
+    const id = accounts.find((account) => account.chain === 'near')?.address as string
+    const plan: PlanCore = {
+      hashVersion: 1,
+      id: '00000000-0000-4000-8000-000000000001',
+      createdBy: 'ui',
+      createdAt: '2026-11-09T00:00:00.000Z',
+      expiresAt: '2026-11-09T00:30:00.000Z',
+      intent: { outcome: 'send', asset: 'NEAR', amount: '1', chain: 'near', to: 'alice.near', toAsset: null, toChain: null },
+      recipient: { address: 'alice.near', why: 'typed' },
+      summary: 'Send 1 NEAR on near to alice.near',
+      steps: [nearTransferStep({ signerId: id, publicKey: nearPublicKey(Buffer.from(id, 'hex')), receiverId: 'alice.near', deposit: '1' })],
+    }
+    return { plan, hash: planHash(plan) }
+  }
+
+  it('has the signer sign an approved plan, and passes on why it wouldn’t', async () => {
+    const { service } = setup()
+    await createVault(service)
+    const { plan, hash } = await approvedPlan(service)
+    const { signed } = expectOk(await service.sign(plan, hash, LIVE))
+    expect(Object.keys(signed[0] ?? {}).sort()).toEqual(['signed', 'transactionId'])
+    expect(await service.sign({ ...plan, summary: 'Send 2 NEAR' }, hash, LIVE)).toEqual({ ok: false, reason: 'plan-mismatch' })
+  })
+
+  it('doesn’t ask the signer while locked', async () => {
+    const { service, asked } = setup()
+    await createVault(service)
+    const { plan, hash } = await approvedPlan(service)
+    await service.lock()
+    asked.length = 0
+    expect(await service.sign(plan, hash, LIVE)).toEqual({ ok: false, reason: 'locked' })
+    expect(asked).toEqual([])
+  })
+
+  it('drops what was signed if the vault locks meanwhile, even if it unlocks again', async () => {
+    for (const thenUnlock of [false, true]) {
+      const signer = createVaultState({ logN: 10 })
+      let release = () => {}
+      const held = new Promise<void>((resolve) => (release = resolve))
+      let signerAnswered: (result: VaultResult<object>) => void = () => {}
+      const answered = new Promise<VaultResult<object>>((resolve) => (signerAnswered = resolve))
+      const service = createVaultService({
+        store: createVaultStore({ file: join(dir, `vault-${thenUnlock}.bin`), box: noKeyring }),
+        ask: async (request) => {
+          const result = await signer.handle(request)
+          if (request.op === 'sign') {
+            signerAnswered(result)
+            await held
+          }
+          return result
+        },
+        onStatus: () => {},
+      })
+      await createVault(service)
+      const { plan, hash } = await approvedPlan(service)
+      const signing = service.sign(plan, hash, LIVE)
+      // The signer has signed, and its answer is on its way back when the lock lands.
+      expect((await answered).ok).toBe(true)
+      await service.lock()
+      if (thenUnlock) expectOk(await service.unlock(PASSWORD))
+      release()
+      expect(await signing).toEqual({ ok: false, reason: 'locked' })
+    }
   })
 })
 

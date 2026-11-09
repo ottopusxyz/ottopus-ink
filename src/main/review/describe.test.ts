@@ -36,6 +36,7 @@ describe('what the review window shows', () => {
       amountYocto: '1500000000000000000000000',
       asset: 'NEAR',
       maxFee: '0.000267819075',
+      maxFeeYocto: '267819075000000000000',
       maxTotal: '1.500267819075',
       actions: [{ kind: 'Transfer', amount: '1.5', method: null }],
       expiresAt: plan.core.expiresAt,
@@ -48,7 +49,7 @@ describe('what the review window shows', () => {
   })
 
   it('leaves out the fee and the total when the chain couldn’t be asked', async () => {
-    expect(describeForReview(await planWith([STEP]), 'NEAR mainnet', null)).toMatchObject({ maxFee: null, maxTotal: null })
+    expect(describeForReview(await planWith([STEP]), 'NEAR mainnet', null)).toMatchObject({ maxFee: null, maxFeeYocto: null, maxTotal: null })
   })
 
   it('says what kind of account the transfer pays', async () => {

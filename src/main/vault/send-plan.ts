@@ -16,6 +16,8 @@ export type SendFailure =
   | 'busy'
   /** The RPC is on another NEAR network, so a transaction built from its answers could spend there. */
   | 'wrong-network'
+  /** The fees could now cost more than the most the person was shown when they approved. */
+  | 'fee-rose'
   /**
    * An earlier send from this key got no answer and may still land. A later
    * transaction reaching the chain first would raise the key's nonce past it,
@@ -73,7 +75,7 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
     return { ok: false, reason, status: moved.ok ? moved.plan.status : undefined }
   }
 
-  async function run(id: string, owner: string): Promise<SendResult> {
+  async function run(id: string, owner: string, maxFee: bigint): Promise<SendResult> {
     const plan = store.get(id, owner)
     if (!plan) return { ok: false, reason: 'not-found' }
     if (plan.status !== 'approved') return { ok: false, reason: 'cannot-move', status: plan.status }
@@ -86,7 +88,7 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
     let blockHeight: bigint
     try {
       if ((await rpc.chainId()) !== NEAR_NETWORK) return { ok: false, reason: 'wrong-network', status: plan.status }
-      const unfit = await nearSendFits(rpc, transfer.signerId, transfer.receiverId, transfer.deposit)
+      const unfit = await nearSendFits(rpc, transfer.signerId, transfer.receiverId, transfer.deposit, maxFee)
       if (unfit) return { ok: false, reason: unfit, status: plan.status }
       const key = await rpc.viewAccessKey(transfer.signerId, publicKey)
       // No key means no account yet: nothing has been sent to it, so there is nothing to spend.
@@ -139,11 +141,12 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
   }
 
   return {
-    async send(id: string, owner: string): Promise<SendResult> {
+    /** Sends the plan, if the fees can't cost more than `maxFee`, the most the person was shown when they approved, in yoctoNEAR. */
+    async send(id: string, owner: string, maxFee: bigint): Promise<SendResult> {
       if (sending) return { ok: false, reason: 'busy' }
       sending = true
       try {
-        return await run(id, owner)
+        return await run(id, owner, maxFee)
       } finally {
         sending = false
       }

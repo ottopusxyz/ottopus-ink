@@ -71,15 +71,22 @@ export const isNearSend = (intent: PlanIntent): boolean =>
  * implicit accounts are created by a transfer), and the sender's balance covers
  * the deposit and the most the fees could take up front at today's gas price.
  * Checked when a plan is made and again just before it's signed, since the
- * balance and gas price may have moved in between. Throws `NearRpcError`.
+ * balance and gas price may have moved in between. Before signing, `maxFee`
+ * is the fee ceiling the person saw when they approved, and a higher one now
+ * is `fee-rose`. Throws `NearRpcError`.
  */
-export async function nearSendFits(rpc: NearRpc, from: string, to: string, deposit: bigint): Promise<'recipient-unknown' | 'insufficient-funds' | null> {
+export async function nearSendFits(rpc: NearRpc, from: string, to: string, deposit: bigint): Promise<'recipient-unknown' | 'insufficient-funds' | null>
+export async function nearSendFits(rpc: NearRpc, from: string, to: string, deposit: bigint, maxFee: bigint): Promise<'recipient-unknown' | 'insufficient-funds' | 'fee-rose' | null>
+export async function nearSendFits(rpc: NearRpc, from: string, to: string, deposit: bigint, maxFee?: bigint): Promise<'recipient-unknown' | 'insufficient-funds' | 'fee-rose' | null> {
   const kind = nearAccountKind(to)
   if (kind === null) return 'recipient-unknown'
   const [sender, receiver, gasPrice, fees] = await Promise.all([rpc.viewAccount(from), kind === 'named' ? rpc.viewAccount(to) : null, rpc.gasPrice(), rpc.protocolFees()])
   if (kind === 'named' && receiver === null) return 'recipient-unknown'
   const available = sender ? sender.amount - storageHeld(sender) : 0n
-  return available < deposit + transferFeeCeiling(fees, gasPrice, kind) ? 'insufficient-funds' : null
+  const fee = transferFeeCeiling(fees, gasPrice, kind)
+  // The person approved a send that could cost at most maxFee: a fee that has risen past it needs their say again.
+  if (maxFee !== undefined && fee > maxFee) return 'fee-rose'
+  return available < deposit + fee ? 'insufficient-funds' : null
 }
 
 /**

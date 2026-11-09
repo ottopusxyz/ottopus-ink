@@ -81,11 +81,11 @@ export function ReviewApp() {
       </Section>
 
       <Section label="Most that can leave your account">
-        <p className="selectable m-0 font-mono text-[20px] font-medium">{plan.maxTotal ?? plan.amount} NEAR</p>
+        <p className="selectable m-0 font-mono text-[20px] font-medium">{plan.maxTotal ? `${plan.maxTotal} NEAR` : `${plan.amount} NEAR and the fee`}</p>
         <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
           {plan.maxTotal
             ? `${plan.amount} NEAR sent, plus at most ${plan.maxFee} NEAR in fees. Most of the fee comes back.`
-            : 'Plus the network fee. Ink couldn’t read today’s fee, and checks your balance covers it before signing.'}
+            : 'Ink couldn’t read today’s fee. Approve asks NEAR again and shows the maximum, and nothing is signed until you approve that.'}
         </p>
       </Section>
 

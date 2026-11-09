@@ -16,11 +16,14 @@ const OWNER = 'chat-1'
 const INTENT: PlanIntent = { outcome: 'send', asset: 'NEAR', amount: '1', chain: 'near', to: 'alice.near', toAsset: null, toChain: null }
 const STEP = nearTransferStep({ signerId: FROM, publicKey: nearPublicKey(hexToBytes(FROM)), receiverId: 'alice.near', deposit: '1000000000000000000000000' })
 const TX = 'tx-id'
+const FEE = 1_000n
 
 /** A broker over a real store, with a clock the test moves and a sender that confirms unless told otherwise. */
-function setup({ send, unlocked = true }: { send?: (id: string, owner: string) => Promise<SendResult>; unlocked?: boolean } = {}) {
+function setup({ send, unlocked = true }: { send?: (id: string, owner: string, maxFee: bigint) => Promise<SendResult>; unlocked?: boolean } = {}) {
   let clock = 10_000
   let open = unlocked
+  /** The fee ceiling NEAR gives when the plan is described, or null when it can't be asked. */
+  let fee: bigint | null = FEE
   const store = createPlanStore({ buildSteps: async () => ({ ok: true, steps: [STEP] }), monotonic: () => clock })
   const sender = {
     send: vi.fn(
@@ -38,7 +41,7 @@ function setup({ send, unlocked = true }: { send?: (id: string, owner: string) =
   const broker = createReviewBroker({
     store,
     sender,
-    describe: async (plan) => describeForReview(plan, 'NEAR mainnet', 1n),
+    describe: async (plan) => describeForReview(plan, 'NEAR mainnet', fee),
     unlocked: () => open,
     onState: (state) => states.push(state),
     monotonic: () => clock,
@@ -56,6 +59,9 @@ function setup({ send, unlocked = true }: { send?: (id: string, owner: string) =
     },
     unlock: () => {
       open = true
+    },
+    feeIs: (next: bigint | null) => {
+      fee = next
     },
   }
 }
@@ -143,7 +149,7 @@ describe('approving', () => {
     const env = setup()
     const { id, hash, notify } = await shownAndArmed(env)
     expect(await click(env, id, hash)).toEqual({ ok: true })
-    expect(env.sender.send).toHaveBeenCalledWith(id, OWNER)
+    expect(env.sender.send).toHaveBeenCalledWith(id, OWNER, FEE)
     expect(env.broker.state()).toMatchObject({ status: 'confirmed', transactionId: TX, sending: false, failure: null })
     expect(notify.mock.calls.map(([status]) => status)).toEqual(['awaiting_review', 'approved', 'confirmed'])
   })
@@ -258,7 +264,7 @@ describe('approving', () => {
   })
 
   it('keeps the plan approved when the send stops short of signing, and sends it again on the next click', async () => {
-    const send = vi.fn<(id: string, owner: string) => Promise<SendResult>>(async () => ({ ok: false, reason: 'chain-unavailable', status: 'approved' }))
+    const send = vi.fn<(id: string, owner: string, maxFee: bigint) => Promise<SendResult>>(async () => ({ ok: false, reason: 'chain-unavailable', status: 'approved' }))
     const env = setup({ send })
     const { id, hash } = await shownAndArmed(env)
     await click(env, id, hash)
@@ -266,6 +272,44 @@ describe('approving', () => {
     send.mockResolvedValueOnce({ ok: false, reason: 'earlier-pending', status: 'approved' })
     expect(await click(env, id, hash)).toEqual({ ok: false, reason: 'earlier-pending' })
     expect(send).toHaveBeenCalledTimes(2)
+  })
+
+  it('signs nothing past the fee shown: a higher one is shown, and needs another click once the window arms again', async () => {
+    const send = vi.fn<(id: string, owner: string, maxFee: bigint) => Promise<SendResult>>(async () => ({ ok: false, reason: 'fee-rose', status: 'approved' }))
+    const env = setup({ send })
+    const { id, hash } = await shownAndArmed(env)
+    env.feeIs(5_000n)
+    expect(await click(env, id, hash)).toEqual({ ok: false, reason: 'fee-changed' })
+    expect(send).toHaveBeenLastCalledWith(id, OWNER, FEE)
+    expect(env.broker.state()).toMatchObject({ status: 'approved', failure: 'fee-changed', armed: false, plan: { maxFeeYocto: '5000' } })
+    expect(await click(env, id, hash)).toEqual({ ok: false, reason: 'not-armed' })
+    env.tick(ARM_DELAY_MS)
+    send.mockResolvedValueOnce({ ok: false, reason: 'chain-unavailable', status: 'approved' })
+    await click(env, id, hash)
+    expect(send).toHaveBeenLastCalledWith(id, OWNER, 5_000n)
+  })
+
+  it('asks NEAR for the fee, and shows it, before approving a plan shown without one', async () => {
+    const env = setup()
+    env.feeIs(null)
+    const { id, hash } = await shownAndArmed(env)
+    expect(env.broker.state()?.plan.maxFee).toBeNull()
+    env.feeIs(FEE)
+    expect(await click(env, id, hash)).toEqual({ ok: false, reason: 'fee-changed' })
+    expect(env.sender.send).not.toHaveBeenCalled()
+    expect(env.store.get(id, OWNER)?.status).toBe('awaiting_review')
+    expect(env.broker.state()).toMatchObject({ armed: false, plan: { maxFeeYocto: String(FEE) } })
+    env.tick(ARM_DELAY_MS)
+    expect(await click(env, id, hash)).toEqual({ ok: true })
+    expect(env.sender.send).toHaveBeenCalledWith(id, OWNER, FEE)
+  })
+
+  it('sends nothing while NEAR still gives no fee', async () => {
+    const env = setup()
+    env.feeIs(null)
+    const { id, hash } = await shownAndArmed(env)
+    expect(await click(env, id, hash)).toEqual({ ok: false, reason: 'chain-unavailable' })
+    expect(env.sender.send).not.toHaveBeenCalled()
   })
 
   it('shows any reason it doesn’t explain as a refusal', async () => {

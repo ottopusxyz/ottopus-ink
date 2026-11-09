@@ -146,6 +146,17 @@ export function createReviewBroker({ store, sender, describe, unlocked, onState,
     next()
   }
 
+  /**
+   * Describes the plan again, with today's fee, and starts the arm delay over if
+   * it's on show, so the person sees the new maximum before the next click counts.
+   */
+  const describeAgain = async (offer: Offer): Promise<void> => {
+    const view = store.get(offer.id, offer.owner)
+    const described = view ? await describe(view) : null
+    if (described && described.hash === offer.plan.hash) offer.plan = described
+    if (current() === offer) shown()
+  }
+
   /** Done with the plan shown once nothing more can be decided about it. */
   const dismiss = (id: string): void => {
     const offer = current()
@@ -208,15 +219,27 @@ export function createReviewBroker({ store, sender, describe, unlocked, onState,
         refresh()
         return refuse('locked')
       }
+      // The person approves the most the fees can cost, so a plan shown without one gets it first.
+      if (offer.plan.maxFeeYocto === null) {
+        await describeAgain(offer)
+        offer.failure = offer.plan.maxFeeYocto === null ? 'chain-unavailable' : 'fee-changed'
+        refresh()
+        return refuse(offer.failure)
+      }
+      const maxFee = BigInt(offer.plan.maxFeeYocto)
       // A plan approved before, whose send stopped short of signing, is sent again as it was approved.
       if (status === 'awaiting_review' && !store.move(id, offer.owner, 'approved').ok) return refuse('cannot-move')
       sending = true
       offer.failure = null
       refresh()
       try {
-        const sent = await sender.send(id, offer.owner)
+        const sent = await sender.send(id, offer.owner, maxFee)
         if (sent.ok) offer.transactionId = sent.transactionId
-        else offer.failure = reviewFailureOf(sent.reason)
+        else if (sent.reason === 'fee-rose') {
+          // Nothing was signed. The new maximum is shown, and needs another click once the window arms again.
+          await describeAgain(offer)
+          offer.failure = 'fee-changed'
+        } else offer.failure = reviewFailureOf(sent.reason)
       } finally {
         sending = false
         refresh()

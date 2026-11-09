@@ -30,6 +30,8 @@ export interface ReviewPlan {
   asset: 'NEAR'
   /** The most the fees could take up front at today's gas price, in NEAR. Null when the chain couldn't be asked. */
   maxFee: string | null
+  /** The same in yoctoNEAR. Main signs only while the fees can't cost more than this, and asks again if they could. */
+  maxFeeYocto: string | null
   /** The deposit and that fee ceiling together, the most that can leave the account. Null without the fee. */
   maxTotal: string | null
   /** Each action the transaction holds, decoded. */
@@ -57,6 +59,8 @@ export type ReviewFailure =
   | 'no-gesture'
   /** It's not the plan, or the version of it, the window is showing. */
   | 'stale'
+  /** The fees could now cost more than the window showed, or it showed none: it shows the new maximum to check first. */
+  | 'fee-changed'
   /** The plan can't be approved or sent from where it is now. */
   | 'cannot-move'
   /** Another plan is being sent. */

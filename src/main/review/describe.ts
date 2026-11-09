@@ -35,6 +35,7 @@ export function describeForReview(plan: PlanView, network: string, maxFee: bigin
     amountYocto: transfer.deposit.toString(),
     asset: 'NEAR',
     maxFee: maxFee === null ? null : formatNear(maxFee),
+    maxFeeYocto: maxFee === null ? null : maxFee.toString(),
     maxTotal: maxFee === null ? null : formatNear(transfer.deposit + maxFee),
     actions: [{ kind: 'Transfer', amount, method: null }],
     expiresAt: plan.core.expiresAt,

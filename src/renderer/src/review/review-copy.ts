@@ -32,6 +32,7 @@ const FAILURES: Record<ReviewFailure, string> = {
   'not-armed': 'That was too quick after this window came up. Check the plan, then approve again.',
   'no-gesture': 'Approve with a click or the keyboard.',
   stale: 'This plan changed while you were looking. Check it again.',
+  'fee-changed': 'The most the network fee could cost has changed. Nothing was signed. Check the new maximum, then approve again.',
   'cannot-move': 'This plan can’t be approved any more.',
   busy: 'Ink is sending another plan. Try again in a moment.',
   'wrong-network': 'The NEAR server Ink reached isn’t on mainnet, so Ink signed nothing.',

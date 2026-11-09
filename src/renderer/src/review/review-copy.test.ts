@@ -16,6 +16,7 @@ const STATE: ReviewState = {
     amountYocto: '1000000000000000000000000',
     asset: 'NEAR',
     maxFee: '0.0003',
+    maxFeeYocto: '300000000000000000000',
     maxTotal: '1.0003',
     actions: [{ kind: 'Transfer', amount: '1', method: null }],
     expiresAt: '2026-11-09T12:30:00.000Z',

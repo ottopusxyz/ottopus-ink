@@ -5,14 +5,27 @@ import { nearPublicKey, nearTransferStep } from '../../shared/near/transaction'
 import { parseNear } from '../../shared/near/units'
 import type { PlanFailure, PlanIntent, PlanStep } from '../../shared/plan'
 import { storageHeld } from './balance'
-import { NearRpcError, type NearRpc } from './rpc'
+import { NearRpcError, type NearProtocolFees, type NearRpc } from './rpc'
 
 /**
- * Gas a transfer may burn, with room to spare: about 0.45 Tgas to an existing
- * account and about 0.85 Tgas when it creates an implicit one, before NEAR's
- * pessimistic pricing of receipts. Unused gas comes back.
+ * Room for the gas price to rise between building a plan and sending it. NEAR
+ * moves it by at most 1% a block, so doubling covers about a minute of full
+ * blocks in a row. Unused gas comes back, so the margin costs nothing.
  */
-export const TRANSFER_GAS_CEILING = 2_000_000_000_000n
+export const GAS_PRICE_MARGIN = 2n
+
+/**
+ * The most a transfer's fees can cost, yoctoNEAR. Every fee is counted as sent
+ * and executed, all at the higher of the gas price and the price receipts are
+ * bought at, doubled. A transfer that creates an implicit account also pays
+ * for creating it and its key, plus the account creation charge.
+ */
+export function transferFeeCeiling(fees: NearProtocolFees, gasPrice: bigint, createsAccount: boolean): bigint {
+  const parts = createsAccount ? [fees.receipt, fees.transfer, fees.createAccount, fees.addFullAccessKey] : [fees.receipt, fees.transfer]
+  const gas = parts.reduce((sum, part) => sum + part.send + part.exec, 0n)
+  const price = (gasPrice > fees.minGasPurchasePrice ? gasPrice : fees.minGasPurchasePrice) * GAS_PRICE_MARGIN
+  return gas * price + (createsAccount ? fees.accountCreationCharge : 0n)
+}
 
 export type StepsResult = { ok: true; steps: PlanStep[] } | { ok: false; reason: PlanFailure }
 
@@ -26,7 +39,7 @@ export const isNearSend = (intent: PlanIntent): boolean =>
  * later, so a plan that can't go through is never made:
  * - the amount is exact in yoctoNEAR;
  * - the recipient is a NEAR account id, and a named one already exists (only implicit accounts are created by a transfer);
- * - the balance covers the amount and the most the gas could cost.
+ * - the balance covers the amount and the most the fees could cost, creating the recipient included when it doesn't exist yet.
  */
 export async function buildNearSend(intent: PlanIntent, own: readonly Account[], rpc: NearRpc): Promise<StepsResult> {
   const from = own.find((account) => account.chain === 'near')?.address
@@ -37,10 +50,10 @@ export async function buildNearSend(intent: PlanIntent, own: readonly Account[],
   if (deposit === null || deposit === 0n || kind === null) return { ok: false, reason: 'bad-request' }
 
   try {
-    const [sender, receiver, gasPrice] = await Promise.all([rpc.viewAccount(from), kind === 'named' ? rpc.viewAccount(to) : null, rpc.gasPrice()])
+    const [sender, receiver, gasPrice, fees] = await Promise.all([rpc.viewAccount(from), rpc.viewAccount(to), rpc.gasPrice(), rpc.protocolFees()])
     if (kind === 'named' && receiver === null) return { ok: false, reason: 'recipient-unknown' }
     const available = sender ? sender.amount - storageHeld(sender) : 0n
-    if (available < deposit + gasPrice * TRANSFER_GAS_CEILING) return { ok: false, reason: 'insufficient-funds' }
+    if (available < deposit + transferFeeCeiling(fees, gasPrice, receiver === null)) return { ok: false, reason: 'insufficient-funds' }
   } catch (error) {
     if (error instanceof NearRpcError) return { ok: false, reason: 'chain-unavailable' }
     throw error

@@ -23,6 +23,12 @@ export interface VaultService {
   lock(): Promise<void>
   /** The public address on each chain. Read only, so it doesn't wait behind other actions. */
   accounts(): Promise<VaultResult<{ accounts: Account[] }>>
+  /**
+   * A slower read that starts from the addresses, such as a balance from the
+   * chain. Its answer is only given if the vault stayed unlocked throughout:
+   * a lock while it runs, even one followed by an unlock, makes it `locked`.
+   */
+  withAccounts<T>(read: (accounts: Account[]) => Promise<T>): Promise<VaultResult<{ value: T }>>
   /** One chain's address, for main to copy. The chain comes from the page, so it's checked. */
   address(chain: unknown): Promise<VaultResult<{ address: string }>>
   isUnlocked(): boolean
@@ -211,6 +217,14 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
     },
 
     accounts,
+
+    async withAccounts(read) {
+      const before = locks
+      const answer = await accounts()
+      if (!answer.ok) return answer
+      const value = await read(answer.accounts)
+      return locks === before ? { ok: true, value } : fail('locked')
+    },
 
     async address(chain) {
       if (typeof chain !== 'string' || !ACCOUNT_CHAINS.includes(chain as AccountChain)) return fail('bad-input')

@@ -126,27 +126,32 @@ const ownAccounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {
 
 /** What the wallet holds on NEAR, for get_portfolio. Public figures only, and only while unlocked, like the addresses. */
 const ownPortfolio = async (): Promise<PortfolioResult> => {
-  const own = await ownAccounts()
-  if (!own.ok) return { ok: false, reason: own.reason === 'no-vault' ? 'no-vault' : own.reason === 'locked' ? 'locked' : 'unavailable' }
-  const accountId = own.accounts.find((account) => account.chain === 'near')?.address
-  if (!accountId) return { ok: false, reason: 'unavailable' }
-  try {
-    const balance = await nearBalance(accountId, { rpc: nearRpc })
-    return {
-      ok: true,
-      near: {
-        accountId,
-        onChain: balance.onChain,
-        available: formatNear(balance.available),
-        staked: formatNear(balance.staked),
-        storage: formatNear(balance.storage),
-        pools: balance.pools.map(({ poolId, staked, unstaked }) => ({ poolId, staked: formatNear(staked), unstaked: formatNear(unstaked) })),
-        stakingComplete: balance.stakingComplete,
-      },
+  const wallet = getVault()
+  if (wallet.status().state === 'none') return { ok: false, reason: 'no-vault' }
+  // The vault answers only if it stayed unlocked for the whole read, so a lock while NEAR answers holds the balance back.
+  const read = await wallet.withAccounts(async (accounts): Promise<PortfolioResult> => {
+    const accountId = accounts.find((account) => account.chain === 'near')?.address
+    if (!accountId) return { ok: false, reason: 'unavailable' }
+    try {
+      const balance = await nearBalance(accountId, { rpc: nearRpc })
+      return {
+        ok: true,
+        near: {
+          accountId,
+          onChain: balance.onChain,
+          available: formatNear(balance.available),
+          staked: formatNear(balance.staked),
+          storage: formatNear(balance.storage),
+          pools: balance.pools.map(({ poolId, staked, unstaked }) => ({ poolId, staked: formatNear(staked), unstaked: formatNear(unstaked) })),
+          stakingComplete: balance.stakingComplete,
+        },
+      }
+    } catch {
+      return { ok: false, reason: 'unavailable' }
     }
-  } catch {
-    return { ok: false, reason: 'unavailable' }
-  }
+  })
+  if (!read.ok) return { ok: false, reason: read.reason === 'locked' ? 'locked' : 'unavailable' }
+  return read.value
 }
 
 /** Started with the first chat, so the app opens no socket until something needs one. */

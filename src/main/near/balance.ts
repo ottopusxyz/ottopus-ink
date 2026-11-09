@@ -1,5 +1,5 @@
 import { isNearAccountId } from '../../shared/near/account-id'
-import type { NearRpc } from './rpc'
+import type { NearAccountView, NearRpc } from './rpc'
 
 /** What NEAR holds back for each byte an account stores: 10^19 yoctoNEAR, so 100 kB is 1 NEAR. */
 export const STORAGE_YOCTO_PER_BYTE = 10n ** 19n
@@ -70,15 +70,19 @@ async function poolStake(rpc: NearRpc, poolId: string, accountId: string): Promi
   }
 }
 
+/** What storage holds back from the liquid balance: paid from a validator stake first, and never more than the balance. */
+export function storageHeld({ amount, locked, storageUsage }: NearAccountView): bigint {
+  const cost = storageUsage * STORAGE_YOCTO_PER_BYTE
+  const fromLiquid = cost > locked ? cost - locked : 0n
+  return fromLiquid < amount ? fromLiquid : amount
+}
+
 /** The NEAR account's balance: what can be sent, what storage holds back, and what's staked where. */
 export async function nearBalance(accountId: string, { rpc, fetch = globalThis.fetch, indexUrl = STAKING_INDEX_URL }: NearBalanceOptions): Promise<NearBalance> {
   const view = await rpc.viewAccount(accountId)
   if (!view) return { accountId, onChain: false, available: 0n, storage: 0n, staked: 0n, pools: [], stakingComplete: true }
 
-  // Storage is paid from the validator stake first, then from the liquid balance.
-  const storageCost = view.storageUsage * STORAGE_YOCTO_PER_BYTE
-  const fromLiquid = storageCost > view.locked ? storageCost - view.locked : 0n
-  const storage = fromLiquid < view.amount ? fromLiquid : view.amount
+  const storage = storageHeld(view)
 
   const poolIds = await poolsOf(accountId, fetch, indexUrl)
   const asked = (poolIds ?? []).slice(0, MAX_POOLS)

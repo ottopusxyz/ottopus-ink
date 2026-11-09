@@ -13,6 +13,8 @@ import { detectEntries } from './external/detect'
 import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
+import { buildNearSend, isNearSend } from './near/build'
+import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { createPlanStore } from './plans/store'
@@ -105,8 +107,13 @@ function assertAppFrame(event: IpcMainInvokeEvent): void {
 /** The last detection, shared by every caller until a refresh asks for a new one. */
 let agents: Promise<AgentStatus[]> | null = null
 
-/** Every plan made while the app runs. */
-const plans = createPlanStore()
+/** NEAR mainnet, for balances and for building and sending transfers. */
+const nearRpc = createNearRpc()
+
+/** Every plan made while the app runs. Each chain module builds the steps it knows; anything else stays a draft. */
+const plans = createPlanStore({
+  buildSteps: async (intent, own) => (isNearSend(intent) ? buildNearSend(intent, own, nearRpc) : { ok: true, steps: [] }),
+})
 
 /** The wallet's public addresses, for the agent's tools and plans. */
 const ownAccounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {

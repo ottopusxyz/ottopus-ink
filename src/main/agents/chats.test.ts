@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentStatus, ChatEvent, ChatPlan } from '../../shared/ipc'
+import type { PlanStatus } from '../../shared/plan'
 import { NO_EXTERNAL, type SessionExternal } from '../external/session'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './chats'
 import { startClaudeSession, type ChatSession, type ClaudeSessionOptions } from './claude-session'
@@ -20,15 +21,16 @@ const tools = {
   shim: '/app/shim.js',
   bridge: {
     socketPath: '/run/ink/mcp.sock',
-    addSession: (handlers?: { onPlan?: (plan: ChatPlan) => void }) => {
+    addSession: (handlers?: { onPlan?: (plan: ChatPlan, owner: string) => void }) => {
       proposePlan = handlers?.onPlan
       return { token: 'token-for-this-chat', connected: () => shimConnected, remove: removeTools }
     },
   },
 }
-let proposePlan: ((plan: ChatPlan) => void) | undefined
+let proposePlan: ((plan: ChatPlan, owner: string) => void) | undefined
 let shimConnected = true
 const inkTool = 'mcp__ottopus-ink__get_accounts'
+const PLAN: ChatPlan = { id: 'p', status: 'draft', outcome: 'send', asset: 'NEAR', amount: '1', chain: null, to: null, toAsset: null, toChain: null }
 const report = (extra: string[] = []): ChatEvent => ({
   type: 'session',
   tools: [inkTool, ...extra],
@@ -243,24 +245,52 @@ describe('a running chat', () => {
     }
     const seen: ChatEvent[] = []
     startChat(ready, env, tools, NO_EXTERNAL, (_id, event) => seen.push(event))
-    proposePlan?.(plan)
+    proposePlan?.(plan, 'owner')
     expect(seen).toEqual([])
 
     launched?.onEvent(report())
-    proposePlan?.(plan)
+    proposePlan?.(plan, 'owner')
     expect(seen.at(-1)).toEqual({ type: 'plan', plan })
 
     const before = seen.length
     launched?.onEvent({ type: 'ended', error: null })
-    proposePlan?.(plan)
+    proposePlan?.(plan, 'owner')
     expect(seen).toHaveLength(before + 1)
+  })
+
+  it('puts a plan up for review only once the lock is checked, and passes on each status it reaches until the chat ends', () => {
+    const review = vi.fn<(planId: string, owner: string, notify: (status: PlanStatus) => void) => void>()
+    const seen: ChatEvent[] = []
+    startChat(ready, env, { ...tools, review }, NO_EXTERNAL, (_id, event) => seen.push(event))
+    proposePlan?.(PLAN, 'owner-key')
+    expect(review).not.toHaveBeenCalled()
+
+    launched?.onEvent(report())
+    proposePlan?.(PLAN, 'owner-key')
+    expect(review).toHaveBeenCalledExactlyOnceWith('p', 'owner-key', expect.any(Function))
+    const notify = review.mock.calls[0]![2]
+    notify('awaiting_review')
+    expect(seen.at(-1)).toEqual({ type: 'plan-status', id: 'p', status: 'awaiting_review' })
+
+    const before = seen.length
+    launched?.onEvent({ type: 'ended', error: null })
+    notify('confirmed')
+    expect(seen).toHaveLength(before + 1)
+  })
+
+  it('puts up no plan from a session that broke the lock', () => {
+    const review = vi.fn()
+    startChat(ready, env, { ...tools, review }, NO_EXTERNAL, () => undefined)
+    launched?.onEvent(report(['Bash']))
+    proposePlan?.(PLAN, 'owner-key')
+    expect(review).not.toHaveBeenCalled()
   })
 
   it('passes on no plan once a session has broken the lock', () => {
     const seen: ChatEvent[] = []
     startChat(ready, env, tools, NO_EXTERNAL, (_id, event) => seen.push(event))
     launched?.onEvent(report(['Bash']))
-    proposePlan?.({ id: 'p', status: 'draft', outcome: 'send', asset: 'NEAR', amount: '1', chain: null, to: null, toAsset: null, toChain: null })
+    proposePlan?.(PLAN, 'owner')
     expect(seen.some((event) => event.type === 'plan')).toBe(false)
   })
 

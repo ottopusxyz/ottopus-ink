@@ -82,6 +82,19 @@ describe('applyChatEvent', () => {
     expect(after([{ type: 'tool-call', id: 't', name: 'x', input: '' }]).items.at(-1)).toMatchObject({ input: '' })
   })
 
+  it('moves a plan’s card along as main reports its status, and leaves other plans alone', () => {
+    const other = { ...plan, id: 'other-plan' }
+    const chat = after([{ type: 'plan', plan: other }, { type: 'plan', plan }, { type: 'plan-status', id: plan.id, status: 'confirmed' }])
+    expect(chat.plan).toEqual({ ...plan, status: 'confirmed' })
+    const cards = chat.items.flatMap((item) => (item.kind === 'plan' ? [item.plan] : []))
+    expect(cards).toEqual([other, { ...plan, status: 'confirmed' }])
+  })
+
+  it('ignores a status for a plan it has no card for', () => {
+    const chat = after([{ type: 'plan', plan }, { type: 'plan-status', id: 'unknown', status: 'confirmed' }])
+    expect(chat.plan).toBe(plan)
+  })
+
   it('keeps the newest plan and puts it in the conversation', () => {
     const chat = after([{ type: 'plan', plan }])
     expect(chat.plan).toBe(plan)

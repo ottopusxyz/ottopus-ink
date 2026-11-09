@@ -1,8 +1,8 @@
 import { BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { REVIEW_IPC, type ReviewState } from '../../shared/review'
-import { isAppUrl, secureWebPreferences } from '../security'
+import { secureWebPreferences } from '../security'
 import type { ReviewBroker } from './broker'
-import { isApprovalClick, isApprovalKey, isExplorerUrl } from './input'
+import { isApprovalClick, isApprovalKey, isExplorerUrl, isReviewCaller } from './input'
 
 export interface ReviewWindowOptions {
   /** The review page's preload, which exposes only `window.inkReview`. */
@@ -83,11 +83,7 @@ export function createReviewWindow({ preload, entry, load, devTools }: ReviewWin
 
   /** Only the review window's own top frame, on the review page, may call in. */
   const assertReviewFrame = (event: IpcMainInvokeEvent): void => {
-    const contents = win?.webContents
-    const frame = event.senderFrame
-    if (!contents || event.sender !== contents || !frame || frame !== contents.mainFrame || !isAppUrl(frame.url, entry)) {
-      throw new Error('IPC from an unexpected frame')
-    }
+    if (!isReviewCaller(event, win && !win.isDestroyed() ? win.webContents : null, entry)) throw new Error('IPC from an unexpected frame')
   }
 
   const text = (value: unknown): string => {

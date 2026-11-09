@@ -1,8 +1,26 @@
+import { isAppUrl } from '../security'
+
 /**
  * The review window's checks that don't need Electron itself, so they can be
- * tested: which input counts as a person approving, and which links the window
- * may open.
+ * tested: who may call the review channels, which input counts as a person
+ * approving, and which links the window may open.
  */
+
+/** An IPC call as Electron describes its sender. */
+export interface Caller {
+  sender: unknown
+  senderFrame: { url: string } | null
+}
+
+/**
+ * Whether a call comes from the review window's own top frame, on the review
+ * page. The chat's page, a frame inside the review page, or the review window
+ * after it was sent somewhere else, are all refused.
+ */
+export function isReviewCaller({ sender, senderFrame }: Caller, review: { mainFrame: unknown } | null, entry: string): boolean {
+  // With no review window, review is null, and no sender is.
+  return sender === review && senderFrame !== null && senderFrame === review?.mainFrame && isAppUrl(senderFrame.url, entry)
+}
 
 /** A mouse event as Electron's `input-event` reports it. */
 export interface MouseInput {

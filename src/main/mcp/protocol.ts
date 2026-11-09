@@ -1,6 +1,7 @@
 import type { Account, AccountChain } from '../../shared/accounts'
 import type { ChatPlan } from '../../shared/ipc'
 import type { PlanIntent, PlanStatus, PlanSummary, PlanToolResult, PlanTools } from '../../shared/plan'
+import type { PortfolioResult } from '../../shared/portfolio'
 import type { VaultResult } from '../../shared/vault'
 
 /** The server's name in the agent's tool names (`mcp__ottopus-ink__*`). Not `ottopus`: that's another product's connector. */
@@ -97,6 +98,8 @@ export interface McpHandlers {
   accounts?: () => Promise<VaultResult<{ accounts: Account[] }>>
   /** This chat's plans, which main owns. */
   plans?: PlanTools
+  /** What the wallet holds, read from each chain by main. */
+  portfolio?: () => Promise<PortfolioResult>
 }
 
 /** How each status reads to an agent. */
@@ -176,6 +179,40 @@ async function planAnswer(work: () => Promise<PlanToolResult>, id: string | null
   return result.ok ? { answer: toolAnswer(said(result.plan)), plan: result.plan } : { answer: planRefusal(result, id), plan: null }
 }
 
+/** get_portfolio's answer: the NEAR balance in words an agent can pass on, or why there isn't one. */
+async function portfolioAnswer(read: McpHandlers['portfolio'], args: unknown): Promise<object> {
+  const chain = isRecord(args) && typeof args.chain === 'string' ? args.chain.trim().toLowerCase() : ''
+  if (chain && chain !== 'near') return toolAnswer('Ink can only read NEAR balances so far.')
+  if (!read) return NOT_BUILT.get_portfolio ?? NOT_SET_UP
+  let answer: PortfolioResult
+  try {
+    answer = await read()
+  } catch {
+    answer = { ok: false, reason: 'unavailable' }
+  }
+  if (!answer.ok) {
+    if (answer.reason === 'no-vault') return NOT_SET_UP
+    if (answer.reason === 'locked') return toolAnswer('Ink is locked. Ask the person to unlock Ink, then try again.', true)
+    return toolAnswer('Ink couldn’t reach NEAR to read the balance. Try again in a moment.', true)
+  }
+  const { near } = answer
+  if (!near.onChain) {
+    return toolAnswer(
+      `NEAR account ${near.accountId} holds no NEAR yet. NEAR creates it with the first transfer into it, from any wallet or exchange. Other chains’ balances aren’t read yet.`,
+    )
+  }
+  const pools = near.pools.map((pool) => `${pool.poolId}: ${pool.staked} NEAR${pool.unstaked !== '0' ? `, plus ${pool.unstaked} NEAR unstaked and waiting to be withdrawn` : ''}`)
+  const lines = [
+    `NEAR account ${near.accountId}:`,
+    `- Available to send: ${near.available} NEAR`,
+    `- Staked: ${near.staked} NEAR${pools.length > 0 ? ` (${pools.join('; ')})` : ''}`,
+    `- Held for storage: ${near.storage} NEAR`,
+    ...(near.stakingComplete ? [] : ['Some staking pools couldn’t be read, so the staked amount may be higher.']),
+    'Other chains’ balances aren’t read yet.',
+  ]
+  return toolAnswer(lines.join('\n'))
+}
+
 async function accountsAnswer(read: McpHandlers['accounts']): Promise<object> {
   if (!read) return NOT_SET_UP
   let answer: VaultResult<{ accounts: Account[] }>
@@ -245,7 +282,7 @@ export function parseErrorResponse(): object {
  * server doesn't have gets a proper error rather than silence: Claude Code opens
  * with `server/discover` and falls back to `initialize` only when told no.
  */
-export async function handleMcpMessage(message: unknown, version: string, { onPlan, accounts, plans }: McpHandlers = {}): Promise<object | null> {
+export async function handleMcpMessage(message: unknown, version: string, { onPlan, accounts, plans, portfolio }: McpHandlers = {}): Promise<object | null> {
   if (!isRecord(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     const id = isRecord(message) && (typeof message.id === 'string' || typeof message.id === 'number') ? message.id : null
     return rpcError(id, INVALID_REQUEST, 'Not a JSON-RPC 2.0 request')
@@ -294,6 +331,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         return result(answered.answer)
       }
       if (params.name === 'get_accounts') return result(await accountsAnswer(accounts))
+      if (params.name === 'get_portfolio') return result(await portfolioAnswer(portfolio, params.arguments))
       return result(NOT_BUILT[params.name as string] ?? NOT_SET_UP)
     }
     default:

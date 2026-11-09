@@ -117,6 +117,17 @@ describe('startMcpBridge accounts', () => {
     expect(JSON.stringify(state.lines[0])).toContain(`near: ${'b'.repeat(64)}`)
   })
 
+  it('answers get_portfolio from what main passes in', async () => {
+    bridge.close()
+    const near = { accountId: 'b'.repeat(64), onChain: true, available: '1.25', staked: '0', storage: '0', pools: [], stakingComplete: true }
+    bridge = await startMcpBridge({ parentDir, version: '1', portfolio: async () => ({ ok: true, near }) })
+    const session = bridge.addSession()
+    const state = client()
+    state.socket.write(`${hello(session.token)}${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_portfolio' } })}\n`)
+    await answered(state)
+    expect(JSON.stringify(state.lines[0])).toContain('Available to send: 1.25 NEAR')
+  })
+
   /** A bridge whose get_accounts waits until released, and says when it has been asked. */
   async function holdingBridge() {
     bridge.close()

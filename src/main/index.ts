@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
+import { formatNear } from '../shared/near/units'
+import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
 import { detectAgents } from './agents/detect'
@@ -13,6 +15,7 @@ import { detectEntries } from './external/detect'
 import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
+import { nearBalance } from './near/balance'
 import { buildNearSend, isNearSend } from './near/build'
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
@@ -121,6 +124,31 @@ const ownAccounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {
   return wallet.status().state === 'none' ? { ok: false, reason: 'no-vault' } : wallet.accounts()
 }
 
+/** What the wallet holds on NEAR, for get_portfolio. Public figures only, and only while unlocked, like the addresses. */
+const ownPortfolio = async (): Promise<PortfolioResult> => {
+  const own = await ownAccounts()
+  if (!own.ok) return { ok: false, reason: own.reason === 'no-vault' ? 'no-vault' : own.reason === 'locked' ? 'locked' : 'unavailable' }
+  const accountId = own.accounts.find((account) => account.chain === 'near')?.address
+  if (!accountId) return { ok: false, reason: 'unavailable' }
+  try {
+    const balance = await nearBalance(accountId, { rpc: nearRpc })
+    return {
+      ok: true,
+      near: {
+        accountId,
+        onChain: balance.onChain,
+        available: formatNear(balance.available),
+        staked: formatNear(balance.staked),
+        storage: formatNear(balance.storage),
+        pools: balance.pools.map(({ poolId, staked, unstaked }) => ({ poolId, staked: formatNear(staked), unstaked: formatNear(unstaked) })),
+        stakingComplete: balance.stakingComplete,
+      },
+    }
+  } catch {
+    return { ok: false, reason: 'unavailable' }
+  }
+}
+
 /** Started with the first chat, so the app opens no socket until something needs one. */
 let mcpBridge: Promise<McpBridge> | null = null
 
@@ -131,6 +159,7 @@ function getMcpBridge(): Promise<McpBridge> {
     version: app.getVersion(),
     // Public addresses only, and only while unlocked. The agent's tools get this function, never the vault.
     accounts: ownAccounts,
+    portfolio: ownPortfolio,
     plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts }),
   }).catch((error: unknown) => {
     mcpBridge = null

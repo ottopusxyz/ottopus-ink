@@ -16,15 +16,19 @@ import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
 import { nearBalance } from './near/balance'
-import { buildNearSend, isNearSend } from './near/build'
+import { buildNearSend, isNearSend, nearSendFeeCeiling, nearTransferOf } from './near/build'
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
-import { createPlanStore } from './plans/store'
+import { createPlanStore, type PlanView } from './plans/store'
+import { createReviewBroker } from './review/broker'
+import { describeForReview } from './review/describe'
+import { createReviewWindow } from './review/window'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
 import { SignerHost } from './signer-host'
 import { createAutoLock } from './vault/auto-lock'
 import { copyAddress } from './vault/copy-address'
+import { createPlanSender, NEAR_NETWORK } from './vault/send-plan'
 import { createVaultService, type VaultService } from './vault/service'
 import { createVaultStore } from './vault/store'
 
@@ -32,13 +36,19 @@ const devServerUrl = process.env.ELECTRON_RENDERER_URL
 const rendererIndex = join(import.meta.dirname, '../renderer/index.html')
 /** The page the window loads; navigations and IPC are checked against it. */
 const appEntry = devServerUrl ?? pathToFileURL(rendererIndex).href
+const reviewIndex = join(import.meta.dirname, '../renderer/review.html')
+/** The review window's page, the only one the review channels answer. */
+const reviewEntry = devServerUrl ? new URL('review.html', devServerUrl).href : pathToFileURL(reviewIndex).href
 const signer = new SignerHost(join(import.meta.dirname, 'signer.js'), (status) => {
   sendToWindows(IPC.signerStatus, status)
   if (status === 'stopped') vault?.signerStopped()
 })
 
+/** The app's own windows, leaving out the review window, which hears only about its plan. */
+const appWindows = (): BrowserWindow[] => BrowserWindow.getAllWindows().filter((win) => !reviewWindow.owns(win.webContents))
+
 function sendToWindows(channel: string, ...args: unknown[]): void {
-  for (const win of BrowserWindow.getAllWindows()) {
+  for (const win of appWindows()) {
     if (!win.webContents.isDestroyed()) win.webContents.send(channel, ...args)
   }
 }
@@ -100,9 +110,9 @@ function createMainWindow(): BrowserWindow {
   return win
 }
 
-/** Every handler starts here: only the app's own page may call in. */
+/** Every handler starts here: only the app's own page may call in, and never the review window's. */
 function assertAppFrame(event: IpcMainInvokeEvent): void {
-  if (!isAppUrl(event.senderFrame?.url ?? '', appEntry)) {
+  if (reviewWindow.owns(event.sender) || !isAppUrl(event.senderFrame?.url ?? '', appEntry)) {
     throw new Error('IPC from an unexpected frame')
   }
 }
@@ -116,6 +126,36 @@ const nearRpc = createNearRpc()
 /** Every plan made while the app runs. Each chain module builds the steps it knows; anything else stays a draft. */
 const plans = createPlanStore({
   buildSteps: async (intent, own) => (isNearSend(intent) ? buildNearSend(intent, own, nearRpc) : { ok: true, steps: [] }),
+})
+
+/** The review window. It opens whenever a plan waits for review. */
+const reviewWindow = createReviewWindow({
+  preload: join(import.meta.dirname, '../preload/review.cjs'),
+  entry: reviewEntry,
+  load: (win) => void (devServerUrl ? win.loadURL(reviewEntry) : win.loadFile(reviewIndex)),
+  devTools: Boolean(devServerUrl),
+})
+
+/** What the review window shows for a plan: its own step decoded, and today's fee ceiling if NEAR answers. */
+async function describePlan(plan: PlanView) {
+  const transfer = nearTransferOf(plan.core)
+  let fee: bigint | null = null
+  if (transfer) fee = await nearSendFeeCeiling(nearRpc, transfer.receiverId).catch(() => null)
+  return describeForReview(plan, `NEAR ${NEAR_NETWORK}`, fee)
+}
+
+/** The only way a plan is approved: from the review window, by a person, then signed and sent. */
+const reviews = createReviewBroker({
+  store: plans,
+  sender: createPlanSender({
+    store: plans,
+    // Looked up each time, since the vault is made on first use.
+    vault: { sign: (core, hash, live) => getVault().sign(core, hash, live) },
+    rpc: nearRpc,
+  }),
+  describe: describePlan,
+  unlocked: () => vault?.isUnlocked() === true,
+  onState: (state) => reviewWindow.update(state),
 })
 
 /** The wallet's public addresses, for the agent's tools and plans. */
@@ -189,6 +229,7 @@ function getVault(): VaultService {
     onStatus: (status) => {
       if (status.state === 'unlocked') autoLock.noteInput()
       sendToWindows(IPC.vaultStatusChanged, status)
+      reviews.refresh()
     },
   })
   return vault
@@ -272,7 +313,11 @@ function registerIpc(): void {
     agents ??= agentEnv().then(detectAgents)
     const status = (await agents).find(({ id }) => id === agent)
     if (!status) throw new Error('Unknown agent')
-    const tools = { bridge: await getMcpBridge(), shim: join(import.meta.dirname, 'shim.js') }
+    const tools = {
+      bridge: await getMcpBridge(),
+      shim: join(import.meta.dirname, 'shim.js'),
+      review: (planId: string, owner: string, notify: Parameters<typeof reviews.offer>[2]) => void reviews.offer(planId, owner, notify),
+    }
     const env = await agentEnv()
     const external = await getExternalTools().forNewChat()
     // Nothing is left to show or close a chat for a page that went away during those waits.
@@ -389,7 +434,7 @@ function registerIpc(): void {
 }
 
 app.on('second-instance', () => {
-  const [win] = BrowserWindow.getAllWindows()
+  const [win] = appWindows()
   if (win) {
     if (win.isMinimized()) win.restore()
     win.focus()
@@ -414,6 +459,7 @@ void app.whenReady().then(() => {
   if (!devServerUrl) Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate(process.platform)))
 
   registerIpc()
+  reviewWindow.attach(reviews)
   signer.start()
   autoLock.start()
   powerMonitor.on('suspend', () => void vault?.lock())
@@ -421,7 +467,7 @@ void app.whenReady().then(() => {
   createMainWindow()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+    if (appWindows().length === 0) createMainWindow()
   })
 })
 

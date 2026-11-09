@@ -26,6 +26,26 @@ const nearError = (name: string): Reply => ({ body: { jsonrpc: '2.0', id: '1', e
 
 /** The shape mainnet sent for `near` on 9 Nov 2026. */
 const ACCOUNT = { amount: '69276417285492587988168221648', locked: '0', storage_usage: 182, code_hash: '11111111111111111111111111111111', block_height: 223737468 }
+/** The parts of mainnet's protocol config (protocol 88) a transfer's fees come from, as sent on 9 Nov 2026. */
+const PROTOCOL_CONFIG = {
+  protocol_version: 88,
+  runtime_config: {
+    account_creation_charge: '7000000000000000000000',
+    min_gas_purchase_price: '1000000000',
+    storage_amount_per_byte: '10000000000000000000',
+    transaction_costs: {
+      action_receipt_creation_config: { execution: 108059500000, send_not_sir: 108059500000, send_sir: 108059500000 },
+      action_creation_config: {
+        create_account_cost: { execution: 7200000000000, send_not_sir: 500000000000, send_sir: 500000000000 },
+        transfer_cost: { execution: 115123062500, send_not_sir: 115123062500, send_sir: 115123062500 },
+        add_key_cost: {
+          full_access_cost: { execution: 101765125000, send_not_sir: 101765125000, send_sir: 101765125000 },
+          function_call_cost: { execution: 102217625000, send_not_sir: 102217625000, send_sir: 102217625000 },
+        },
+      },
+    },
+  },
+}
 const BLOCK = base58.encode(new Uint8Array(32).fill(3))
 
 describe('the NEAR RPC client', () => {
@@ -84,6 +104,28 @@ describe('the NEAR RPC client', () => {
   it('reads the gas price', async () => {
     const { fetch } = fakeFetch({ [A]: [ok({ gas_price: '100000000' })] })
     expect(await rpc(fetch).gasPrice()).toBe(100_000_000n)
+  })
+
+  it('reads the fees a transfer pays from the protocol config', async () => {
+    const { fetch, asked } = fakeFetch({ [A]: [ok(PROTOCOL_CONFIG)] })
+    expect(await rpc(fetch).protocolFees()).toEqual({
+      minGasPurchasePrice: 1_000_000_000n,
+      accountCreationCharge: 7_000_000_000_000_000_000_000n,
+      receipt: { send: 108_059_500_000n, exec: 108_059_500_000n },
+      transfer: { send: 115_123_062_500n, exec: 115_123_062_500n },
+      createAccount: { send: 500_000_000_000n, exec: 7_200_000_000_000n },
+      addFullAccessKey: { send: 101_765_125_000n, exec: 101_765_125_000n },
+    })
+    expect(asked[0]!.request).toMatchObject({ method: 'EXPERIMENTAL_protocol_config', params: { finality: 'final' } })
+  })
+
+  it('refuses a protocol config missing a fee, rather than guessing it', async () => {
+    const runtime = PROTOCOL_CONFIG.runtime_config
+    const without = (change: Record<string, unknown>) => ({ ...PROTOCOL_CONFIG, runtime_config: { ...runtime, ...change } })
+    for (const config of [without({ min_gas_purchase_price: undefined }), without({ account_creation_charge: '-1' }), without({ transaction_costs: {} }), {}]) {
+      const { fetch } = fakeFetch({ [A]: [ok(config)] })
+      await expect(rpc(fetch).protocolFees()).rejects.toMatchObject({ reason: 'unavailable' })
+    }
   })
 
   it('calls a view method with JSON arguments and parses its JSON result', async () => {

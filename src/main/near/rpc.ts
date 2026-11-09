@@ -34,6 +34,26 @@ export interface NearAccessKeyView {
   blockHash: Uint8Array
 }
 
+/** Gas one fee costs: sent when the sender pays, executed when the receiver runs it. Sender and receiver differ for a send. */
+export interface NearFeeGas {
+  send: bigint
+  exec: bigint
+}
+
+/** What a transfer's fees are made of, from the protocol config the RPC runs. */
+export interface NearProtocolFees {
+  /** yoctoNEAR per gas the gas for receipts is bought at, at least (NEP-642). */
+  minGasPurchasePrice: bigint
+  /** yoctoNEAR charged for creating an account, implicit ones included (NEP-642). */
+  accountCreationCharge: bigint
+  /** Creating the receipt that carries the actions. */
+  receipt: NearFeeGas
+  transfer: NearFeeGas
+  /** What a transfer adds when it creates an implicit account: the account, then its full access key. */
+  createAccount: NearFeeGas
+  addFullAccessKey: NearFeeGas
+}
+
 /** How a sent transaction ended, as far as NEAR's final outcome says. */
 export interface NearTxOutcome {
   transactionId: string
@@ -71,6 +91,11 @@ function hash32(value: unknown, what: string): Uint8Array {
   }
   if (!bytes || bytes.length !== 32) throw new NearRpcError('unavailable', `the RPC sent a ${what} that isn't a 32-byte hash`)
   return bytes
+}
+
+function feeGas(value: unknown, what: string): NearFeeGas {
+  if (!isRecord(value)) throw new NearRpcError('unavailable', `the RPC sent no ${what} fee`)
+  return { send: whole(value.send_not_sir, `${what} fee`), exec: whole(value.execution, `${what} fee`) }
 }
 
 /** The name of NEAR's error, wherever in the reply it sits. */
@@ -159,6 +184,24 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
       const result = await call('gas_price', [null])
       if (!isRecord(result)) throw new NearRpcError('unavailable', 'the RPC sent no gas price')
       return whole(result.gas_price, 'gas price')
+    },
+
+    /** The fees a transfer pays, from the protocol config of the latest final block. */
+    async protocolFees(): Promise<NearProtocolFees> {
+      const result = await call('EXPERIMENTAL_protocol_config', { finality: 'final' })
+      const runtime = isRecord(result) && isRecord(result.runtime_config) ? result.runtime_config : null
+      const costs = runtime && isRecord(runtime.transaction_costs) ? runtime.transaction_costs : null
+      const actions = costs && isRecord(costs.action_creation_config) ? costs.action_creation_config : null
+      const addKey = actions && isRecord(actions.add_key_cost) ? actions.add_key_cost : null
+      if (!runtime || !costs || !actions || !addKey) throw new NearRpcError('unavailable', 'the RPC sent no protocol config')
+      return {
+        minGasPurchasePrice: whole(runtime.min_gas_purchase_price, 'minimum gas purchase price'),
+        accountCreationCharge: whole(runtime.account_creation_charge, 'account creation charge'),
+        receipt: feeGas(costs.action_receipt_creation_config, 'receipt'),
+        transfer: feeGas(actions.transfer_cost, 'transfer'),
+        createAccount: feeGas(actions.create_account_cost, 'create account'),
+        addFullAccessKey: feeGas(addKey.full_access_cost, 'add key'),
+      }
     },
 
     /** A contract's view method, with its JSON result parsed. */

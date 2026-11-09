@@ -165,6 +165,27 @@ describe('the NEAR RPC client', () => {
     expect(asked[0]!.request).toMatchObject({ method: 'send_tx', params: { signed_tx_base64: base64.encode(SIGNED), wait_until: 'FINAL' } })
   })
 
+  it('takes NEAR’s error on a send as final only if no earlier RPC could have taken it', async () => {
+    const { fetch } = fakeFetch({ [A]: [nearError('INVALID_TRANSACTION')], [B]: [] })
+    await expect(rpc(fetch).sendTransaction(SIGNED)).rejects.toMatchObject({ reason: 'rejected' })
+    // The first RPC may have sent it before its answer was lost, so the second's error says nothing about it.
+    for (const first of [{ throws: true }, { status: 503, body: {} }, nearError('TIMEOUT_ERROR'), { body: 'not json-rpc' }]) {
+      for (const second of [nearError('INVALID_TRANSACTION'), nearError('UNKNOWN_ACCOUNT')]) {
+        const { fetch, asked } = fakeFetch({ [A]: [first], [B]: [second] })
+        await expect(rpc(fetch).sendTransaction(SIGNED)).rejects.toMatchObject({ reason: 'unavailable' })
+        expect(asked.map(({ url }) => url)).toEqual([A, B])
+      }
+    }
+    // Its outcome after a lost answer is still read as usual.
+    const { fetch: recovered } = fakeFetch({ [A]: [{ throws: true }], [B]: [ok(outcome())] })
+    expect(await rpc(recovered).sendTransaction(SIGNED)).toMatchObject({ ok: true })
+  })
+
+  it('takes a later RPC’s error as final for anything but a send', async () => {
+    const { fetch } = fakeFetch({ [A]: [{ throws: true }], [B]: [nearError('INVALID_TRANSACTION')] })
+    await expect(rpc(fetch).gasPrice()).rejects.toMatchObject({ reason: 'rejected' })
+  })
+
   it('won’t send bytes that aren’t a signed transfer', async () => {
     const { fetch, asked } = fakeFetch({ [A]: [ok(outcome())] })
     await expect(rpc(fetch).sendTransaction(Uint8Array.of(1, 2, 3))).rejects.toBeInstanceOf(NearDecodeError)

@@ -4,7 +4,7 @@ import type { Account } from '../../shared/accounts'
 import { encodeSignedTransaction, encodeTransfer, nearPublicKey, nearTransferStep, transactionId } from '../../shared/near/transaction'
 import type { PlanIntent, PlanStatus, PlanStep } from '../../shared/plan'
 import type { LiveInputs, SignedStep, VaultResult } from '../../shared/vault'
-import { NearRpcError, type NearRpc } from '../near/rpc'
+import { createNearRpc, NearRpcError, type NearRpc } from '../near/rpc'
 import { createPlanStore } from '../plans/store'
 import { createPlanSender } from './send-plan'
 
@@ -160,6 +160,20 @@ describe('sending an approved plan', () => {
       const { id, sender } = await setup({ rpc: fakeRpc({ sendTransaction }) })
       expect(await sender.send(id, OWNER)).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'failed' } })
     }
+  })
+
+  it('leaves it submitted when one RPC lost its answer and the next said the nonce was used', async () => {
+    // Through the real client: the first RPC may have sent it, so the second's error is no proof it never ran.
+    let calls = 0
+    const fetch = (async () => {
+      if (calls++ === 0) throw new TypeError('fetch failed')
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: '1', error: { name: 'HANDLER_ERROR', cause: { name: 'INVALID_TRANSACTION', info: {} }, data: { TxExecutionError: { InvalidTxError: { InvalidNonce: {} } } } } }))
+    }) as unknown as typeof globalThis.fetch
+    const { sendTransaction } = createNearRpc({ urls: ['https://a.example', 'https://b.example'], fetch })
+    const { store, id, sender } = await setup({ rpc: fakeRpc({ sendTransaction }) })
+    expect(await sender.send(id, OWNER)).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'submitted' } })
+    expect(calls).toBe(2)
+    expect(store.get(id, OWNER)?.status).toBe('submitted')
   })
 
   it('leaves a send with no answer submitted, since it may still go through', async () => {

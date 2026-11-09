@@ -1,10 +1,14 @@
 import { randomBytes } from 'node:crypto'
 import { entropyToMnemonic, mnemonicToSeedSync, validateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Account } from '../shared/accounts'
-import type { NewPhrase, VaultResult } from '../shared/vault'
+import { decodeTransfer, nearPublicKey, nearTransferStep } from '../shared/near/transaction'
+import type { PlanCore } from '../shared/plan'
+import { planHash } from '../shared/plan-hash'
+import type { LiveInputs, NewPhrase, SignedStep, VaultResult } from '../shared/vault'
 import { deriveAccounts } from './accounts'
+import { signSteps } from './sign'
 import { DEFAULT_LOG_N, openEntropy, sealEntropy } from './vault-crypto'
 import { createVaultState } from './vault-state'
 
@@ -20,6 +24,11 @@ vi.mock('@scure/bip39', async (importOriginal) => {
       return actual.mnemonicToSeed(...args)
     },
   }
+})
+
+vi.mock('./sign', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./sign')>()
+  return { ...actual, signSteps: vi.fn(actual.signSteps) }
 })
 
 vi.mock('./accounts', async (importOriginal) => {
@@ -335,5 +344,112 @@ describe('accounts', () => {
     const seed = derive.mock.calls[0]?.[0]
     expect(seed).toHaveLength(64)
     expect([...seed!].every((byte) => byte === 0)).toBe(true)
+  })
+})
+
+describe('signing a plan', () => {
+  const LIVE: LiveInputs[] = [{ nonce: '12', blockHash: '07'.repeat(32) }]
+
+  beforeEach(() => {
+    vi.mocked(signSteps).mockClear()
+  })
+
+  /** A plan sending from the vault's own NEAR account, and its hash. */
+  async function approved(state: ReturnType<typeof make>, deposit = '1000') {
+    const { accounts } = expectOk((await state.handle({ op: 'accounts' })) as VaultResult<{ accounts: Account[] }>)
+    const id = accounts.find((account) => account.chain === 'near')?.address as string
+    const plan: PlanCore = {
+      hashVersion: 1,
+      id: '00000000-0000-4000-8000-000000000001',
+      createdBy: 'ui',
+      createdAt: '2026-11-09T00:00:00.000Z',
+      expiresAt: '2026-11-09T00:30:00.000Z',
+      intent: { outcome: 'send', asset: 'NEAR', amount: deposit, chain: 'near', to: 'alice.near', toAsset: null, toChain: null },
+      recipient: { address: 'alice.near', why: 'typed' },
+      summary: `Send ${deposit} NEAR on near to alice.near`,
+      steps: [nearTransferStep({ signerId: id, publicKey: nearPublicKey(Uint8Array.from(Buffer.from(id, 'hex'))), receiverId: 'alice.near', deposit })],
+    }
+    return { plan, hash: planHash(plan), id }
+  }
+
+  const sign = async (state: ReturnType<typeof make>, plan: unknown, hash: unknown, live: unknown = LIVE) =>
+    (await state.handle({ op: 'sign', plan, hash, live } as never)) as VaultResult<{ signed: SignedStep[] }>
+
+  async function unlocked() {
+    const { state, blob } = await created()
+    expectOk(await state.handle({ op: 'unlock', blob, password: PASSWORD }))
+    return { state, blob }
+  }
+
+  it('signs the approved plan from the vault’s own account', async () => {
+    const { state } = await unlocked()
+    const { plan, hash, id } = await approved(state)
+    const { signed } = expectOk(await sign(state, plan, hash))
+    expect(signed).toHaveLength(1)
+    const bytes = signed[0]!.signed
+    expect(decodeTransfer(bytes.subarray(0, bytes.length - 65))).toMatchObject({ signerId: id, receiverId: 'alice.near', deposit: 1000n, nonce: 12n })
+  })
+
+  it('signs nothing while locked', async () => {
+    const { state, blob } = await created()
+    expectOk(await state.handle({ op: 'unlock', blob, password: PASSWORD }))
+    const { plan, hash } = await approved(state)
+    await state.handle({ op: 'lock' })
+    expect(await sign(state, plan, hash)).toEqual({ ok: false, reason: 'locked' })
+  })
+
+  it('refuses a plan that isn’t the one approved', async () => {
+    const { state } = await unlocked()
+    const { plan, hash } = await approved(state)
+    const other = await approved(state, '2000')
+    // The steps of another plan under this one's hash: the hash covers every field.
+    expect(await sign(state, { ...plan, steps: other.plan.steps }, hash)).toEqual({ ok: false, reason: 'plan-mismatch' })
+    expect(await sign(state, { ...plan, summary: 'Send 1 NEAR' }, hash)).toEqual({ ok: false, reason: 'plan-mismatch' })
+    expect(await sign(state, plan, other.hash)).toEqual({ ok: false, reason: 'plan-mismatch' })
+    expect(await sign(state, plan, hash.toUpperCase())).toEqual({ ok: false, reason: 'plan-mismatch' })
+    expect(await sign(state, plan, undefined)).toEqual({ ok: false, reason: 'plan-mismatch' })
+    // Something that can't be hashed at all.
+    expect(await sign(state, { ...plan, steps: [1.5] }, hash)).toEqual({ ok: false, reason: 'plan-mismatch' })
+    expect(vi.mocked(signSteps)).not.toHaveBeenCalled()
+  })
+
+  it('refuses an approved plan it won’t sign', async () => {
+    const { state } = await unlocked()
+    const theirs = 'b'.repeat(64)
+    const { plan } = await approved(state)
+    const notOurs = { ...plan, steps: [nearTransferStep({ signerId: theirs, publicKey: nearPublicKey(Uint8Array.from(Buffer.from(theirs, 'hex'))), receiverId: 'alice.near', deposit: '1' })] }
+    expect(await sign(state, notOurs, planHash(notOurs))).toEqual({ ok: false, reason: 'refused' })
+    const ours = await approved(state)
+    expect(await sign(state, ours.plan, ours.hash, [])).toEqual({ ok: false, reason: 'refused' })
+    expect(await sign(state, ours.plan, ours.hash, [{ nonce: '0', blockHash: '07'.repeat(32) }])).toEqual({ ok: false, reason: 'refused' })
+  })
+
+  it('signs nothing if a lock arrives while the seed is worked out, even if it unlocks again', async () => {
+    for (const thenUnlock of [false, true]) {
+      const { state, blob } = await unlocked()
+      const { plan, hash } = await approved(state)
+      let release = () => {}
+      seedGate.wait = new Promise((resolve) => (release = resolve))
+      const signing = sign(state, plan, hash)
+      await state.handle({ op: 'lock' })
+      if (thenUnlock) expectOk(await state.handle({ op: 'unlock', blob, password: PASSWORD }))
+      seedGate.wait = null
+      release()
+      expect(await signing).toEqual({ ok: false, reason: 'locked' })
+    }
+    expect(vi.mocked(signSteps)).not.toHaveBeenCalled()
+  })
+
+  it('wipes the seed it signed with, whether it signed or refused', async () => {
+    const { state } = await unlocked()
+    const { plan, hash } = await approved(state)
+    const steps = vi.mocked(signSteps)
+    expectOk(await sign(state, plan, hash))
+    expect(await sign(state, plan, hash, [])).toEqual({ ok: false, reason: 'refused' })
+    expect(steps).toHaveBeenCalledTimes(2)
+    for (const [seed] of steps.mock.calls) {
+      expect(seed).toHaveLength(64)
+      expect([...seed].every((byte) => byte === 0)).toBe(true)
+    }
   })
 })

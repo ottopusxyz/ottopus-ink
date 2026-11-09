@@ -31,6 +31,7 @@ describe('wallet copy', () => {
     const reasons: VaultFailure[] = [
       'bad-input', 'busy', 'exists', 'no-vault', 'nothing-pending', 'weak-password', 'invalid-words', 'backup-mismatch',
       'wrong-password', 'damaged', 'keyring-unavailable', 'locked-meanwhile', 'write-failed', 'signer-stopped', 'locked',
+      'plan-mismatch', 'refused',
     ]
     for (const reason of reasons) expect(vaultMessage(reason)).toMatch(/\.$/)
   })

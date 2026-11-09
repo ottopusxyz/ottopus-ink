@@ -70,11 +70,21 @@ Addresses are worked out in the signer and are only available while unlocked. Th
 The agent can only propose a plan. Main builds it, and a plan can pay only your own address on the chain the funds land on, or an address you sent in that chat, never one the agent came up with.
 
 - **What counts as sent:** main records the messages from each chat's box, which the agent can't add to. That keeps a prompt injection from picking the recipient. It can't tell a person typing from compromised page code, so the review window, outside the page, is where you confirm the recipient before anything is signed.
-
 - **The hash:** a plan's fixed part is hashed as SHA-256 over `ottopus-ink/plan/v1`, a NUL byte and its RFC 8785 canonical JSON. Numbers must be whole and amounts are decimal strings, so nothing can round. The signer will recompute this hash before it signs.
 - **Statuses:** draft, awaiting review, approved, signing, submitted, confirmed, failed, cancelled, expired and blocked, and a plan moves between them only as one table allows. Nothing is approved without review, and nothing is signed without approval.
 - **Expiry and ownership:** a plan expires 30 minutes after it's made if nobody acts on it. Each plan belongs to the chat that made it.
-- **Not built yet:** plans hold no transaction yet, so they stay drafts. The NEAR module adds the transaction, then the review window and the signer take it from there.
+- **Not built yet:** a plan stays a draft until the review window (#16) shows it and the signer (#13) signs it. A NEAR send already holds its exact transfer; other plans hold no transaction yet.
+
+## NEAR
+
+Ink talks to NEAR mainnet through [FastNEAR](https://fastnear.com)'s free RPC, and falls back to `rpc.mainnet.near.org` when FastNEAR is down. No key or account is needed.
+
+- **Balance:** what you can send is your balance less what NEAR holds back for storage (10^19 yoctoNEAR a byte). An account using 770 bytes or fewer, such as a plain one with a single key, is stored free (NEP-448), so nothing is held back. Staked NEAR is read from each pool, using FastNEAR's index only to find which pools to ask. `get_portfolio` gives the agent these figures, and holds them back if Ink locks while they're read.
+- **A new account:** your NEAR address is an implicit account. It doesn't exist on chain until something is sent to it, and until then its balance is zero.
+- **Sending:** `create_plan` for NEAR on NEAR builds one Transfer from your implicit account, with the amount in yoctoNEAR. It refuses an amount NEAR can't send exactly, a named recipient that doesn't exist (only implicit accounts are created by a transfer), and a balance that can't cover the amount plus the most the fees could cost. Fees come from mainnet's protocol config and are worked out as nearcore does. Send fees are burnt at the gas price, and exec fees are bought at no less than the 10^9 yoctoNEAR receipt price (NEP-642), with room for the gas price to double. A transfer to an implicit account also pays for creating the account (and, for a NEAR implicit one, its key), whether or not it exists yet. That's about 0.0003 NEAR to a named account and 0.0077 NEAR to an implicit one, and most of it comes back. NEAR's 0.007 NEAR account creation charge comes out of that refund.
+- **Encoding:** Ink writes and reads NEAR transactions itself, in one small file (`src/shared/near/transaction.ts`). It reads only a version 0 transaction holding one ed25519 Transfer, so the signer can refuse anything it couldn't read. Tests check the bytes, hash and signature against near-api-js 7.4.0, which is a dev dependency only.
+- **Signing:** the signer derives the key at `m/44'/397'/0'`, signs, and wipes the key right after. It signs only a transfer from your own implicit account, after reading its own bytes back. It isn't connected yet, and comes with the signer's sign path (#13).
+- **Outcomes:** a sent transfer counts as done only from a final outcome about that transaction: its hash and signer must match, and the transaction and every receipt must have run.
 
 ## Prior work
 

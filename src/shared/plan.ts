@@ -96,6 +96,12 @@ export type PlanFailure =
   | 'not-found'
   /** The plan's status doesn't allow that move. */
   | 'cannot-move'
+  /** The account can't cover the amount and the most the fee could be. */
+  | 'insufficient-funds'
+  /** The recipient is a named account that doesn't exist, so nothing could arrive. */
+  | 'recipient-unknown'
+  /** The chain couldn't be reached to build the plan. */
+  | 'chain-unavailable'
 
 /** What an agent's chat learns about one of its plans. */
 export interface PlanSummary {

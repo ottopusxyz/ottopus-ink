@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { Account } from '../../shared/accounts'
-import { PLAN_STATUSES, type PlanCore, type PlanCreator, type PlanFailure, type PlanIntent, type PlanStatus } from '../../shared/plan'
+import { PLAN_STATUSES, type PlanCore, type PlanCreator, type PlanFailure, type PlanIntent, type PlanStatus, type PlanStep } from '../../shared/plan'
 import { PlanIntegrityError } from './canonical'
 import { planHash } from './hash'
 import { allowedRecipient } from './recipients'
@@ -56,7 +56,18 @@ interface Entry {
   deadline: number
 }
 
+/**
+ * Fills in a plan's steps from its checked intent: the chain module's exact
+ * unsigned fields, or nothing when no module handles the intent yet, which
+ * leaves the plan a draft. A failure means the plan can't go through.
+ */
+export type BuildSteps = (intent: PlanIntent, own: readonly Account[]) => Promise<{ ok: true; steps: PlanStep[] } | { ok: false; reason: PlanFailure }>
+
+const NO_STEPS: BuildSteps = async () => ({ ok: true, steps: [] })
+
 export interface PlanStoreOptions {
+  /** The chain modules' step builders, behind one function. */
+  buildSteps?: BuildSteps
   now?: () => Date
   /** Milliseconds that only ever go forward, for timing a plan's life whatever the wall clock does. */
   monotonic?: () => number
@@ -88,7 +99,7 @@ const goodAmount = (amount: string) => amount.length <= MAX_AMOUNT_CHARS && AMOU
  * Its status is kept beside the core, outside the hash, and only moves the way
  * the status table allows.
  */
-export function createPlanStore({ now = () => new Date(), monotonic = () => performance.now(), newId = randomUUID }: PlanStoreOptions = {}) {
+export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(), monotonic = () => performance.now(), newId = randomUUID }: PlanStoreOptions = {}) {
   const plans = new Map<string, Entry>()
   /** When each owner last made plans, for the per-minute limit. */
   const madeAt = new Map<string, number[]>()
@@ -128,7 +139,13 @@ export function createPlanStore({ now = () => new Date(), monotonic = () => perf
   }
 
   return {
-    create({ intent, createdBy, owner, own, typed }: NewPlan): PlanResult<{ plan: PlanView }> {
+    /**
+     * Makes a plan, if its intent is well formed, it pays only whom it may, the
+     * owner isn't over the limit, and its chain module can build its steps. The
+     * limit is counted before building, so a chat can't make Ink call a chain
+     * more often than it may make plans.
+     */
+    async create({ intent, createdBy, owner, own, typed }: NewPlan): Promise<PlanResult<{ plan: PlanView }>> {
       const words = [intent.asset, intent.chain, intent.to, intent.toAsset, intent.toChain].filter((field) => field !== null)
       if (!goodAmount(intent.amount) || !intent.asset || !words.every((word) => WORD.test(word))) return { ok: false, reason: 'bad-request' }
       if (intent.outcome === 'send' && !intent.to) return { ok: false, reason: 'bad-request' }
@@ -144,6 +161,11 @@ export function createPlanStore({ now = () => new Date(), monotonic = () => perf
       if (recent.length >= PLANS_PER_MINUTE || !makeRoom()) return { ok: false, reason: 'too-many' }
       madeAt.set(owner, [...recent, tick])
 
+      const built = await buildSteps({ ...intent }, own)
+      if (!built.ok) return { ok: false, reason: built.reason }
+      // Other plans may have filled the store while the steps were built.
+      if (!makeRoom()) return { ok: false, reason: 'too-many' }
+
       const at = now()
 
       const core: PlanCore = deepFreeze({
@@ -155,8 +177,8 @@ export function createPlanStore({ now = () => new Date(), monotonic = () => perf
         intent: { ...intent },
         recipient,
         summary: summaryOf(intent),
-        // Chain modules add the exact unsigned fields; until they do, a plan is a draft.
-        steps: [],
+        // Copied into plain objects, so only the strings the hash covers can be in them.
+        steps: built.steps.map(({ chain, action, fields }) => ({ chain, action, fields: { ...fields } })),
       })
       const entry: Entry = { core, hash: planHash(core), owner, status: 'draft', deadline: monotonic() + PLAN_TTL_MS }
       plans.set(core.id, entry)

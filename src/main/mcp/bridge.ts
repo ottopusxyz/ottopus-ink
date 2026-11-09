@@ -15,6 +15,8 @@ export interface McpBridgeOptions {
   helloTimeoutMs?: number
   /** The wallet's public addresses, for get_accounts. Main passes this in so agent code never imports the vault. */
   accounts?: McpHandlers['accounts']
+  /** What the wallet holds, for get_portfolio. Also a closure from main, for the same reason. */
+  portfolio?: McpHandlers['portfolio']
   /**
    * One session's plan tools. `owner` names the session, so a chat only ever sees
    * its own plans, and `typed` gives the person's own messages in it.
@@ -85,7 +87,7 @@ interface BridgeSession {
  * The socket sits in a new 0700 folder and is itself 0600. Only hashes of tokens
  * are kept, so a lookup doesn't compare against the secret.
  */
-export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, accounts, plans }: McpBridgeOptions): Promise<McpBridge> {
+export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, accounts, plans, portfolio }: McpBridgeOptions): Promise<McpBridge> {
   mkdirSync(parentDir, { recursive: true })
   const dir = mkdtempSync(join(parentDir, 'ottopus-ink-'))
   const socketPath = join(dir, 'mcp.sock')
@@ -141,7 +143,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, acco
       inFlight++
       let response: object | null
       try {
-        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, accounts, plans: session.plans })
+        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, accounts, plans: session.plans, portfolio })
       } catch {
         response = parseErrorResponse()
       } finally {

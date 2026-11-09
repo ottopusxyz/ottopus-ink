@@ -4,6 +4,8 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
+import { formatNear } from '../shared/near/units'
+import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
 import { detectAgents } from './agents/detect'
@@ -13,6 +15,9 @@ import { detectEntries } from './external/detect'
 import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
+import { nearBalance } from './near/balance'
+import { buildNearSend, isNearSend } from './near/build'
+import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { createPlanStore } from './plans/store'
@@ -105,13 +110,48 @@ function assertAppFrame(event: IpcMainInvokeEvent): void {
 /** The last detection, shared by every caller until a refresh asks for a new one. */
 let agents: Promise<AgentStatus[]> | null = null
 
-/** Every plan made while the app runs. */
-const plans = createPlanStore()
+/** NEAR mainnet, for balances and for building and sending transfers. */
+const nearRpc = createNearRpc()
+
+/** Every plan made while the app runs. Each chain module builds the steps it knows; anything else stays a draft. */
+const plans = createPlanStore({
+  buildSteps: async (intent, own) => (isNearSend(intent) ? buildNearSend(intent, own, nearRpc) : { ok: true, steps: [] }),
+})
 
 /** The wallet's public addresses, for the agent's tools and plans. */
 const ownAccounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {
   const wallet = getVault()
   return wallet.status().state === 'none' ? { ok: false, reason: 'no-vault' } : wallet.accounts()
+}
+
+/** What the wallet holds on NEAR, for get_portfolio. Public figures only, and only while unlocked, like the addresses. */
+const ownPortfolio = async (): Promise<PortfolioResult> => {
+  const wallet = getVault()
+  if (wallet.status().state === 'none') return { ok: false, reason: 'no-vault' }
+  // The vault answers only if it stayed unlocked for the whole read, so a lock while NEAR answers holds the balance back.
+  const read = await wallet.withAccounts(async (accounts): Promise<PortfolioResult> => {
+    const accountId = accounts.find((account) => account.chain === 'near')?.address
+    if (!accountId) return { ok: false, reason: 'unavailable' }
+    try {
+      const balance = await nearBalance(accountId, { rpc: nearRpc })
+      return {
+        ok: true,
+        near: {
+          accountId,
+          onChain: balance.onChain,
+          available: formatNear(balance.available),
+          staked: formatNear(balance.staked),
+          storage: formatNear(balance.storage),
+          pools: balance.pools.map(({ poolId, staked, unstaked }) => ({ poolId, staked: formatNear(staked), unstaked: formatNear(unstaked) })),
+          stakingComplete: balance.stakingComplete,
+        },
+      }
+    } catch {
+      return { ok: false, reason: 'unavailable' }
+    }
+  })
+  if (!read.ok) return { ok: false, reason: read.reason === 'locked' ? 'locked' : 'unavailable' }
+  return read.value
 }
 
 /** Started with the first chat, so the app opens no socket until something needs one. */
@@ -124,6 +164,7 @@ function getMcpBridge(): Promise<McpBridge> {
     version: app.getVersion(),
     // Public addresses only, and only while unlocked. The agent's tools get this function, never the vault.
     accounts: ownAccounts,
+    portfolio: ownPortfolio,
     plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts }),
   }).catch((error: unknown) => {
     mcpBridge = null

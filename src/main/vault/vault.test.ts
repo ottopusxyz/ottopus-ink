@@ -498,6 +498,31 @@ describe('accounts', () => {
     await service.lock()
     expect(await asking).toEqual({ ok: false, reason: 'locked' })
   })
+
+  it('answer a slower read made from them only if the vault stayed unlocked throughout', async () => {
+    const { service } = setup()
+    expect(await service.withAccounts(async () => 'never')).toEqual({ ok: false, reason: 'locked' })
+    await createVault(service)
+    const { accounts } = expectOk(await service.accounts())
+    expect(await service.withAccounts(async (given) => given)).toEqual({ ok: true, value: accounts })
+
+    let release = () => {}
+    const slow = () => new Promise<string>((resolve) => (release = () => resolve('balance')))
+    const locked = service.withAccounts(slow)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await service.lock()
+    release()
+    expect(await locked).toEqual({ ok: false, reason: 'locked' })
+
+    // Locked and unlocked again while it ran: still not given, since the read began before the lock.
+    expectOk(await service.unlock(PASSWORD))
+    const relocked = service.withAccounts(slow)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await service.lock()
+    expectOk(await service.unlock(PASSWORD))
+    release()
+    expect(await relocked).toEqual({ ok: false, reason: 'locked' })
+  })
 })
 
 describe('what a page can send', () => {

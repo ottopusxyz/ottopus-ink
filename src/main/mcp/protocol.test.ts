@@ -123,6 +123,61 @@ describe('handleMcpMessage', () => {
     })
   })
 
+  describe('get_portfolio', () => {
+    const ID = 'a'.repeat(64)
+    const HOLDING = { accountId: ID, onChain: true, available: '4.99', staked: '5', storage: '0.00182', pools: [{ poolId: 'one.poolv1.near', staked: '5', unstaked: '0' }], stakingComplete: true }
+    const portfolioOf = async (portfolio: McpHandlers['portfolio'], args: unknown = {}) => {
+      const message = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_portfolio', arguments: args } }
+      return ((await handleMcpMessage(message, '1', { portfolio })) as { result: { content: { text: string }[]; isError: boolean } }).result
+    }
+
+    it('gives the NEAR balance: available, staked by pool, and held for storage', async () => {
+      const answer = await portfolioOf(async () => ({ ok: true, near: HOLDING }))
+      expect(answer).toEqual({
+        content: [
+          {
+            type: 'text',
+            text: [
+              `NEAR account ${ID}:`,
+              '- Available to send: 4.99 NEAR',
+              '- Staked: 5 NEAR (one.poolv1.near: 5 NEAR)',
+              '- Held for storage: 0.00182 NEAR',
+              'Other chains’ balances aren’t read yet.',
+            ].join('\n'),
+          },
+        ],
+        isError: false,
+      })
+    })
+
+    it('says what is waiting to be withdrawn, and when some pools couldn’t be read', async () => {
+      const near = { ...HOLDING, pools: [{ poolId: 'one.poolv1.near', staked: '5', unstaked: '2' }], stakingComplete: false }
+      const { content } = await portfolioOf(async () => ({ ok: true, near }))
+      expect(content[0]!.text).toContain('one.poolv1.near: 5 NEAR, plus 2 NEAR unstaked and waiting to be withdrawn')
+      expect(content[0]!.text).toContain('the staked amount may be higher')
+    })
+
+    it('explains an implicit account nothing was sent to yet', async () => {
+      const { content } = await portfolioOf(async () => ({ ok: true, near: { ...HOLDING, onChain: false, available: '0', staked: '0', storage: '0', pools: [] } }))
+      expect(content[0]!.text).toBe(`NEAR account ${ID} holds no NEAR yet. NEAR creates it with the first transfer into it, from any wallet or exchange. Other chains’ balances aren’t read yet.`)
+    })
+
+    it('says so while locked, with no wallet, or when NEAR can’t be reached', async () => {
+      expect(await portfolioOf(async () => ({ ok: false, reason: 'locked' }))).toMatchObject({ isError: true, content: [{ text: 'Ink is locked. Ask the person to unlock Ink, then try again.' }] })
+      expect(await portfolioOf(async () => ({ ok: false, reason: 'no-vault' }))).toMatchObject({ isError: false, content: [{ text: 'The wallet is not set up yet.' }] })
+      expect((await portfolioOf(async () => ({ ok: false, reason: 'unavailable' }))).content[0]!.text).toContain('couldn’t reach NEAR')
+      expect((await portfolioOf(async () => Promise.reject(new Error('boom')))).content[0]!.text).toContain('couldn’t reach NEAR')
+    })
+
+    it('reads nothing when asked about another chain', async () => {
+      let reads = 0
+      const read = async () => (reads++, { ok: true as const, near: HOLDING })
+      for (const chain of ['base', 'solana']) expect((await portfolioOf(read, { chain })).content[0]!.text).toBe('Ink can only read NEAR balances so far.')
+      expect((await portfolioOf(read, { chain: 'NEAR' })).content[0]!.text).toContain('Available to send')
+      expect(reads).toBe(1)
+    })
+  })
+
   describe('create_plan', () => {
     /** Plan tools that make whatever they're asked, so these tests see only what the protocol does. */
     const fakePlans = (asked: PlanIntent[]): PlanTools => ({
@@ -201,6 +256,20 @@ describe('handleMcpMessage', () => {
       expect(plans).toEqual([])
       expect(result.isError).toBe(true)
       expect(result.content[0]!.text).toContain('typed themselves')
+    })
+
+    it.each([
+      ['insufficient-funds', 'get_portfolio'],
+      ['recipient-unknown', 'doesn’t exist'],
+      ['chain-unavailable', 'Try again'],
+    ] as const)('tells the agent what to do when the chain module refuses: %s', async (reason, said) => {
+      const plans: ChatPlan[] = []
+      const refusing: PlanTools = { ...fakePlans([]), create: async () => ({ ok: false, reason }) }
+      const message = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_plan', arguments: { outcome: 'send', asset: 'NEAR', amount: '1', chain: 'near', to: 'alice.near' } } }
+      const { result } = (await handleMcpMessage(message, '1', { onPlan: (plan) => plans.push(plan), plans: refusing })) as { result: { content: { text: string }[]; isError: boolean } }
+      expect(plans).toEqual([])
+      expect(result).toMatchObject({ isError: true })
+      expect(result.content[0]!.text).toContain(said)
     })
 
     it.each([

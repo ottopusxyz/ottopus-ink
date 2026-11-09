@@ -36,7 +36,7 @@ export function agentPlanTools({ store, owner, typed, accounts }: AgentPlanConte
         return { ok: false, reason: 'unavailable' }
       }
       if (!own.ok) return { ok: false, reason: own.reason === 'no-vault' ? 'no-vault' : own.reason === 'locked' ? 'locked' : 'unavailable' }
-      const made = store.create({ intent, createdBy: 'agent', owner, own: own.accounts, typed: typed() })
+      const made = await store.create({ intent, createdBy: 'agent', owner, own: own.accounts, typed: typed() })
       return made.ok ? { ok: true, plan: summaryOf(made.plan) } : made
     },
 

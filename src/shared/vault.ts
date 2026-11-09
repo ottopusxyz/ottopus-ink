@@ -1,6 +1,7 @@
 /** What main, the signer and the page agree on about the vault. Types and limits only: no secrets, no crypto. */
 
 import type { Account } from './accounts'
+import type { PlanCore } from './plan'
 
 export type VaultWordCount = 12 | 24
 
@@ -49,6 +50,10 @@ export type VaultFailure =
   | 'signer-stopped'
   /** This needs the vault unlocked. */
   | 'locked'
+  /** The plan the signer was given isn't the one approved: its hash is different. */
+  | 'plan-mismatch'
+  /** The signer won't sign what the plan asks for: it isn't something the signer built and read back itself. */
+  | 'refused'
 
 export type VaultResult<T = object> = ({ ok: true } & T) | { ok: false; reason: VaultFailure }
 
@@ -64,6 +69,18 @@ export interface NewPhrase {
   check: number[]
 }
 
+/** What a step needs from the chain at the moment it's signed: the next nonce as a decimal, and a recent block hash as hex. */
+export interface LiveInputs {
+  nonce: string
+  blockHash: string
+}
+
+/** A signed step: the bytes to send, and the transaction's id, which NEAR also calls its hash. */
+export interface SignedStep {
+  signed: Uint8Array
+  transactionId: string
+}
+
 /** What main can ask the signer to do with the vault. */
 export type VaultRequest =
   | { op: 'begin-create'; words: VaultWordCount }
@@ -73,6 +90,12 @@ export type VaultRequest =
   | { op: 'unlock'; blob: string; password: string }
   | { op: 'lock' }
   | { op: 'accounts' }
+  /**
+   * Sign every step of a plan the person approved. The signer works out the
+   * hash itself and refuses unless it's the approved one. Live holds, for each
+   * step, what is fetched from the chain just before signing.
+   */
+  | { op: 'sign'; plan: PlanCore; hash: string; live: LiveInputs[] }
 
 export type VaultOp = VaultRequest['op']
 
@@ -87,4 +110,6 @@ export interface VaultReplies {
   lock: object
   /** The public address on each chain. No keys. */
   accounts: { accounts: Account[] }
+  /** One signed transaction per step, in the plan's order. */
+  sign: { signed: SignedStep[] }
 }

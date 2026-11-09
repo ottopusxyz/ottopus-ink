@@ -32,6 +32,8 @@ const MESSAGES: Record<VaultFailure, string> = {
   'write-failed': 'Ink couldn’t save the wallet. Check there’s free disk space, then try again.',
   'signer-stopped': 'The signing process stopped. Try again.',
   locked: 'Unlock Ink first.',
+  'plan-mismatch': 'This isn’t the plan you approved, so Ink didn’t sign it.',
+  refused: 'Ink won’t sign this plan, because it isn’t something Ink built and checked itself.',
 }
 
 export const vaultMessage = (reason: VaultFailure): string => MESSAGES[reason]

@@ -3,7 +3,10 @@ import { entropyToMnemonic, mnemonicToEntropy, mnemonicToSeed, validateMnemonic 
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, type BackupAnswer, type VaultFailure, type VaultRequest, type VaultResult, type VaultWordCount } from '../shared/vault'
 import type { Account } from '../shared/accounts'
+import type { PlanCore } from '../shared/plan'
+import { planHash } from '../shared/plan-hash'
 import { deriveAccounts } from './accounts'
+import { signSteps, SignRefusal } from './sign'
 import { DEFAULT_LOG_N, openEntropy, sealEntropy, VaultCryptoError } from './vault-crypto'
 
 const BACKUP_CHECKS = 3
@@ -11,6 +14,15 @@ const ENTROPY_BYTES: Record<VaultWordCount, number> = { 12: 16, 24: 32 }
 
 const fail = (reason: VaultFailure) => ({ ok: false, reason }) as const
 const done = <T extends object>(value: T): VaultResult<object> => ({ ok: true, ...value })
+
+/** Whether the plan hashes to the approved hash. A plan that can't be hashed at all isn't the approved one either. */
+function sameHash(plan: unknown, hash: unknown): boolean {
+  try {
+    return typeof hash === 'string' && planHash(plan as PlanCore) === hash
+  } catch {
+    return false
+  }
+}
 
 const cleanWord = (word: string) => word.normalize('NFKD').trim().toLowerCase()
 
@@ -128,6 +140,23 @@ export function createVaultState({ logN = DEFAULT_LOG_N }: VaultStateOptions = {
           }
         }
         return done({ accounts })
+      }
+      case 'sign': {
+        const entropy = unlocked
+        if (!entropy) return fail('locked')
+        if (!sameHash(request.plan, request.hash)) return fail('plan-mismatch')
+        const before = locks
+        const seed = await mnemonicToSeed(entropyToMnemonic(entropy, wordlist))
+        try {
+          // Signing itself runs in one go, so a lock can only land while the seed is worked out.
+          if (locks !== before) return fail('locked')
+          return done({ signed: signSteps(seed, request.plan.steps, request.live) })
+        } catch (error) {
+          if (error instanceof SignRefusal) return fail('refused')
+          throw error
+        } finally {
+          seed.fill(0)
+        }
       }
     }
   }

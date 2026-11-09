@@ -104,7 +104,7 @@ describe('the NEAR RPC client', () => {
 
   it('reads an access key’s nonce and the block it came from', async () => {
     const { fetch, asked } = fakeFetch({ [A]: [ok({ nonce: 223737468000004, permission: 'FullAccess', block_hash: BLOCK, block_height: 1 })] })
-    expect(await rpc(fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).toEqual({ nonce: 223737468000004n, blockHash: new Uint8Array(32).fill(3) })
+    expect(await rpc(fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).toEqual({ nonce: 223737468000004n, blockHash: new Uint8Array(32).fill(3), blockHeight: 1n })
     expect(asked[0]!.request.params).toMatchObject({ request_type: 'view_access_key', public_key: 'ed25519:abc' })
     // How mainnet says a key is missing, on 9 Nov 2026: a result with an error string, not a JSON-RPC error.
     const missing = { block_hash: BLOCK, block_height: 223739905, error: 'access key ed25519:1111 does not exist while viewing', logs: [] }
@@ -114,6 +114,16 @@ describe('the NEAR RPC client', () => {
     await expect(rpc(other.fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).rejects.toMatchObject({ reason: 'rejected' })
     const short = fakeFetch({ [A]: [ok({ nonce: 1, block_hash: base58.encode(new Uint8Array(31)) })], [B]: [] })
     await expect(rpc(short.fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).rejects.toBeInstanceOf(NearRpcError)
+    const noHeight = fakeFetch({ [A]: [ok({ nonce: 1, block_hash: BLOCK })], [B]: [] })
+    await expect(rpc(noHeight.fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).rejects.toBeInstanceOf(NearRpcError)
+  })
+
+  it('reads which network the RPC is on', async () => {
+    const { fetch, asked } = fakeFetch({ [A]: [ok({ chain_id: 'testnet', genesis_hash: BLOCK }), ok({})] })
+    const client = rpc(fetch)
+    expect(await client.chainId()).toBe('testnet')
+    expect(asked[0]?.request).toMatchObject({ method: 'status', params: [] })
+    await expect(client.chainId()).rejects.toMatchObject({ reason: 'unavailable' })
   })
 
   it('reads the gas price', async () => {
@@ -155,6 +165,27 @@ describe('the NEAR RPC client', () => {
     const { fetch, asked } = fakeFetch({ [A]: [ok(outcome())] })
     expect(await rpc(fetch).sendTransaction(SIGNED)).toEqual({ transactionId: TX_ID, ok: true, failure: null })
     expect(asked[0]!.request).toMatchObject({ method: 'send_tx', params: { signed_tx_base64: base64.encode(SIGNED), wait_until: 'FINAL' } })
+  })
+
+  it('takes NEAR’s error on a send as final only if no earlier RPC could have taken it', async () => {
+    const { fetch } = fakeFetch({ [A]: [nearError('INVALID_TRANSACTION')], [B]: [] })
+    await expect(rpc(fetch).sendTransaction(SIGNED)).rejects.toMatchObject({ reason: 'rejected' })
+    // The first RPC may have sent it before its answer was lost, so the second's error says nothing about it.
+    for (const first of [{ throws: true }, { status: 503, body: {} }, nearError('TIMEOUT_ERROR'), { body: 'not json-rpc' }]) {
+      for (const second of [nearError('INVALID_TRANSACTION'), nearError('UNKNOWN_ACCOUNT')]) {
+        const { fetch, asked } = fakeFetch({ [A]: [first], [B]: [second] })
+        await expect(rpc(fetch).sendTransaction(SIGNED)).rejects.toMatchObject({ reason: 'unavailable' })
+        expect(asked.map(({ url }) => url)).toEqual([A, B])
+      }
+    }
+    // Its outcome after a lost answer is still read as usual.
+    const { fetch: recovered } = fakeFetch({ [A]: [{ throws: true }], [B]: [ok(outcome())] })
+    expect(await rpc(recovered).sendTransaction(SIGNED)).toMatchObject({ ok: true })
+  })
+
+  it('takes a later RPC’s error as final for anything but a send', async () => {
+    const { fetch } = fakeFetch({ [A]: [{ throws: true }], [B]: [nearError('INVALID_TRANSACTION')] })
+    await expect(rpc(fetch).gasPrice()).rejects.toMatchObject({ reason: 'rejected' })
   })
 
   it('won’t send bytes that aren’t a signed transfer', async () => {

@@ -44,26 +44,37 @@ export const isNearSend = (intent: PlanIntent): boolean =>
   intent.outcome === 'send' && intent.chain?.toLowerCase() === 'near' && intent.asset.toUpperCase() === 'NEAR'
 
 /**
+ * Whether NEAR would take this send now: a named recipient exists (only
+ * implicit accounts are created by a transfer), and the sender's balance covers
+ * the deposit and the most the fees could take up front at today's gas price.
+ * Checked when a plan is made and again just before it's signed, since the
+ * balance and gas price may have moved in between. Throws `NearRpcError`.
+ */
+export async function nearSendFits(rpc: NearRpc, from: string, to: string, deposit: bigint): Promise<'recipient-unknown' | 'insufficient-funds' | null> {
+  const kind = nearAccountKind(to)
+  if (kind === null) return 'recipient-unknown'
+  const [sender, receiver, gasPrice, fees] = await Promise.all([rpc.viewAccount(from), kind === 'named' ? rpc.viewAccount(to) : null, rpc.gasPrice(), rpc.protocolFees()])
+  if (kind === 'named' && receiver === null) return 'recipient-unknown'
+  const available = sender ? sender.amount - storageHeld(sender) : 0n
+  return available < deposit + transferFeeCeiling(fees, gasPrice, kind) ? 'insufficient-funds' : null
+}
+
+/**
  * The step for sending NEAR from the person's own account: their implicit
  * account, its key, and the exact deposit. It checks what NEAR would refuse
- * later, so a plan that can't go through is never made:
- * - the amount is exact in yoctoNEAR;
- * - the recipient is a NEAR account id, and a named one already exists (only implicit accounts are created by a transfer);
- * - the balance covers the amount and the most the fees could take up front.
+ * later, so a plan that can't go through is never made: the amount is exact in
+ * yoctoNEAR, the recipient is a NEAR account id, and the send fits.
  */
 export async function buildNearSend(intent: PlanIntent, own: readonly Account[], rpc: NearRpc): Promise<StepsResult> {
   const from = own.find((account) => account.chain === 'near')?.address
   const deposit = parseNear(intent.amount)
   const to = intent.to ?? ''
-  const kind = nearAccountKind(to)
   if (!from || nearAccountKind(from) !== 'implicit') return { ok: false, reason: 'chain-unavailable' }
-  if (deposit === null || deposit === 0n || kind === null) return { ok: false, reason: 'bad-request' }
+  if (deposit === null || deposit === 0n || nearAccountKind(to) === null) return { ok: false, reason: 'bad-request' }
 
   try {
-    const [sender, receiver, gasPrice, fees] = await Promise.all([rpc.viewAccount(from), kind === 'named' ? rpc.viewAccount(to) : null, rpc.gasPrice(), rpc.protocolFees()])
-    if (kind === 'named' && receiver === null) return { ok: false, reason: 'recipient-unknown' }
-    const available = sender ? sender.amount - storageHeld(sender) : 0n
-    if (available < deposit + transferFeeCeiling(fees, gasPrice, kind)) return { ok: false, reason: 'insufficient-funds' }
+    const unfit = await nearSendFits(rpc, from, to, deposit)
+    if (unfit) return { ok: false, reason: unfit }
   } catch (error) {
     if (error instanceof NearRpcError) return { ok: false, reason: 'chain-unavailable' }
     throw error

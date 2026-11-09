@@ -33,6 +33,7 @@ export interface NearAccessKeyView {
   nonce: bigint
   /** The block the answer came from: recent enough to build a transaction on. */
   blockHash: Uint8Array
+  blockHeight: bigint
 }
 
 /** Gas one fee costs: sent when the sender pays, executed when the receiver runs it. Sender and receiver differ for a send. */
@@ -156,10 +157,17 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
   /**
    * One JSON-RPC call, trying each RPC until one answers. A transport failure
    * moves on to the next; an answer from NEAR, error or not, is final.
+   *
+   * Sending is different once an RPC has failed to answer: it may have taken
+   * the transaction anyway, so a later RPC's error (an invalid nonce, say,
+   * because the first one's went through) proves nothing. `sends` makes such an
+   * error `unavailable`, not `rejected`.
    */
-  async function call(method: string, params: unknown, timeout = timeoutMs): Promise<unknown> {
+  async function call(method: string, params: unknown, timeout = timeoutMs, { sends = false } = {}): Promise<unknown> {
     const body = JSON.stringify({ jsonrpc: '2.0', id: `ink-${++nextId}`, method, params })
-    for (const url of urls) {
+    for (const [index, url] of urls.entries()) {
+      // Reaching a later RPC means every earlier one went unanswered.
+      const unanswered = index > 0
       let reply: unknown
       try {
         const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(timeout) })
@@ -171,6 +179,7 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
       if (!isRecord(reply)) continue
       if (isRecord(reply.error)) {
         const name = errorName(reply.error)
+        if (sends && unanswered) throw new NearRpcError('unavailable', `NEAR answered ${name}, but an earlier RPC may have taken the transaction`)
         if (name === 'UNKNOWN_ACCOUNT' || name === 'UNKNOWN_ACCESS_KEY') throw new NearRpcError('unknown-account', `NEAR answered ${name}`)
         // Overloaded or behind: another RPC may do better.
         if (name === 'TIMEOUT_ERROR' || name === 'INTERNAL_ERROR' || name === 'UNKNOWN_BLOCK' || name === 'NO_SYNCED_BLOCKS') continue
@@ -210,7 +219,14 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
         if (/does not exist/.test(result.error)) return null
         throw new NearRpcError('rejected', 'NEAR could not read the access key')
       }
-      return { nonce: whole(result.nonce, 'nonce'), blockHash: hash32(result.block_hash, 'block hash') }
+      return { nonce: whole(result.nonce, 'nonce'), blockHash: hash32(result.block_hash, 'block hash'), blockHeight: whole(result.block_height, 'block height') }
+    },
+
+    /** Which NEAR network the RPC is on, as it says: `mainnet` for the real one. */
+    async chainId(): Promise<string> {
+      const result = await call('status', [])
+      if (!isRecord(result) || typeof result.chain_id !== 'string') throw new NearRpcError('unavailable', 'the RPC sent no chain id')
+      return result.chain_id
     },
 
     /** yoctoNEAR per unit of gas in the latest block. */
@@ -261,7 +277,7 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
     async sendTransaction(signed: Uint8Array): Promise<NearTxOutcome> {
       const unsigned = signed.subarray(0, signed.length - 65)
       const expected = { transactionId: idOf(unsigned), senderId: decodeTransfer(unsigned).signerId }
-      return outcomeOf(await call('send_tx', { signed_tx_base64: base64.encode(signed), wait_until: 'FINAL' }, sendTimeoutMs), expected)
+      return outcomeOf(await call('send_tx', { signed_tx_base64: base64.encode(signed), wait_until: 'FINAL' }, sendTimeoutMs, { sends: true }), expected)
     },
 
     /**

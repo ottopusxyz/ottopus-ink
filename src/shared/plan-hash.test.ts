@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import type { PlanCore } from '../../shared/plan'
 import { canonicalize, PlanIntegrityError } from './canonical'
-import { PLAN_DOMAIN, planHash } from './hash'
+import type { PlanCore } from './plan'
+import { PLAN_DOMAIN, planHash } from './plan-hash'
 
 describe('canonicalize', () => {
   it('escapes strings as RFC 8785 does (its own example, section 3.2.2)', () => {
@@ -118,8 +117,10 @@ describe('planHash', () => {
     expect(planHash(VECTOR)).toBe(VECTOR_HASH)
   })
 
-  it('hashes the domain, a NUL byte and the canonical text, in that order', () => {
-    const expected = createHash('sha256').update(Buffer.concat([Buffer.from(PLAN_DOMAIN), Buffer.from([0]), Buffer.from(VECTOR_CANONICAL)])).digest('hex')
+  it('hashes the domain, a NUL byte and the canonical text, in that order', async () => {
+    // WebCrypto, not the library planHash uses, so the two can't share a mistake.
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${PLAN_DOMAIN}\0${VECTOR_CANONICAL}`))
+    const expected = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
     expect(planHash(VECTOR)).toBe(expected)
     expect(PLAN_DOMAIN).toBe('ottopus-ink/plan/v1')
   })

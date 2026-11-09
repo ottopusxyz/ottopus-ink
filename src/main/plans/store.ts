@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { Account } from '../../shared/accounts'
 import { PLAN_STATUSES, type PlanCore, type PlanCreator, type PlanFailure, type PlanIntent, type PlanStatus, type PlanStep } from '../../shared/plan'
-import { PlanIntegrityError } from './canonical'
-import { planHash } from './hash'
+import { PlanIntegrityError } from '../../shared/canonical'
+import { planHash } from '../../shared/plan-hash'
 import { allowedRecipient } from './recipients'
 import { canTransition, effectiveStatus, isFinal } from './status'
 

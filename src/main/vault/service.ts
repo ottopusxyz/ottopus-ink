@@ -1,5 +1,6 @@
 import { ACCOUNT_CHAINS, type Account, type AccountChain } from '../../shared/accounts'
-import { MAX_PASSWORD_LENGTH, type BackupAnswer, type NewPhrase, type VaultFailure, type VaultRequest, type VaultResult, type VaultStatus } from '../../shared/vault'
+import type { PlanCore } from '../../shared/plan'
+import { MAX_PASSWORD_LENGTH, type BackupAnswer, type LiveInputs, type NewPhrase, type SignedStep, type VaultFailure, type VaultRequest, type VaultResult, type VaultStatus } from '../../shared/vault'
 import { VaultStoreError, type VaultStore } from './store'
 
 /** Longer than any real phrase, to stop a page sending the signer something huge. */
@@ -29,6 +30,13 @@ export interface VaultService {
    * a lock while it runs, even one followed by an unlock, makes it `locked`.
    */
   withAccounts<T>(read: (accounts: Account[]) => Promise<T>): Promise<VaultResult<{ value: T }>>
+  /**
+   * Has the signer sign a plan the person approved, under the hash they
+   * approved. The answer counts only if the vault stayed unlocked throughout:
+   * a lock while it signs wins, even one followed by an unlock, and whatever
+   * was signed is dropped unsent.
+   */
+  sign(plan: PlanCore, hash: string, live: LiveInputs[]): Promise<VaultResult<{ signed: SignedStep[] }>>
   /** One chain's address, for main to copy. The chain comes from the page, so it's checked. */
   address(chain: unknown): Promise<VaultResult<{ address: string }>>
   isUnlocked(): boolean
@@ -224,6 +232,14 @@ export function createVaultService({ store, ask, onStatus }: VaultServiceOptions
       if (!answer.ok) return answer
       const value = await read(answer.accounts)
       return locks === before ? { ok: true, value } : fail('locked')
+    },
+
+    async sign(plan, hash, live) {
+      if (!unlocked) return fail('locked')
+      const before = locks
+      const answer = (await ask({ op: 'sign', plan, hash, live })) as VaultResult<{ signed: SignedStep[] }>
+      if (locks !== before) return fail('locked')
+      return answer.ok ? { ok: true, signed: answer.signed } : answer
     },
 
     async address(chain) {

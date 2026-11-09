@@ -3,7 +3,7 @@ import type { Account } from '../../shared/accounts'
 import type { PlanIntent } from '../../shared/plan'
 import type { VaultResult } from '../../shared/vault'
 import { agentPlanTools } from './agent-tools'
-import { planHash } from './hash'
+import { planHash } from '../../shared/plan-hash'
 import { createPlanStore } from './store'
 
 const OWN: Account[] = [{ chain: 'near', path: "m/44'/397'/0'", address: 'a'.repeat(64) }]

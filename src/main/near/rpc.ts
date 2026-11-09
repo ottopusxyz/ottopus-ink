@@ -213,6 +213,13 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
       return { nonce: whole(result.nonce, 'nonce'), blockHash: hash32(result.block_hash, 'block hash') }
     },
 
+    /** Which NEAR network the RPC is on, as it says: `mainnet` for the real one. */
+    async chainId(): Promise<string> {
+      const result = await call('status', [])
+      if (!isRecord(result) || typeof result.chain_id !== 'string') throw new NearRpcError('unavailable', 'the RPC sent no chain id')
+      return result.chain_id
+    },
+
     /** yoctoNEAR per unit of gas in the latest block. */
     async gasPrice(): Promise<bigint> {
       const result = await call('gas_price', [null])

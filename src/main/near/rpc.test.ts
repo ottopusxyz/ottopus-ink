@@ -116,6 +116,14 @@ describe('the NEAR RPC client', () => {
     await expect(rpc(short.fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).rejects.toBeInstanceOf(NearRpcError)
   })
 
+  it('reads which network the RPC is on', async () => {
+    const { fetch, asked } = fakeFetch({ [A]: [ok({ chain_id: 'testnet', genesis_hash: BLOCK }), ok({})] })
+    const client = rpc(fetch)
+    expect(await client.chainId()).toBe('testnet')
+    expect(asked[0]?.request).toMatchObject({ method: 'status', params: [] })
+    await expect(client.chainId()).rejects.toMatchObject({ reason: 'unavailable' })
+  })
+
   it('reads the gas price', async () => {
     const { fetch } = fakeFetch({ [A]: [ok({ gas_price: '100000000' })] })
     expect(await rpc(fetch).gasPrice()).toBe(100_000_000n)

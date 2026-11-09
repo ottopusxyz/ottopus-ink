@@ -6,7 +6,7 @@ import type { PlanIntent, PlanStatus, PlanStep } from '../../shared/plan'
 import type { LiveInputs, SignedStep, VaultResult } from '../../shared/vault'
 import { createNearRpc, NearRpcError, type NearRpc } from '../near/rpc'
 import { createPlanStore } from '../plans/store'
-import { createPlanSender } from './send-plan'
+import { createPlanSender, TRANSACTION_VALIDITY_BLOCKS } from './send-plan'
 
 const FROM = 'a'.repeat(64)
 const KEY = nearPublicKey(hexToBytes(FROM))
@@ -17,6 +17,7 @@ const STEP = nearTransferStep({ signerId: FROM, publicKey: KEY, receiverId: 'ali
 
 const NONCE = 41n
 const BLOCK = new Uint8Array(32).fill(9)
+const HEIGHT = 1_000n
 const UNSIGNED = encodeTransfer({ signerId: FROM, publicKey: hexToBytes(FROM), nonce: NONCE + 1n, receiverId: 'alice.near', blockHash: BLOCK, deposit: 10n ** 24n })
 const SIGNED: SignedStep = { signed: encodeSignedTransaction(UNSIGNED, new Uint8Array(64)), transactionId: transactionId(UNSIGNED) }
 
@@ -34,7 +35,7 @@ function fakeRpc(change: Partial<Record<keyof NearRpc, unknown>> = {}) {
   const rpc = {
     chainId: vi.fn(async () => 'mainnet'),
     viewAccount: vi.fn(async (id: string) => (id === FROM ? { amount: 5n * 10n ** 24n, locked: 0n, storageUsage: 100n } : { amount: 1n, locked: 0n, storageUsage: 100n })),
-    viewAccessKey: vi.fn(async () => ({ nonce: NONCE, blockHash: BLOCK })),
+    viewAccessKey: vi.fn(async () => ({ nonce: NONCE, blockHash: BLOCK, blockHeight: HEIGHT })),
     gasPrice: vi.fn(async () => 100_000_000n),
     protocolFees: vi.fn(async () => FEES),
     callView: vi.fn(),
@@ -135,7 +136,7 @@ describe('sending an approved plan', () => {
     const rpc = fakeRpc({
       viewAccessKey: async () => {
         cancel()
-        return { nonce: NONCE, blockHash: BLOCK }
+        return { nonce: NONCE, blockHash: BLOCK, blockHeight: HEIGHT }
       },
     })
     const { store, id, vault, sender } = await setup({ rpc })
@@ -192,19 +193,67 @@ describe('sending an approved plan', () => {
   })
 
   it('signs the next plan above a nonce the chain doesn’t show yet', async () => {
-    // The first send gets no answer, or lands while the RPC still reports the old nonce: either way NONCE + 1 is taken.
-    for (const sendTransaction of [async () => Promise.reject(new NearRpcError('unavailable', 'timed out')), async () => ({ transactionId: SIGNED.transactionId, ok: true, failure: null })]) {
-      const { store, id, vault, sender } = await setup({ rpc: fakeRpc({ sendTransaction }) })
-      expect((await sender.send(id, OWNER)).ok).toBe(true)
-      const next = await approvedAnother(store)
-      expect((await sender.send(next, OWNER)).ok).toBe(true)
+    // The first send landed, but the RPC still reports the old nonce: NONCE + 1 is taken all the same.
+    const { store, id, vault, sender } = await setup()
+    expect((await sender.send(id, OWNER)).ok).toBe(true)
+    expect((await sender.send(await approvedAnother(store), OWNER)).ok).toBe(true)
+    expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
+  })
+
+  describe('after a send that got no answer', () => {
+    /** A chain that never answers the first send, and whose key reads as given at each later look. */
+    async function unansweredFirst() {
+      const key = { nonce: NONCE, blockHash: BLOCK, blockHeight: HEIGHT }
+      let sends = 0
+      const rpc = fakeRpc({
+        viewAccessKey: async () => ({ ...key }),
+        sendTransaction: async () => {
+          if (sends++ === 0) throw new NearRpcError('unavailable', 'timed out')
+          return { transactionId: SIGNED.transactionId, ok: true, failure: null }
+        },
+      })
+      const setUp = await setup({ rpc })
+      expect(await setUp.sender.send(setUp.id, OWNER)).toMatchObject({ ok: true, plan: { status: 'submitted' } })
+      return { ...setUp, key, next: await approvedAnother(setUp.store) }
+    }
+
+    it('holds the key’s next send while the earlier one could still land, so it can’t be overtaken', async () => {
+      const { store, vault, sender, key, next } = await unansweredFirst()
+      expect(await sender.send(next, OWNER)).toEqual({ ok: false, reason: 'earlier-pending', status: 'approved' })
+      // Still pending a whole validity period later: its block hash is valid up to and including that height.
+      key.blockHeight = HEIGHT + TRANSACTION_VALIDITY_BLOCKS
+      expect(await sender.send(next, OWNER)).toMatchObject({ ok: false, reason: 'earlier-pending' })
+      expect(store.get(next, OWNER)?.status).toBe('approved')
+      expect(vault.sign).toHaveBeenCalledTimes(1)
+    })
+
+    it('sends the next once the key’s nonce shows the earlier one landed or was taken', async () => {
+      const { vault, sender, key, next } = await unansweredFirst()
+      key.nonce = NONCE + 1n
+      expect(await sender.send(next, OWNER)).toMatchObject({ ok: true, plan: { status: 'confirmed' } })
       expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
+    })
+
+    it('sends the next once the earlier one’s block is too old for it to land', async () => {
+      const { vault, sender, key, next } = await unansweredFirst()
+      key.blockHeight = HEIGHT + TRANSACTION_VALIDITY_BLOCKS + 1n
+      expect(await sender.send(next, OWNER)).toMatchObject({ ok: true })
+      // Still above the earlier one's nonce, since nothing has been signed below it.
+      expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
+    })
+  })
+
+  it('doesn’t hold the next send after one NEAR answered, whatever it said', async () => {
+    for (const sendTransaction of [async () => ({ transactionId: SIGNED.transactionId, ok: false, failure: 'x' }), async () => Promise.reject(new NearRpcError('rejected', 'InvalidNonce'))]) {
+      const { store, id, sender } = await setup({ rpc: fakeRpc({ sendTransaction }) })
+      expect((await sender.send(id, OWNER)).ok).toBe(true)
+      expect((await sender.send(await approvedAnother(store), OWNER)).ok).toBe(true)
     }
   })
 
   it('follows the chain’s nonce once it has moved past what Ink signed', async () => {
     let nonce = NONCE
-    const { store, id, vault, sender } = await setup({ rpc: fakeRpc({ viewAccessKey: async () => ({ nonce, blockHash: BLOCK }) }) })
+    const { store, id, vault, sender } = await setup({ rpc: fakeRpc({ viewAccessKey: async () => ({ nonce, blockHash: BLOCK, blockHeight: HEIGHT }) }) })
     expect((await sender.send(id, OWNER)).ok).toBe(true)
     // Something else, such as another wallet holding this phrase, sent with the key since.
     nonce = NONCE + 10n

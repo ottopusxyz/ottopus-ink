@@ -17,6 +17,12 @@ export type SendFailure =
   | 'busy'
   /** The RPC is on another NEAR network, so a transaction built from its answers could spend there. */
   | 'wrong-network'
+  /**
+   * An earlier send from this key got no answer and may still land. A later
+   * transaction reaching the chain first would raise the key's nonce past it,
+   * and the earlier one could then never land, so the later one waits.
+   */
+  | 'earlier-pending'
 
 export type SendResult =
   | { ok: true; plan: PlanView; transactionId: string }
@@ -27,6 +33,13 @@ export interface PlanSenderOptions {
   vault: Pick<VaultService, 'sign'>
   rpc: NearRpc
 }
+
+/**
+ * Blocks a transaction's block hash stays valid for: mainnet's genesis
+ * `transaction_validity_period`. A transaction built on an older block can
+ * never land.
+ */
+export const TRANSACTION_VALIDITY_BLOCKS = 86_400n
 
 /** Placeholders that only let the step be read: the real nonce and block hash come from the chain. */
 const READ_ONLY = { nonce: 1n, blockHash: new Uint8Array(32) }
@@ -54,9 +67,10 @@ function nearTransferOf(plan: PlanView): NearTransfer | null {
  *    NEAR's final outcome.
  *
  * A send whose answer doesn't come back stays submitted: it may still go
- * through, and only the chain can say. One plan at a time, each signed above
- * every nonce already signed with its key, so no two can share a nonce, even
- * while an earlier one's fate is unknown.
+ * through, and only the chain can say. Until the chain shows it can't land any
+ * more (it landed, its nonce was used, or its block is too old), the key sends
+ * nothing else, so a later send can't overtake it. One plan at a time, each
+ * signed above every nonce already signed with its key, so no two share one.
  */
 export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
   let sending = false
@@ -67,6 +81,8 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
    * left by a send that never lands does no harm.
    */
   const signedNonces = new Map<string, bigint>()
+  /** For each key, a send that got no answer: its nonce, and the height of the block it was built on. */
+  const unanswered = new Map<string, { nonce: bigint; blockHeight: bigint }>()
 
   const fail = (id: string, owner: string, reason: SendFailure): SendResult => {
     const moved = store.move(id, owner, 'failed')
@@ -83,6 +99,7 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
     const publicKey = plan.core.steps[0]?.fields.publicKey as string
     const keyId = `${transfer.signerId} ${publicKey}`
     let live: { nonce: string; blockHash: string }
+    let blockHeight: bigint
     try {
       if ((await rpc.chainId()) !== NEAR_NETWORK) return { ok: false, reason: 'wrong-network', status: plan.status }
       const unfit = await nearSendFits(rpc, transfer.signerId, transfer.receiverId, transfer.deposit)
@@ -90,6 +107,14 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
       const key = await rpc.viewAccessKey(transfer.signerId, publicKey)
       // No key means no account yet: nothing has been sent to it, so there is nothing to spend.
       if (!key) return { ok: false, reason: 'insufficient-funds', status: plan.status }
+      const earlier = unanswered.get(keyId)
+      if (earlier) {
+        // Landed or taken by another transaction once the key's nonce reaches it, and dead once its block is too old.
+        const settled = key.nonce >= earlier.nonce || key.blockHeight > earlier.blockHeight + TRANSACTION_VALIDITY_BLOCKS
+        if (!settled) return { ok: false, reason: 'earlier-pending', status: plan.status }
+        unanswered.delete(keyId)
+      }
+      blockHeight = key.blockHeight
       const lastSigned = signedNonces.get(keyId) ?? 0n
       live = { nonce: ((key.nonce > lastSigned ? key.nonce : lastSigned) + 1n).toString(), blockHash: bytesToHex(key.blockHash) }
     } catch (error) {
@@ -124,6 +149,7 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
         return failed.ok ? { ok: true, plan: failed.plan, transactionId: step.transactionId } : failed
       }
       // No answer: it may still land, so it stays submitted for the chain to decide.
+      unanswered.set(keyId, { nonce: BigInt(live.nonce), blockHeight })
       return { ok: true, plan: submitted.plan, transactionId: step.transactionId }
     }
   }

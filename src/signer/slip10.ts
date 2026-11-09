@@ -17,12 +17,8 @@ function parsePath(path: string): number[] {
   })
 }
 
-/**
- * SLIP-10 for ed25519: the key under a BIP-39 seed that NEAR, Solana, Sui and
- * Aptos wallets use. Returns the public key only, and wipes every private byte
- * on the way.
- */
-export function ed25519PublicKey(seed: Uint8Array, path: string): Uint8Array {
+/** Runs `use` with the private key at the path, then wipes every private byte, whatever `use` does. */
+function withSecret<T>(seed: Uint8Array, path: string, use: (secret: Uint8Array) => T): T {
   const indexes = parsePath(path)
   let node = hmac(sha512, CURVE_KEY, seed)
   for (const index of indexes) {
@@ -34,10 +30,23 @@ export function ed25519PublicKey(seed: Uint8Array, path: string): Uint8Array {
     node.fill(0)
     node = child
   }
-  const secret = node.subarray(0, 32)
   try {
-    return ed25519.getPublicKey(secret)
+    return use(node.subarray(0, 32))
   } finally {
     node.fill(0)
   }
+}
+
+/**
+ * SLIP-10 for ed25519: the key under a BIP-39 seed that NEAR, Solana, Sui and
+ * Aptos wallets use. Returns the public key only, and wipes every private byte
+ * on the way.
+ */
+export function ed25519PublicKey(seed: Uint8Array, path: string): Uint8Array {
+  return withSecret(seed, path, (secret) => ed25519.getPublicKey(secret))
+}
+
+/** Signs a message with the key at the path. The private key never leaves this file and is wiped right after. */
+export function ed25519Sign(seed: Uint8Array, path: string, message: Uint8Array): { publicKey: Uint8Array; signature: Uint8Array } {
+  return withSecret(seed, path, (secret) => ({ publicKey: ed25519.getPublicKey(secret), signature: ed25519.sign(message, secret) }))
 }

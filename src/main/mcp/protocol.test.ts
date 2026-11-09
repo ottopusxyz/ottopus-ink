@@ -198,13 +198,13 @@ describe('handleMcpMessage', () => {
       return { plans, asked, result }
     }
 
-    it('asks main for the plan, hands the card over, and tells the agent it is a draft', async () => {
+    it('asks main for the plan, hands the card over, and tells the agent the person reviews it in Ink', async () => {
       const { plans, asked, result } = await propose({ outcome: 'swap', asset: 'ETH', amount: '0.1', to_asset: 'USDC', to_chain: 'base' })
       const intent = { outcome: 'swap', asset: 'ETH', amount: '0.1', chain: null, to: null, toAsset: 'USDC', toChain: 'base' }
       expect(asked).toEqual([intent])
       expect(plans).toEqual([{ id: 'plan-1', status: 'draft', ...intent }])
       expect(result).toEqual({
-        content: [{ type: 'text', text: 'Plan plan-1 is a draft: Swap 0.1 ETH to USDC on base. Ink can’t review or sign plans yet.' }],
+        content: [{ type: 'text', text: 'Plan plan-1 is made: Swap 0.1 ETH to USDC on base. If Ink can send it (so far, native NEAR on NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.' }],
         isError: false,
       })
     })

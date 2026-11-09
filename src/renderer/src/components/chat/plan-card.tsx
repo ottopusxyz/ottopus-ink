@@ -3,8 +3,8 @@ import { Card, StatusChip } from '@/components/ui'
 import { planHeadline } from '@/lib/chats'
 
 /**
- * A plan an agent proposed. It says plainly that it can't go anywhere yet: the
- * review window and signer come with the wallet, so there is nothing to press.
+ * A plan an agent proposed, with its status as main reports it. There is
+ * nothing to press here: a plan is approved only in the review window.
  *
  * The agent wrote every value here, and they're shown as written. That includes
  * the address in full, since a shortened one hides what a person needs to compare.
@@ -34,7 +34,9 @@ export function PlanCard({ plan }: { plan: ChatPlan }) {
         </dl>
       ) : null}
       <p className="m-0 text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">
-        A placeholder: Ink can’t review or sign plans yet.
+        {plan.status === 'draft'
+          ? 'If Ink can send this, it opens in Ink’s review window. Nothing is signed unless you approve it there.'
+          : 'Check it in Ink’s review window. Nothing is signed unless you approve it there.'}
       </p>
     </Card>
   )

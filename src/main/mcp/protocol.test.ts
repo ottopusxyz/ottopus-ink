@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ACCOUNT_CHAINS, ACCOUNT_PATHS, type Account } from '../../shared/accounts'
 import { INK_TOOLS, type ChatPlan } from '../../shared/ipc'
+import type { PlanIntent, PlanTools } from '../../shared/plan'
 import { handleMcpMessage, type McpHandlers } from './protocol'
 
 const ask = async (method: string, params?: unknown, id: unknown = 1) =>
@@ -123,35 +124,83 @@ describe('handleMcpMessage', () => {
   })
 
   describe('create_plan', () => {
+    /** Plan tools that make whatever they're asked, so these tests see only what the protocol does. */
+    const fakePlans = (asked: PlanIntent[]): PlanTools => ({
+      create: async (intent) => {
+        asked.push(intent)
+        return { ok: true, plan: { id: 'plan-1', status: 'draft', summary: 'Swap 0.1 ETH to USDC on base', intent, recipient: null } }
+      },
+      get: async () => ({ ok: false, reason: 'not-found' }),
+      cancel: async () => ({ ok: false, reason: 'not-found' }),
+    })
     const propose = async (args: unknown) => {
       const plans: ChatPlan[] = []
+      const asked: PlanIntent[] = []
       const message = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_plan', arguments: args } }
-      const { result } = (await handleMcpMessage(message, '1', { onPlan: (plan) => plans.push(plan) })) as { result: { content: { text: string }[]; isError: boolean } }
-      return { plans, result }
+      const { result } = (await handleMcpMessage(message, '1', { onPlan: (plan) => plans.push(plan), plans: fakePlans(asked) })) as {
+        result: { content: { text: string }[]; isError: boolean }
+      }
+      return { plans, asked, result }
     }
 
-    it('hands over a draft plan and tells the agent it is a placeholder', async () => {
-      const { plans, result } = (await propose({ outcome: 'swap', asset: 'ETH', amount: '0.1', to_asset: 'USDC', to_chain: 'base' }))
-      expect(plans).toEqual([
-        {
-          id: expect.any(String) as string,
-          status: 'draft',
-          outcome: 'swap',
-          asset: 'ETH',
-          amount: '0.1',
-          chain: null,
-          to: null,
-          toAsset: 'USDC',
-          toChain: 'base',
-        },
-      ])
-      expect(result.isError).toBe(false)
-      expect(result.content[0]?.text).toContain(plans[0]?.id)
-      expect(result.content[0]?.text).toBe(`Plan ${plans[0]?.id} is a placeholder: Ink can’t review or sign plans yet.`)
+    it('asks main for the plan, hands the card over, and tells the agent it is a draft', async () => {
+      const { plans, asked, result } = await propose({ outcome: 'swap', asset: 'ETH', amount: '0.1', to_asset: 'USDC', to_chain: 'base' })
+      const intent = { outcome: 'swap', asset: 'ETH', amount: '0.1', chain: null, to: null, toAsset: 'USDC', toChain: 'base' }
+      expect(asked).toEqual([intent])
+      expect(plans).toEqual([{ id: 'plan-1', status: 'draft', ...intent }])
+      expect(result).toEqual({
+        content: [{ type: 'text', text: 'Plan plan-1 is a draft: Swap 0.1 ETH to USDC on base. Ink can’t review or sign plans yet.' }],
+        isError: false,
+      })
     })
 
     it('takes a stake with no target', async () => {
       expect((await propose({ outcome: 'stake', asset: 'NEAR', amount: '10' })).plans).toHaveLength(1)
+    })
+
+    describe('get_plan and cancel_plan', () => {
+      const plan = { id: 'abc-1', status: 'draft' as const, summary: 'Send 1 NEAR on near to alice.near', intent: { outcome: 'send' as const, asset: 'NEAR', amount: '1', chain: 'near', to: 'alice.near', toAsset: null, toChain: null }, recipient: null }
+      const tools = (overrides: Partial<PlanTools>): PlanTools => ({ ...fakePlans([]), ...overrides })
+      const call = async (name: string, args: unknown, plans: PlanTools) =>
+        ((await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, '1', { plans })) as {
+          result: { content: { text: string }[]; isError: boolean }
+        }).result
+
+      it('reports a plan’s status and summary', async () => {
+        const result = await call('get_plan', { plan_id: 'abc-1' }, tools({ get: async (id) => ({ ok: true, plan: { ...plan, id, status: 'awaiting_review' } }) }))
+        expect(result).toEqual({ content: [{ type: 'text', text: 'Plan abc-1 is waiting for the person to review it: Send 1 NEAR on near to alice.near.' }], isError: false })
+      })
+
+      it('cancels a plan and says nothing was signed', async () => {
+        const result = await call('cancel_plan', { plan_id: 'abc-1' }, tools({ cancel: async (id) => ({ ok: true, plan: { ...plan, id, status: 'cancelled' } }) }))
+        expect(result).toEqual({ content: [{ type: 'text', text: 'Plan abc-1 is cancelled. Nothing was signed.' }], isError: false })
+      })
+
+      it('says why a plan can’t be cancelled, or isn’t there', async () => {
+        const late = await call('cancel_plan', { plan_id: 'abc-1' }, tools({ cancel: async () => ({ ok: false, reason: 'cannot-move', status: 'submitted' }) }))
+        expect(late).toEqual({ content: [{ type: 'text', text: 'Plan abc-1 is submitted to the chain, so it can’t be cancelled.' }], isError: true })
+        const twice = await call('cancel_plan', { plan_id: 'abc-1' }, tools({ cancel: async () => ({ ok: false, reason: 'cannot-move', status: 'cancelled' }) }))
+        expect(twice).toEqual({ content: [{ type: 'text', text: 'Plan abc-1 is already cancelled.' }], isError: true })
+        const missing = await call('get_plan', { plan_id: 'abc-1' }, tools({}))
+        expect(missing).toEqual({ content: [{ type: 'text', text: 'There is no plan with that id in this chat.' }], isError: true })
+      })
+
+      it.each([[{}], [{ plan_id: 7 }], [{ plan_id: 'NOT A PLAN ID' }], [{ plan_id: 'a'.repeat(65) }]])('refuses a malformed plan id %j without asking main', async (args) => {
+        let asked = false
+        const result = await call('get_plan', args, tools({ get: async () => ((asked = true), { ok: false, reason: 'not-found' }) }))
+        expect(result.isError).toBe(true)
+        expect(asked).toBe(false)
+      })
+    })
+
+    it('hands over no card when main refuses the plan', async () => {
+      const plans: ChatPlan[] = []
+      const refusing: PlanTools = { ...fakePlans([]), create: async () => ({ ok: false, reason: 'recipient-not-allowed' }) }
+      const message = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_plan', arguments: { outcome: 'send', asset: 'NEAR', amount: '1', to: 'mallory.near' } } }
+      const { result } = (await handleMcpMessage(message, '1', { onPlan: (plan) => plans.push(plan), plans: refusing })) as { result: { content: { text: string }[]; isError: boolean } }
+      expect(plans).toEqual([])
+      expect(result.isError).toBe(true)
+      expect(result.content[0]!.text).toContain('typed themselves')
     })
 
     it.each([

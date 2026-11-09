@@ -65,6 +65,17 @@ The phrase gives one account on each chain, at the path most wallets use, so res
 
 Addresses are worked out in the signer and are only available while unlocked. The Receive page shows each one with a QR code. Its Copy button has main copy the address the signer gave rather than text from the page, and only while Ink's window is in front. The page still draws the address and its QR code, so compare the first and last characters after you paste. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
 
+## Plans
+
+The agent can only propose a plan. Main builds it, and a plan can pay only your own address on the chain the funds land on, or an address you sent in that chat, never one the agent came up with.
+
+- **What counts as sent:** main records the messages from each chat's box, which the agent can't add to. That keeps a prompt injection from picking the recipient. It can't tell a person typing from compromised page code, so the review window, outside the page, is where you confirm the recipient before anything is signed.
+
+- **The hash:** a plan's fixed part is hashed as SHA-256 over `ottopus-ink/plan/v1`, a NUL byte and its RFC 8785 canonical JSON. Numbers must be whole and amounts are decimal strings, so nothing can round. The signer will recompute this hash before it signs.
+- **Statuses:** draft, awaiting review, approved, signing, submitted, confirmed, failed, cancelled, expired and blocked, and a plan moves between them only as one table allows. Nothing is approved without review, and nothing is signed without approval.
+- **Expiry and ownership:** a plan expires 30 minutes after it's made if nobody acts on it. Each plan belongs to the chat that made it.
+- **Not built yet:** plans hold no transaction yet, so they stay drafts. The NEAR module adds the transaction, then the review window and the signer take it from there.
+
 ## Prior work
 
 Ported from [ottopusxyz/ottopus](https://github.com/ottopusxyz/ottopus) (MIT, built for BNB Hack):

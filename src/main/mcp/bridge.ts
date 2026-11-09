@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import type { ChatPlan } from '../../shared/ipc'
+import type { PlanTools } from '../../shared/plan'
 import { handleMcpMessage, parseErrorResponse, rpcError, type McpHandlers, type RpcId } from './protocol'
 
 export interface McpBridgeOptions {
@@ -14,6 +15,11 @@ export interface McpBridgeOptions {
   helloTimeoutMs?: number
   /** The wallet's public addresses, for get_accounts. Main passes this in so agent code never imports the vault. */
   accounts?: McpHandlers['accounts']
+  /**
+   * One session's plan tools. `owner` names the session, so a chat only ever sees
+   * its own plans, and `typed` gives the person's own messages in it.
+   */
+  plans?: (session: { owner: string; typed: () => readonly string[] }) => PlanTools
 }
 
 export interface McpSession {
@@ -27,7 +33,8 @@ export interface McpSession {
 export interface McpBridge {
   socketPath: string
   /** onPlan gets each plan the session's agent proposes. */
-  addSession(handlers?: { onPlan?: (plan: ChatPlan) => void }): McpSession
+  /** onPlan gets each plan the session's agent makes; typed gives what the person typed in that chat. */
+  addSession(handlers?: { onPlan?: (plan: ChatPlan) => void; typed?: () => readonly string[] }): McpSession
   close(): void
 }
 
@@ -67,6 +74,7 @@ interface BridgeSession {
   connection: Socket | null
   everConnected: boolean
   onPlan: ((plan: ChatPlan) => void) | undefined
+  plans: PlanTools | undefined
 }
 
 /**
@@ -77,7 +85,7 @@ interface BridgeSession {
  * The socket sits in a new 0700 folder and is itself 0600. Only hashes of tokens
  * are kept, so a lookup doesn't compare against the secret.
  */
-export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, accounts }: McpBridgeOptions): Promise<McpBridge> {
+export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, accounts, plans }: McpBridgeOptions): Promise<McpBridge> {
   mkdirSync(parentDir, { recursive: true })
   const dir = mkdtempSync(join(parentDir, 'ottopus-ink-'))
   const socketPath = join(dir, 'mcp.sock')
@@ -133,7 +141,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, acco
       inFlight++
       let response: object | null
       try {
-        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, accounts })
+        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, accounts, plans: session.plans })
       } catch {
         response = parseErrorResponse()
       } finally {
@@ -174,7 +182,8 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, acco
         addSession(handlers) {
           const token = randomBytes(32).toString('hex')
           const key = hash(token)
-          const session: BridgeSession = { connection: null, everConnected: false, onPlan: handlers?.onPlan }
+          const typed = handlers?.typed ?? (() => [])
+          const session: BridgeSession = { connection: null, everConnected: false, onPlan: handlers?.onPlan, plans: plans?.({ owner: key, typed }) }
           sessions.set(key, session)
           return {
             token,

@@ -1,8 +1,7 @@
 import { bytesToHex } from '@noble/hashes/utils.js'
-import { NearDecodeError, transferOfStep, type NearTransfer } from '../../shared/near/transaction'
 import type { PlanFailure, PlanStatus } from '../../shared/plan'
 import type { VaultFailure } from '../../shared/vault'
-import { nearSendFits } from '../near/build'
+import { nearSendFits, nearTransferOf } from '../near/build'
 import { NearRpcError, type NearRpc } from '../near/rpc'
 import type { PlanStore, PlanView } from '../plans/store'
 import type { VaultService } from './service'
@@ -41,21 +40,6 @@ export interface PlanSenderOptions {
  */
 export const TRANSACTION_VALIDITY_BLOCKS = 86_400n
 
-/** Placeholders that only let the step be read: the real nonce and block hash come from the chain. */
-const READ_ONLY = { nonce: 1n, blockHash: new Uint8Array(32) }
-
-/** The one kind of plan Ink can send so far: a single NEAR transfer. Null for anything else. */
-function nearTransferOf(plan: PlanView): NearTransfer | null {
-  const [step, ...rest] = plan.core.steps
-  if (!step || rest.length > 0) return null
-  try {
-    return transferOfStep(step, READ_ONLY)
-  } catch (error) {
-    if (error instanceof NearDecodeError) return null
-    throw error
-  }
-}
-
 /**
  * Takes a plan the person approved through signing to the chain:
  * 1. checks, while the plan is still approved, that the RPC is on mainnet and
@@ -93,7 +77,7 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
     const plan = store.get(id, owner)
     if (!plan) return { ok: false, reason: 'not-found' }
     if (plan.status !== 'approved') return { ok: false, reason: 'cannot-move', status: plan.status }
-    const transfer = nearTransferOf(plan)
+    const transfer = nearTransferOf(plan.core)
     if (!transfer) return { ok: false, reason: 'bad-request', status: plan.status }
 
     const publicKey = plan.core.steps[0]?.fields.publicKey as string

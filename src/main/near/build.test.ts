@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { Account } from '../../shared/accounts'
-import { transferOfStep } from '../../shared/near/transaction'
-import type { PlanIntent } from '../../shared/plan'
+import { nearPublicKey, nearTransferStep, transferOfStep } from '../../shared/near/transaction'
+import type { PlanCore, PlanIntent } from '../../shared/plan'
 import { STORAGE_YOCTO_PER_BYTE } from './balance'
-import { buildNearSend, isNearSend, transferFeeCeiling } from './build'
+import { buildNearSend, isNearSend, nearSendFeeCeiling, nearTransferOf, transferFeeCeiling } from './build'
 import { NearRpcError, type NearAccountView, type NearProtocolFees, type NearRpc } from './rpc'
 
 const NEAR = 10n ** 24n
@@ -141,5 +141,29 @@ describe('building a NEAR send', () => {
   it('says the chain is unavailable when NEAR can’t be reached, or there’s no NEAR account', async () => {
     expect(await buildNearSend(SEND, OWN, fakeRpc({}, { down: true }).rpc)).toEqual({ ok: false, reason: 'chain-unavailable' })
     expect(await buildNearSend(SEND, [], fakeRpc(ALICE).rpc)).toEqual({ ok: false, reason: 'chain-unavailable' })
+  })
+})
+
+describe('reading a plan Ink can send', () => {
+  const step = nearTransferStep({ signerId: FROM, publicKey: nearPublicKey(new Uint8Array(32).fill(6)), receiverId: 'alice.near', deposit: '1500' })
+  const core = (steps: PlanCore['steps']) => ({ steps }) as unknown as PlanCore
+
+  it('reads the one NEAR transfer a plan holds', () => {
+    const transfer = nearTransferOf(core([step]))
+    expect(transfer).toMatchObject({ signerId: FROM, receiverId: 'alice.near', deposit: 1500n })
+  })
+
+  it('reads nothing from a plan with no steps, more than one, or a step it can’t decode', () => {
+    expect(nearTransferOf(core([]))).toBeNull()
+    expect(nearTransferOf(core([step, step]))).toBeNull()
+    expect(nearTransferOf(core([{ ...step, action: 'stake' }]))).toBeNull()
+    expect(nearTransferOf(core([{ ...step, fields: { ...step.fields, deposit: '-1' } }]))).toBeNull()
+  })
+
+  it('works out the fee ceiling for the receiver’s kind of account at today’s gas price', async () => {
+    const { rpc } = fakeRpc({})
+    expect(await nearSendFeeCeiling(rpc, 'alice.near')).toBe(FEE)
+    expect(await nearSendFeeCeiling(rpc, 'a'.repeat(64))).toBe(IMPLICIT_FEE)
+    await expect(nearSendFeeCeiling(rpc, 'Not An Account')).rejects.toThrow()
   })
 })

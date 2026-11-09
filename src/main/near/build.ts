@@ -1,9 +1,9 @@
 import { hexToBytes } from '@noble/hashes/utils.js'
 import type { Account } from '../../shared/accounts'
 import { nearAccountKind, type NearAccountKind } from '../../shared/near/account-id'
-import { nearPublicKey, nearTransferStep } from '../../shared/near/transaction'
+import { NearDecodeError, nearPublicKey, nearTransferStep, transferOfStep, type NearTransfer } from '../../shared/near/transaction'
 import { parseNear } from '../../shared/near/units'
-import type { PlanFailure, PlanIntent, PlanStep } from '../../shared/plan'
+import type { PlanCore, PlanFailure, PlanIntent, PlanStep } from '../../shared/plan'
 import { storageHeld } from './balance'
 import { NearRpcError, type NearProtocolFees, type NearRpc } from './rpc'
 
@@ -35,6 +35,29 @@ export function transferFeeCeiling(fees: NearProtocolFees, gasPrice: bigint, rec
   const price = gasPrice * GAS_PRICE_MARGIN
   const receiptPrice = price > fees.minGasPurchasePrice ? price : fees.minGasPurchasePrice
   return send * price + exec * receiptPrice
+}
+
+/** Placeholders that only let a step be read: the real nonce and block hash come from the chain when it's signed. */
+const READ_ONLY = { nonce: 1n, blockHash: new Uint8Array(32) }
+
+/** The one kind of plan Ink can send so far: a single NEAR transfer. Null for anything else. */
+export function nearTransferOf(core: PlanCore): NearTransfer | null {
+  const [step, ...rest] = core.steps
+  if (!step || rest.length > 0) return null
+  try {
+    return transferOfStep(step, READ_ONLY)
+  } catch (error) {
+    if (error instanceof NearDecodeError) return null
+    throw error
+  }
+}
+
+/** The most the fees for a transfer to this account could take up front, at today's gas price. Throws `NearRpcError`. */
+export async function nearSendFeeCeiling(rpc: NearRpc, to: string): Promise<bigint> {
+  const kind = nearAccountKind(to)
+  if (kind === null) throw new NearDecodeError('not a NEAR account id')
+  const [gasPrice, fees] = await Promise.all([rpc.gasPrice(), rpc.protocolFees()])
+  return transferFeeCeiling(fees, gasPrice, kind)
 }
 
 export type StepsResult = { ok: true; steps: PlanStep[] } | { ok: false; reason: PlanFailure }

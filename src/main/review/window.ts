@@ -70,6 +70,10 @@ export function createReviewWindow({ preload, entry, load, devTools }: ReviewWin
       return { action: 'deny' }
     })
 
+    // Closing mid-send would drop the result, and quit Ink if it's the last window, while the send is still going.
+    created.on('close', (event) => {
+      if (broker?.state()?.sending) event.preventDefault()
+    })
     created.on('closed', () => {
       if (timer) clearInterval(timer)
       timer = null

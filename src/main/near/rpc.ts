@@ -45,12 +45,10 @@ export interface NearFeeGas {
 export interface NearProtocolFees {
   /** yoctoNEAR per gas the gas for receipts is bought at, at least (NEP-642). */
   minGasPurchasePrice: bigint
-  /** yoctoNEAR charged for creating an account, implicit ones included (NEP-642). */
-  accountCreationCharge: bigint
   /** Creating the receipt that carries the actions. */
   receipt: NearFeeGas
   transfer: NearFeeGas
-  /** What a transfer adds when it creates an implicit account: the account, then its full access key. */
+  /** What a transfer to an implicit account adds: creating the account, then (for a NEAR implicit one) its full access key. */
   createAccount: NearFeeGas
   addFullAccessKey: NearFeeGas
 }
@@ -232,7 +230,6 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
       if (!runtime || !costs || !actions || !addKey) throw new NearRpcError('unavailable', 'the RPC sent no protocol config')
       return {
         minGasPurchasePrice: whole(runtime.min_gas_purchase_price, 'minimum gas purchase price'),
-        accountCreationCharge: whole(runtime.account_creation_charge, 'account creation charge'),
         receipt: feeGas(costs.action_receipt_creation_config, 'receipt'),
         transfer: feeGas(actions.transfer_cost, 'transfer'),
         createAccount: feeGas(actions.create_account_cost, 'create account'),

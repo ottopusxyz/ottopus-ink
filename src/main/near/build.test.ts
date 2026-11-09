@@ -11,19 +11,22 @@ const GAS_PRICE = 100_000_000n
 /** Mainnet's fees under protocol 88, as its protocol config gave them on 9 Nov 2026 (see rpc.test.ts). */
 const FEES: NearProtocolFees = {
   minGasPurchasePrice: 1_000_000_000n,
-  accountCreationCharge: 7_000_000_000_000_000_000_000n,
   receipt: { send: 108_059_500_000n, exec: 108_059_500_000n },
   transfer: { send: 115_123_062_500n, exec: 115_123_062_500n },
   createAccount: { send: 500_000_000_000n, exec: 7_200_000_000_000n },
   addFullAccessKey: { send: 101_765_125_000n, exec: 101_765_125_000n },
 }
 /**
- * Worked out by hand: 0.446365125 Tgas to an existing account, and 8.349895375 Tgas
- * when the transfer creates one, at twice the 10^9 receipt price, plus 0.007 NEAR
- * to create an account. About 0.0009 NEAR and 0.0237 NEAR.
+ * Worked out by hand from FEES, at twice the 10^8 gas price for send fees and
+ * the 10^9 receipt price for exec fees:
+ * - named: send 0.223182562500 Tgas, exec 0.223182562500 Tgas;
+ * - Ethereum implicit: send 0.723182562500 Tgas, exec 7.423182562500 Tgas (creating the account);
+ * - NEAR implicit: send 0.824947687500 Tgas, exec 7.524947687500 Tgas (creating it and its key).
+ * About 0.00027, 0.0076 and 0.0077 NEAR.
  */
-const FEE = 892_730_250_000_000_000_000n
-const NEW_ACCOUNT_FEE = 23_699_790_750_000_000_000_000n
+const FEE = 267_819_075_000_000_000_000n
+const ETH_IMPLICIT_FEE = 7_567_819_075_000_000_000_000n
+const IMPLICIT_FEE = 7_689_937_225_000_000_000_000n
 /** Public key and implicit id from the BIP-32 test seed (src/signer/accounts.test.ts). */
 const FROM = '06b66cee83c72cf7462ac756b159664732607df5bf254e589426b7e4b4f9d60d'
 const OWN: Account[] = [{ chain: 'near', path: "m/44'/397'/0'", address: FROM }]
@@ -73,28 +76,37 @@ describe('building a NEAR send', () => {
   })
 
   it('sends to an implicit account that doesn’t exist yet, since the transfer creates it', async () => {
-    const { rpc } = fakeRpc({ [FROM]: funded(5n * NEAR) })
-    expect((await buildNearSend({ ...SEND, to: 'b'.repeat(64) }, OWN, rpc)).ok).toBe(true)
+    const { rpc, asked } = fakeRpc({ [FROM]: funded(5n * NEAR) })
+    const to = 'b'.repeat(64)
+    expect((await buildNearSend({ ...SEND, to }, OWN, rpc)).ok).toBe(true)
+    expect(asked).not.toContain(to)
     expect((await buildNearSend({ ...SEND, to: `0x${'c'.repeat(40)}` }, OWN, rpc)).ok).toBe(true)
   })
 
-  it('counts what creating a new implicit account costs, and only when it doesn’t exist yet', async () => {
-    const to = 'b'.repeat(64)
-    const exact = 1_500_000_000_000_000_000_000_000n + NEW_ACCOUNT_FEE
-    expect((await buildNearSend({ ...SEND, to }, OWN, fakeRpc({ [FROM]: funded(exact) }).rpc)).ok).toBe(true)
-    expect(await buildNearSend({ ...SEND, to }, OWN, fakeRpc({ [FROM]: funded(exact - 1n) }).rpc)).toEqual({ ok: false, reason: 'insufficient-funds' })
-    expect(await buildNearSend({ ...SEND, to: `0x${'c'.repeat(40)}` }, OWN, fakeRpc({ [FROM]: funded(exact - 1n) }).rpc)).toEqual({ ok: false, reason: 'insufficient-funds' })
-    // Once it exists, sending to it costs what any transfer does.
-    expect((await buildNearSend({ ...SEND, to }, OWN, fakeRpc({ [FROM]: funded(exact - 1n), [to]: funded(1n) }).rpc)).ok).toBe(true)
-    // What Codex found the old 2 Tgas ceiling let through: 1.0002 NEAR to send 1 NEAR to a new account.
-    expect(await buildNearSend({ ...SEND, amount: '1', to }, OWN, fakeRpc({ [FROM]: funded(1_000_200_000_000_000_000_000_000n) }).rpc)).toEqual({ ok: false, reason: 'insufficient-funds' })
+  it('counts what a transfer to an implicit account pays up front, whether or not the account exists', async () => {
+    const amount = 1_500_000_000_000_000_000_000_000n
+    const near = 'b'.repeat(64)
+    const eth = `0x${'c'.repeat(40)}`
+    for (const [to, fee] of [[near, IMPLICIT_FEE], [eth, ETH_IMPLICIT_FEE]] as const) {
+      for (const accounts of [{}, { [to]: funded(NEAR) }]) {
+        expect((await buildNearSend({ ...SEND, to }, OWN, fakeRpc({ [FROM]: funded(amount + fee), ...accounts }).rpc)).ok).toBe(true)
+        expect(await buildNearSend({ ...SEND, to }, OWN, fakeRpc({ [FROM]: funded(amount + fee - 1n), ...accounts }).rpc)).toEqual({ ok: false, reason: 'insufficient-funds' })
+      }
+    }
+    // What Codex found the first fix let through: 1 NEAR from 1.001 NEAR to an implicit account that already exists.
+    const sender = { [FROM]: funded(1_001_000_000_000_000_000_000_000n, 182n), [near]: funded(NEAR) }
+    expect(await buildNearSend({ ...SEND, amount: '1', to: near }, OWN, fakeRpc(sender).rpc)).toEqual({ ok: false, reason: 'insufficient-funds' })
+    // And what the old 2 Tgas ceiling let through: 1.0002 NEAR to send 1 NEAR.
+    expect(await buildNearSend({ ...SEND, amount: '1', to: near }, OWN, fakeRpc({ [FROM]: funded(1_000_200_000_000_000_000_000_000n) }).rpc)).toEqual({ ok: false, reason: 'insufficient-funds' })
   })
 
-  it('prices gas at the higher of the gas price and the price receipts are bought at', () => {
-    expect(transferFeeCeiling(FEES, GAS_PRICE, false)).toBe(FEE)
-    expect(transferFeeCeiling(FEES, FEES.minGasPurchasePrice, false)).toBe(FEE)
-    expect(transferFeeCeiling(FEES, 3n * FEES.minGasPurchasePrice, false)).toBe(3n * FEE)
-    expect(transferFeeCeiling(FEES, GAS_PRICE, true)).toBe(NEW_ACCOUNT_FEE)
+  it('burns send fees at the gas price and buys exec fees at no less than the receipt price, with room for the price to double', () => {
+    expect(transferFeeCeiling(FEES, GAS_PRICE, 'named')).toBe(FEE)
+    expect(transferFeeCeiling(FEES, GAS_PRICE, 'eth-implicit')).toBe(ETH_IMPLICIT_FEE)
+    expect(transferFeeCeiling(FEES, GAS_PRICE, 'implicit')).toBe(IMPLICIT_FEE)
+    // Once twice the gas price passes the receipt price, everything is bought at twice the gas price.
+    const named = FEES.receipt.send + FEES.receipt.exec + FEES.transfer.send + FEES.transfer.exec
+    expect(transferFeeCeiling(FEES, FEES.minGasPurchasePrice, 'named')).toBe(named * 2n * FEES.minGasPurchasePrice)
   })
 
   it('refuses a named account that doesn’t exist, which no transfer can create', async () => {

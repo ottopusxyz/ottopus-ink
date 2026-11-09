@@ -1,6 +1,6 @@
 import { hexToBytes } from '@noble/hashes/utils.js'
 import type { Account } from '../../shared/accounts'
-import { nearAccountKind } from '../../shared/near/account-id'
+import { nearAccountKind, type NearAccountKind } from '../../shared/near/account-id'
 import { nearPublicKey, nearTransferStep } from '../../shared/near/transaction'
 import { parseNear } from '../../shared/near/units'
 import type { PlanFailure, PlanIntent, PlanStep } from '../../shared/plan'
@@ -15,16 +15,26 @@ import { NearRpcError, type NearProtocolFees, type NearRpc } from './rpc'
 export const GAS_PRICE_MARGIN = 2n
 
 /**
- * The most a transfer's fees can cost, yoctoNEAR. Every fee is counted as sent
- * and executed, all at the higher of the gas price and the price receipts are
- * bought at, doubled. A transfer that creates an implicit account also pays
- * for creating it and its key, plus the account creation charge.
+ * The most a transfer can take from the sender up front, yoctoNEAR, worked out
+ * as nearcore's `calculate_tx_cost` does:
+ * - the send fees are burnt at the gas price;
+ * - the exec fees are bought at the higher of the gas price and the minimum
+ *   price receipts are bought at, and what isn't burnt comes back.
+ * Which fees a transfer pays depends on the receiver's kind of account id, not
+ * on whether it exists (nearcore's `transfer_send_fee` and `transfer_exec_fee`):
+ * to a NEAR implicit account it pays for creating the account and its full
+ * access key, to an Ethereum implicit one for creating the account. NEAR's
+ * account creation charge comes out of the refund, so it isn't added here.
  */
-export function transferFeeCeiling(fees: NearProtocolFees, gasPrice: bigint, createsAccount: boolean): bigint {
-  const parts = createsAccount ? [fees.receipt, fees.transfer, fees.createAccount, fees.addFullAccessKey] : [fees.receipt, fees.transfer]
-  const gas = parts.reduce((sum, part) => sum + part.send + part.exec, 0n)
-  const price = (gasPrice > fees.minGasPurchasePrice ? gasPrice : fees.minGasPurchasePrice) * GAS_PRICE_MARGIN
-  return gas * price + (createsAccount ? fees.accountCreationCharge : 0n)
+export function transferFeeCeiling(fees: NearProtocolFees, gasPrice: bigint, receiver: NearAccountKind): bigint {
+  const parts = [fees.receipt, fees.transfer]
+  if (receiver !== 'named') parts.push(fees.createAccount)
+  if (receiver === 'implicit') parts.push(fees.addFullAccessKey)
+  const send = parts.reduce((sum, part) => sum + part.send, 0n)
+  const exec = parts.reduce((sum, part) => sum + part.exec, 0n)
+  const price = gasPrice * GAS_PRICE_MARGIN
+  const receiptPrice = price > fees.minGasPurchasePrice ? price : fees.minGasPurchasePrice
+  return send * price + exec * receiptPrice
 }
 
 export type StepsResult = { ok: true; steps: PlanStep[] } | { ok: false; reason: PlanFailure }
@@ -39,7 +49,7 @@ export const isNearSend = (intent: PlanIntent): boolean =>
  * later, so a plan that can't go through is never made:
  * - the amount is exact in yoctoNEAR;
  * - the recipient is a NEAR account id, and a named one already exists (only implicit accounts are created by a transfer);
- * - the balance covers the amount and the most the fees could cost, creating the recipient included when it doesn't exist yet.
+ * - the balance covers the amount and the most the fees could take up front.
  */
 export async function buildNearSend(intent: PlanIntent, own: readonly Account[], rpc: NearRpc): Promise<StepsResult> {
   const from = own.find((account) => account.chain === 'near')?.address
@@ -50,10 +60,10 @@ export async function buildNearSend(intent: PlanIntent, own: readonly Account[],
   if (deposit === null || deposit === 0n || kind === null) return { ok: false, reason: 'bad-request' }
 
   try {
-    const [sender, receiver, gasPrice, fees] = await Promise.all([rpc.viewAccount(from), rpc.viewAccount(to), rpc.gasPrice(), rpc.protocolFees()])
+    const [sender, receiver, gasPrice, fees] = await Promise.all([rpc.viewAccount(from), kind === 'named' ? rpc.viewAccount(to) : null, rpc.gasPrice(), rpc.protocolFees()])
     if (kind === 'named' && receiver === null) return { ok: false, reason: 'recipient-unknown' }
     const available = sender ? sender.amount - storageHeld(sender) : 0n
-    if (available < deposit + transferFeeCeiling(fees, gasPrice, receiver === null)) return { ok: false, reason: 'insufficient-funds' }
+    if (available < deposit + transferFeeCeiling(fees, gasPrice, kind)) return { ok: false, reason: 'insufficient-funds' }
   } catch (error) {
     if (error instanceof NearRpcError) return { ok: false, reason: 'chain-unavailable' }
     throw error

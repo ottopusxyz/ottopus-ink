@@ -125,7 +125,6 @@ describe('the NEAR RPC client', () => {
     const { fetch, asked } = fakeFetch({ [A]: [ok(PROTOCOL_CONFIG)] })
     expect(await rpc(fetch).protocolFees()).toEqual({
       minGasPurchasePrice: 1_000_000_000n,
-      accountCreationCharge: 7_000_000_000_000_000_000_000n,
       receipt: { send: 108_059_500_000n, exec: 108_059_500_000n },
       transfer: { send: 115_123_062_500n, exec: 115_123_062_500n },
       createAccount: { send: 500_000_000_000n, exec: 7_200_000_000_000n },
@@ -137,7 +136,7 @@ describe('the NEAR RPC client', () => {
   it('refuses a protocol config missing a fee, rather than guessing it', async () => {
     const runtime = PROTOCOL_CONFIG.runtime_config
     const without = (change: Record<string, unknown>) => ({ ...PROTOCOL_CONFIG, runtime_config: { ...runtime, ...change } })
-    for (const config of [without({ min_gas_purchase_price: undefined }), without({ account_creation_charge: '-1' }), without({ transaction_costs: {} }), {}]) {
+    for (const config of [without({ min_gas_purchase_price: undefined }), without({ min_gas_purchase_price: '-1' }), without({ transaction_costs: {} }), {}]) {
       const { fetch } = fakeFetch({ [A]: [ok(config)] })
       await expect(rpc(fetch).protocolFees()).rejects.toMatchObject({ reason: 'unavailable' })
     }

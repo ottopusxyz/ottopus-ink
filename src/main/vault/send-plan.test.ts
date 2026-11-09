@@ -61,6 +61,15 @@ async function setup({ status = 'approved', steps = [STEP], rpc = fakeRpc(), vau
   return { store, id, rpc, vault, sender: createPlanSender({ store, vault, rpc }) }
 }
 
+/** Another approved plan in the same store, as the person might approve one straight after the first. */
+async function approvedAnother(store: Awaited<ReturnType<typeof setup>>['store']): Promise<string> {
+  const made = await store.create({ intent: INTENT, createdBy: 'ui', owner: OWNER, own: OWN, typed: ['send 1 NEAR to alice.near'] })
+  if (!made.ok) throw new Error(made.reason)
+  store.move(made.plan.id, OWNER, 'awaiting_review')
+  store.move(made.plan.id, OWNER, 'approved')
+  return made.plan.id
+}
+
 describe('sending an approved plan', () => {
   it('signs it under the approved hash with the next nonce and a recent block, sends it, and records NEAR’s outcome', async () => {
     const { store, id, rpc, vault, sender } = await setup()
@@ -180,6 +189,37 @@ describe('sending an approved plan', () => {
     const { store, id, sender } = await setup({ rpc: fakeRpc({ sendTransaction: async () => Promise.reject(new NearRpcError('unavailable', 'timed out')) }) })
     expect(await sender.send(id, OWNER)).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'submitted' } })
     expect(store.get(id, OWNER)?.status).toBe('submitted')
+  })
+
+  it('signs the next plan above a nonce the chain doesn’t show yet', async () => {
+    // The first send gets no answer, or lands while the RPC still reports the old nonce: either way NONCE + 1 is taken.
+    for (const sendTransaction of [async () => Promise.reject(new NearRpcError('unavailable', 'timed out')), async () => ({ transactionId: SIGNED.transactionId, ok: true, failure: null })]) {
+      const { store, id, vault, sender } = await setup({ rpc: fakeRpc({ sendTransaction }) })
+      expect((await sender.send(id, OWNER)).ok).toBe(true)
+      const next = await approvedAnother(store)
+      expect((await sender.send(next, OWNER)).ok).toBe(true)
+      expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
+    }
+  })
+
+  it('follows the chain’s nonce once it has moved past what Ink signed', async () => {
+    let nonce = NONCE
+    const { store, id, vault, sender } = await setup({ rpc: fakeRpc({ viewAccessKey: async () => ({ nonce, blockHash: BLOCK }) }) })
+    expect((await sender.send(id, OWNER)).ok).toBe(true)
+    // Something else, such as another wallet holding this phrase, sent with the key since.
+    nonce = NONCE + 10n
+    expect((await sender.send(await approvedAnother(store), OWNER)).ok).toBe(true)
+    expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 11n).toString()])
+  })
+
+  it('takes no nonce for a plan the signer refused', async () => {
+    let refuse = true
+    const vault = fakeVault(async () => (refuse ? { ok: false, reason: 'refused' } : { ok: true, signed: [SIGNED] }))
+    const { store, id, sender } = await setup({ vault })
+    expect((await sender.send(id, OWNER)).ok).toBe(false)
+    refuse = false
+    expect((await sender.send(await approvedAnother(store), OWNER)).ok).toBe(true)
+    expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 1n).toString()])
   })
 
   it('sends one plan at a time, so two can’t take the same nonce', async () => {

@@ -67,6 +67,15 @@ describe('making a plan', () => {
     expect(ok(make({ to: OWN[0]!.address }, 'chat-1', [])).plan.core.recipient).toEqual({ address: OWN[0]!.address, why: 'own' })
   })
 
+  it('checks a swap’s own address on the chain the funds land on', () => {
+    const { make } = setup()
+    const swap = { outcome: 'swap' as const, asset: 'USDC', chain: 'base', toAsset: 'NEAR', to: OWN[0]!.address }
+    expect(ok(make({ ...swap, toChain: 'near' }, 'chat-1', [])).plan.core.recipient?.why).toBe('own')
+    expect(make({ ...swap, toChain: 'solana' }, 'chat-1', [])).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    // With no target chain, a swap lands on the chain it starts from.
+    expect(make({ ...swap, toChain: null }, 'chat-1', [])).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+  })
+
   it('leaves a swap with no address paying the person', () => {
     const { make } = setup()
     const { plan } = ok(make({ outcome: 'swap', to: null, toAsset: 'USDC', toChain: 'base' }))

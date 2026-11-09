@@ -118,8 +118,10 @@ export function createPlanStore({ now = () => new Date(), newId = randomUUID }: 
       if (!goodAmount(intent.amount) || !intent.asset || !words.every((word) => WORD.test(word))) return { ok: false, reason: 'bad-request' }
       if (intent.outcome === 'send' && !intent.to) return { ok: false, reason: 'bad-request' }
       if (intent.outcome === 'swap' && !intent.toAsset) return { ok: false, reason: 'bad-request' }
-      // Whatever the outcome, an address in the plan must be the person's own or one they typed.
-      const recipient = intent.to ? allowedRecipient(intent.to, own, typed) : null
+      // Whatever the outcome, an address in the plan must be the person's own on the chain the funds land on, or one
+      // they typed. A swap's funds land on its target chain, or on the same chain when it names none.
+      const landsOn = intent.outcome === 'swap' ? (intent.toChain ?? intent.chain) : intent.chain
+      const recipient = intent.to ? allowedRecipient(intent.to, landsOn, own, typed) : null
       if (intent.to && !recipient) return { ok: false, reason: 'recipient-not-allowed' }
 
       const at = now()

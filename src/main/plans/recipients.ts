@@ -1,4 +1,4 @@
-import type { Account } from '../../shared/accounts'
+import { ACCOUNT_CHAINS, type Account, type AccountChain } from '../../shared/accounts'
 import type { PlanRecipient } from '../../shared/plan'
 
 /** What can sit around an address in a sentence but never inside one. */
@@ -23,16 +23,34 @@ function typedBy(address: string, messages: readonly string[]): boolean {
   return messages.some((message) => message.split(SEPARATORS).some((word) => sameAddress(word.replace(TRAILING, ''), address)))
 }
 
+/** EVM chains by the names an agent may use. Every one of them shares the wallet's single EVM address. */
+const EVM_CHAINS = new Set(['evm', 'ethereum', 'eth', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc', 'avalanche', 'gnosis'])
+
 /**
- * Who a plan may pay. Only one of the person's own addresses, or one they typed
- * themselves in the chat: never one the agent came up with, which is how a
- * prompt injection would try to send funds elsewhere. Returns null when the
- * address is neither. `typed` must be the person's own messages, as main
- * captured them from the page, never anything the agent wrote.
+ * Which of the person's accounts lives on a chain, by the chain's name. Null for
+ * a missing or unknown chain: then no address counts as the person's own, since
+ * owning an address on one chain says nothing about the same string on another
+ * (a Sui and an Aptos address look alike).
  */
-export function allowedRecipient(address: string, own: readonly Account[], typed: readonly string[]): PlanRecipient | null {
+function accountChainOf(chain: string | null): AccountChain | null {
+  if (!chain) return null
+  const name = chain.toLowerCase()
+  if (EVM_CHAINS.has(name)) return 'evm'
+  return (ACCOUNT_CHAINS as readonly string[]).includes(name) && name !== 'evm' ? (name as AccountChain) : null
+}
+
+/**
+ * Who a plan may pay on `chain`, the chain the funds land on. Only the person's
+ * own address on that chain, or one they typed in the chat: never one the agent
+ * came up with, which is how a prompt injection would try to send funds
+ * elsewhere. Returns null when the address is neither. `typed` must be the
+ * messages sent from Ink's chat box, as main captured them, never anything the
+ * agent wrote.
+ */
+export function allowedRecipient(address: string, chain: string | null, own: readonly Account[], typed: readonly string[]): PlanRecipient | null {
   if (!address) return null
-  if (own.some((account) => sameAddress(account.address, address))) return { address, why: 'own' }
+  const on = accountChainOf(chain)
+  if (on && own.some((account) => account.chain === on && sameAddress(account.address, address))) return { address, why: 'own' }
   if (typedBy(address, typed)) return { address, why: 'typed' }
   return null
 }

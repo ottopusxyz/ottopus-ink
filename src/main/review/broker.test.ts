@@ -8,6 +8,7 @@ import { createPlanStore, PLAN_TTL_MS, type PlanStore, type PlanView } from '../
 import type { SendResult } from '../vault/send-plan'
 import { ARM_DELAY_MS, createReviewBroker, GESTURE_WINDOW_MS } from './broker'
 import { describeForReview } from './describe'
+import { isApprovalKey, type KeyInput } from './input'
 
 const FROM = 'a'.repeat(64)
 const OWN: Account[] = [{ chain: 'near', path: "m/44'/397'/0'", address: FROM }]
@@ -194,6 +195,28 @@ describe('approving', () => {
     env.broker.input()
     env.tick(GESTURE_WINDOW_MS)
     expect(await env.broker.approve(id, hash)).toEqual({ ok: true })
+  })
+
+  it('counts a key press only from after the window armed, and never its release, as the window passes them on', async () => {
+    const env = setup({ send: async () => ({ ok: false, reason: 'chain-unavailable', status: 'approved' }) })
+    const key = (type: string, key: string) => {
+      const input: KeyInput = { type, key, isAutoRepeat: false }
+      if (isApprovalKey(input)) env.broker.input()
+    }
+    const { id, hash } = await draft(env.store)
+    await env.broker.offer(id, OWNER)
+    // Space pressed before the window armed, let go after.
+    env.tick(ARM_DELAY_MS - 100)
+    key('keyDown', ' ')
+    env.tick(200)
+    key('keyUp', ' ')
+    expect(await env.broker.approve(id, hash)).toEqual({ ok: false, reason: 'no-gesture' })
+    // One press of Enter, approved, then let go: the release can't approve again.
+    key('keyDown', 'Enter')
+    expect(await env.broker.approve(id, hash)).toEqual({ ok: false, reason: 'chain-unavailable' })
+    key('keyUp', 'Enter')
+    expect(await env.broker.approve(id, hash)).toEqual({ ok: false, reason: 'no-gesture' })
+    expect(env.sender.send).toHaveBeenCalledTimes(1)
   })
 
   it('lets one click approve once', async () => {

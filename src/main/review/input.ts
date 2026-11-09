@@ -38,12 +38,13 @@ export interface KeyInput {
 /**
  * A press of the main mouse button. Electron reports these from the OS, so a
  * script in the page can't make one: `click()` and `dispatchEvent` never reach
- * here.
+ * here. Only the press counts: a release would let a press from before the
+ * window armed approve, or one press approve twice.
  */
-export const isApprovalClick = (input: MouseInput): boolean => (input.type === 'mouseDown' || input.type === 'mouseUp') && input.button === 'left'
+export const isApprovalClick = (input: MouseInput): boolean => input.type === 'mouseDown' && input.button === 'left'
 
-/** Enter or Space, which press a focused button. A key held down doesn't count again. */
-export const isApprovalKey = (input: KeyInput): boolean => (input.type === 'keyDown' || input.type === 'keyUp') && !input.isAutoRepeat && (input.key === 'Enter' || input.key === ' ')
+/** A press of Enter or Space, which press a focused button. Not its release, and not a key held down. */
+export const isApprovalKey = (input: KeyInput): boolean => input.type === 'keyDown' && !input.isAutoRepeat && (input.key === 'Enter' || input.key === ' ')
 
 /** A NEAR transaction id: 32 bytes in base58. */
 const TRANSACTION_ID = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/

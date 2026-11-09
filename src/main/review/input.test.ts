@@ -35,9 +35,9 @@ describe('who may call the review channels', () => {
 })
 
 describe('what counts as a person approving', () => {
-  it('counts a press or release of the main mouse button', () => {
+  it('counts a press of the main mouse button, never its release', () => {
     expect(isApprovalClick({ type: 'mouseDown', button: 'left' })).toBe(true)
-    expect(isApprovalClick({ type: 'mouseUp', button: 'left' })).toBe(true)
+    expect(isApprovalClick({ type: 'mouseUp', button: 'left' })).toBe(false)
   })
 
   it('doesn’t count other buttons, moves, wheels or a missing button', () => {
@@ -48,11 +48,11 @@ describe('what counts as a person approving', () => {
     expect(isApprovalClick({ type: 'mouseDown' })).toBe(false)
   })
 
-  it('counts Enter and Space, which press a focused button', () => {
-    for (const type of ['keyDown', 'keyUp']) {
-      expect(isApprovalKey({ type, key: 'Enter', isAutoRepeat: false })).toBe(true)
-      expect(isApprovalKey({ type, key: ' ', isAutoRepeat: false })).toBe(true)
-    }
+  it('counts a press of Enter or Space, which press a focused button, never their release', () => {
+    expect(isApprovalKey({ type: 'keyDown', key: 'Enter', isAutoRepeat: false })).toBe(true)
+    expect(isApprovalKey({ type: 'keyDown', key: ' ', isAutoRepeat: false })).toBe(true)
+    expect(isApprovalKey({ type: 'keyUp', key: 'Enter', isAutoRepeat: false })).toBe(false)
+    expect(isApprovalKey({ type: 'keyUp', key: ' ', isAutoRepeat: false })).toBe(false)
   })
 
   it('doesn’t count other keys, or a key held down', () => {

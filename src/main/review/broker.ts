@@ -182,7 +182,11 @@ export function createReviewBroker({ store, sender, describe, unlocked, onState,
       refresh()
     },
 
-    /** A real click or key press in the review window, as Electron reported it. */
+    /**
+     * A real press of the mouse button, Enter or Space in the review window, as
+     * Electron reported it. Only the press counts, never its release, so a press
+     * from before the window armed can't approve when it's let go.
+     */
     input() {
       inputAt = monotonic()
     },

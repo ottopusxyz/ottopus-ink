@@ -33,6 +33,7 @@ export interface NearAccessKeyView {
   nonce: bigint
   /** The block the answer came from: recent enough to build a transaction on. */
   blockHash: Uint8Array
+  blockHeight: bigint
 }
 
 /** Gas one fee costs: sent when the sender pays, executed when the receiver runs it. Sender and receiver differ for a send. */
@@ -218,7 +219,7 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
         if (/does not exist/.test(result.error)) return null
         throw new NearRpcError('rejected', 'NEAR could not read the access key')
       }
-      return { nonce: whole(result.nonce, 'nonce'), blockHash: hash32(result.block_hash, 'block hash') }
+      return { nonce: whole(result.nonce, 'nonce'), blockHash: hash32(result.block_hash, 'block hash'), blockHeight: whole(result.block_height, 'block height') }
     },
 
     /** Which NEAR network the RPC is on, as it says: `mainnet` for the real one. */

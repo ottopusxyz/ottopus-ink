@@ -104,7 +104,7 @@ describe('the NEAR RPC client', () => {
 
   it('reads an access key’s nonce and the block it came from', async () => {
     const { fetch, asked } = fakeFetch({ [A]: [ok({ nonce: 223737468000004, permission: 'FullAccess', block_hash: BLOCK, block_height: 1 })] })
-    expect(await rpc(fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).toEqual({ nonce: 223737468000004n, blockHash: new Uint8Array(32).fill(3) })
+    expect(await rpc(fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).toEqual({ nonce: 223737468000004n, blockHash: new Uint8Array(32).fill(3), blockHeight: 1n })
     expect(asked[0]!.request.params).toMatchObject({ request_type: 'view_access_key', public_key: 'ed25519:abc' })
     // How mainnet says a key is missing, on 9 Nov 2026: a result with an error string, not a JSON-RPC error.
     const missing = { block_hash: BLOCK, block_height: 223739905, error: 'access key ed25519:1111 does not exist while viewing', logs: [] }
@@ -114,6 +114,8 @@ describe('the NEAR RPC client', () => {
     await expect(rpc(other.fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).rejects.toMatchObject({ reason: 'rejected' })
     const short = fakeFetch({ [A]: [ok({ nonce: 1, block_hash: base58.encode(new Uint8Array(31)) })], [B]: [] })
     await expect(rpc(short.fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).rejects.toBeInstanceOf(NearRpcError)
+    const noHeight = fakeFetch({ [A]: [ok({ nonce: 1, block_hash: BLOCK })], [B]: [] })
+    await expect(rpc(noHeight.fetch).viewAccessKey('a'.repeat(64), 'ed25519:abc')).rejects.toBeInstanceOf(NearRpcError)
   })
 
   it('reads which network the RPC is on', async () => {

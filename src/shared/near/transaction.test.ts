@@ -112,6 +112,18 @@ describe('decoding refuses anything Ink doesn’t send', () => {
     refuse(notUtf8)
   })
 
+  it('an account id behind a UTF-8 byte order mark, which a lenient decoder would drop', () => {
+    const BOM = [0xef, 0xbb, 0xbf]
+    const withBom = (id: string) => Uint8Array.from([id.length + 3, 0, 0, 0, ...BOM, ...new TextEncoder().encode(id)])
+    const bytes = encodeTransfer({ ...SAMPLE, signerId: 'bb', receiverId: 'cc' })
+    // signer: u32 length + 'bb', then key, nonce; receiver: u32 length + 'cc', then the rest.
+    const receiverAt = 4 + 2 + 1 + 32 + 8
+    refuse(Uint8Array.from([...withBom('bb'), ...bytes.subarray(6)]))
+    refuse(Uint8Array.from([...bytes.subarray(0, receiverAt), ...withBom('cc'), ...bytes.subarray(receiverAt + 6)]))
+    // The same bytes without the mark do read.
+    expect(decodeTransfer(bytes)).toMatchObject({ signerId: 'bb', receiverId: 'cc' })
+  })
+
   it('and won’t encode one either', () => {
     expect(() => encodeTransfer({ ...SAMPLE, receiverId: 'Mallory.near' })).toThrow(NearDecodeError)
     expect(() => encodeTransfer({ ...SAMPLE, deposit: -1n })).toThrow(NearDecodeError)

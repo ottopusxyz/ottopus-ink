@@ -76,7 +76,8 @@ function reader(bytes: Uint8Array) {
       if (length > 64) throw new NearDecodeError(`the ${what} is too long to be an account id`)
       let id: string
       try {
-        id = new TextDecoder('utf-8', { fatal: true }).decode(take(length))
+        // ignoreBOM keeps a leading byte order mark in the string, so the account id check refuses it.
+        id = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(take(length))
       } catch (error) {
         if (error instanceof NearDecodeError) throw error
         throw new NearDecodeError(`the ${what} is not UTF-8`)

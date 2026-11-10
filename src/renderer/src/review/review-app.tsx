@@ -1,10 +1,28 @@
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import type { ReviewFailure, ReviewState } from '../../../shared/review'
-import { Badge, Button, Callout } from '@/components/ui'
+import { Otto, type PoseName } from '@/components/brand/otto'
+import { Badge, Button, Callout, ChainLogo, TokenLogo } from '@/components/ui'
 import { approveLabel, canApprove, failureText, groupAddress, outcomeOf, shortHash, timeLeft } from './review-copy'
 
 /** Refusals about the click itself, which the plan's own state doesn't show. */
 const CLICK_FAILURES: ReadonlySet<ReviewFailure> = new Set(['not-armed', 'no-gesture', 'stale', 'busy', 'cannot-move'])
+
+/** Otto's pose for where the plan on show stands. He moves only while it waits on the person or goes out. */
+function ottoFor(state: ReviewState): { pose: PoseName; moving: boolean } {
+  if (state.sending) return { pose: 'loader', moving: true }
+  switch (state.status) {
+    case 'confirmed':
+      return { pose: 'confirmed', moving: false }
+    case 'failed':
+    case 'blocked':
+      return { pose: 'ink', moving: false }
+    case 'cancelled':
+    case 'expired':
+      return { pose: 'base', moving: false }
+    default:
+      return state.failure === 'fee-changed' ? { pose: 'heads-up', moving: false } : { pose: 'plan-ready', moving: true }
+  }
+}
 
 /**
  * The review window's page. It shows what main decoded from the plan's own
@@ -48,6 +66,7 @@ export function ReviewApp() {
   const { plan } = state
   const outcome = outcomeOf(state)
   const left = timeLeft(plan.expiresAt, now)
+  const otto = ottoFor(state)
 
   const approve = async (event: MouseEvent<HTMLButtonElement>) => {
     // Only a click or key press the browser itself made. Main checks again with what the OS reported.
@@ -59,17 +78,22 @@ export function ReviewApp() {
 
   return (
     <Shell>
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <span className="ink-eyebrow">Review</span>
-          <h1 className="m-0 font-display text-[22px] font-semibold tracking-[-0.02em]">Send {plan.amount} NEAR</h1>
+      <header className="flex items-center gap-3">
+        <Otto pose={otto.pose} size={64} animated={otto.moving} />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="ink-eyebrow">Your agent asks to</span>
+          <h1 className="m-0 font-display text-[24px] font-bold tracking-[-0.02em]">Send {plan.amount} NEAR</h1>
         </div>
-        <Badge tone="plan" className="font-semibold">
-          {plan.network}
-        </Badge>
       </header>
 
-      <Section label="To">
+      <div className="ink-review-network">
+        <ChainLogo chain="near" size="sm" />
+        <span className="font-semibold">{plan.network}</span>
+        <span className="flex-1" />
+        <span className="text-[11.5px] text-[var(--ot-text-3)]">not simulated</span>
+      </div>
+
+      <Section label="To" card>
         <Address value={plan.to} />
         <div className="flex flex-wrap gap-1.5">
           {plan.toWhy === 'typed' ? <Badge tone="warn">You typed this address in the chat</Badge> : <Badge tone="ok">Your own account</Badge>}
@@ -80,13 +104,26 @@ export function ReviewApp() {
         ) : null}
       </Section>
 
-      <Section label="Most that can leave your account">
-        <p className="selectable m-0 font-mono text-[20px] font-medium">{plan.maxTotal ? `${plan.maxTotal} NEAR` : `${plan.amount} NEAR and the fee`}</p>
-        <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
-          {plan.maxTotal
-            ? `${plan.amount} NEAR sent, plus at most ${plan.maxFee} NEAR in fees. Most of the fee comes back.`
-            : 'Ink couldn’t read today’s fee. Approve asks NEAR again and shows the maximum, and nothing is signed until you approve that.'}
+      <Section label="Amount" card>
+        <p className="selectable m-0 flex items-center gap-2.5">
+          <TokenLogo symbol="NEAR" chain="near" size="lg" />
+          <span className="font-display text-[32px] leading-none font-bold tracking-[-0.02em]">{plan.amount} NEAR</span>
         </p>
+        <p className="m-0 text-[13px] text-[var(--ot-text-2)]">
+          {plan.maxFee ? (
+            <>
+              + up to <strong className="selectable">{plan.maxFee} NEAR</strong> network fee
+            </>
+          ) : (
+            'Ink couldn’t read today’s fee. Approve asks NEAR again and shows the maximum, and nothing is signed until you approve that.'
+          )}
+        </p>
+        {plan.maxTotal ? (
+          <p className="m-0 border-t border-dashed border-[var(--ot-border)] pt-2 text-[11.5px] text-[var(--ot-text-3)]">
+            Most that can leave your account: <span className="selectable font-mono text-[var(--ot-text-2)]">{plan.maxTotal} NEAR</span>. Most of
+            the fee comes back.
+          </p>
+        ) : null}
       </Section>
 
       <Section label="Actions">
@@ -98,9 +135,7 @@ export function ReviewApp() {
             </li>
           ))}
         </ul>
-        <div className="flex flex-wrap gap-1.5">
-          <Badge>Not simulated: NEAR has no dry run</Badge>
-        </div>
+        <p className="m-0 text-[12px] text-[var(--ot-text-3)]">Not simulated: NEAR has no dry run.</p>
       </Section>
 
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[12.5px]">
@@ -173,9 +208,9 @@ function Shell({ children }: { children: ReactNode }) {
   return <main className="flex h-full flex-col gap-5 overflow-y-auto px-6 py-6">{children}</main>
 }
 
-function Section({ label, children }: { label: string; children: ReactNode }) {
+function Section({ label, card = false, children }: { label: string; card?: boolean; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-2">
+    <section className={card ? 'ink-review-card flex flex-col gap-2' : 'flex flex-col gap-2'}>
       <h2 className="ink-eyebrow m-0">{label}</h2>
       {children}
     </section>

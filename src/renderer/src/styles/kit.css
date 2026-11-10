@@ -570,3 +570,21 @@
 .ink-progress__step--on .ink-progress__label {
   color: var(--ot-text);
 }
+
+/* The review window: the network as a quiet strip, the recipient and amount on cards. */
+.ink-review-network {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--ot-border);
+  border-radius: 12px;
+  background: var(--ot-surface-2);
+  font-size: 13px;
+}
+.ink-review-card {
+  padding: 14px;
+  border: 1px solid var(--ot-border-strong);
+  border-radius: 16px;
+  background: var(--ot-card);
+}

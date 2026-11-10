@@ -6,6 +6,7 @@ import {
   chatFailedToStart,
   chatStarted,
   chatTurns,
+  trimmedPlan,
   chatTitle,
   filterChats,
   HOME_DRAFT,
@@ -419,5 +420,22 @@ describe('a chat as turns', () => {
       { kind: 'agent', id: 'n', items: [{ kind: 'notice', id: 'n', severity: 'info', title: 'Stopped', text: null }] },
     ])
     expect(chatTurns([])).toEqual([])
+  })
+})
+
+describe('a plan trimmed out of a long chat', () => {
+  it('is shown on its own once its message is gone', () => {
+    const chat = after([{ type: 'plan', plan }])
+    expect(trimmedPlan(chat)).toBeNull()
+    expect(trimmedPlan({ ...chat, items: chat.items.filter((item) => item.kind !== 'plan') })).toEqual(plan)
+  })
+
+  it('is nothing for a chat without a plan', () => {
+    expect(trimmedPlan(started())).toBeNull()
+  })
+
+  it('follows the latest plan, not an older one still in the chat', () => {
+    const chat = after([{ type: 'plan', plan }])
+    expect(trimmedPlan({ ...chat, plan: { ...plan, id: 'newer' } })).toEqual({ ...plan, id: 'newer' })
   })
 })

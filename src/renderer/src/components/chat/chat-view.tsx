@@ -4,7 +4,7 @@ import { Callout, ErrorState, TokenLogo, Tooltip } from '@/components/ui'
 import { Sea } from '@/components/motion/sea'
 import { PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
-import { chatTurns, type Chat, type ChatItem } from '@/lib/chats'
+import { chatTurns, trimmedPlan, type Chat, type ChatItem } from '@/lib/chats'
 import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { AgentMark } from './agent-picker'
@@ -52,6 +52,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
   const toolCount = chat.items.filter((item) => item.kind === 'tool').length
   const turns = useMemo(() => chatTurns(chat.items), [chat.items])
   const lastTurn = turns.at(-1)
+  const kept = trimmedPlan(chat)
   const thinking = working ? <AgentThinking className="ink-thinking" variant="infinity" label={working} shimmer={false} /> : null
 
   // Opening a chat starts at its end, ready for a reply.
@@ -100,6 +101,8 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
           {chat.trimmed ? (
             <p className="m-0 text-center text-[12px] text-[var(--ot-text-3)]">Earlier messages are no longer shown.</p>
           ) : null}
+          {/* The plan's own message was trimmed, but where it stands still matters. */}
+          {kept ? <PlanCard plan={kept} /> : null}
           {turns.map((turn) =>
             turn.kind === 'you' ? (
               <ConversationItem key={turn.item.id} item={turn.item} />

@@ -270,6 +270,16 @@ export function chatTurns(items: readonly ChatItem[]): Turn[] {
   return turns
 }
 
+/**
+ * The chat's latest plan when its message has been trimmed away, so a long chat
+ * still shows where its plan stands. Null while the plan is in the conversation.
+ */
+export function trimmedPlan(chat: Pick<Chat, 'plan' | 'items'>): ChatPlan | null {
+  const { plan } = chat
+  if (!plan) return null
+  return chat.items.some((item) => item.kind === 'plan' && item.plan.id === plan.id) ? null : plan
+}
+
 /** The first chat with a plan waiting on the person's review, for Home's banner. */
 export function waitingPlan(chats: readonly Chat[]): { chatId: string; plan: ChatPlan } | null {
   for (const chat of chats) {

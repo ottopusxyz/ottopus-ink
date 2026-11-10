@@ -606,3 +606,18 @@
   background: var(--ot-card);
   box-shadow: 0 1px 2px rgba(22, 33, 62, 0.12), 0 0 0 1px var(--ot-border-strong);
 }
+
+/* Coral is for actions and Otto. The open page in the sidebar lifts like an
+   open chat, and your own messages are navy. */
+.ink-side-item--page[aria-current="page"] {
+  background: var(--ot-card);
+  box-shadow: var(--ot-shadow-card);
+}
+.ink-bubble {
+  background: var(--ot-navy);
+  color: var(--ot-cream);
+}
+[data-theme="dark"] .ink-bubble { background: #2B3B69; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-bubble { background: #2B3B69; }
+}

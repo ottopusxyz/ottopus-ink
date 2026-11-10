@@ -5,6 +5,7 @@ import {
   applyChatEvent,
   chatFailedToStart,
   chatStarted,
+  chatTurns,
   chatTitle,
   filterChats,
   HOME_DRAFT,
@@ -394,5 +395,29 @@ describe('the plan waiting on Home', () => {
   it('is nothing when no plan waits on the person', () => {
     expect(waitingPlan([withPlan('a', 'confirmed'), withPlan('b', 'signing')])).toBeNull()
     expect(waitingPlan([])).toBeNull()
+  })
+})
+
+describe('a chat as turns', () => {
+  it('keeps your messages alone and groups what the agent did after each', () => {
+    const chat = after([
+      { type: 'text', text: 'On it.' },
+      { type: 'tool-call', id: 't1', name: 'mcp__ottopus-ink__get_portfolio', input: '{}' },
+      { type: 'plan', plan },
+    ])
+    const turns = chatTurns([...chat.items, { kind: 'user', id: 'u2', text: 'thanks' }, { kind: 'agent', id: 'a2', text: 'Done.' }])
+    expect(turns.map((turn) => (turn.kind === 'you' ? 'you' : turn.items.map((item) => item.kind).join('+')))).toEqual([
+      'you',
+      'agent+tool+plan',
+      'you',
+      'agent',
+    ])
+  })
+
+  it('starts with the agent when the chat does', () => {
+    expect(chatTurns([{ kind: 'notice', id: 'n', severity: 'info', title: 'Stopped', text: null }])).toEqual([
+      { kind: 'agent', id: 'n', items: [{ kind: 'notice', id: 'n', severity: 'info', title: 'Stopped', text: null }] },
+    ])
+    expect(chatTurns([])).toEqual([])
   })
 })

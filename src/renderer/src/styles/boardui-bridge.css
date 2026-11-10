@@ -1,14 +1,20 @@
-/* What the BoardUI parts in vendor/boardui reference, mapped onto --ot-*. Only
-   what's drawn is here: chats use Agent Thinking's infinity variant with no
-   timer, and Composer Loader with no surface. The rules below come from BoardUI's
-   globals.css (MIT, see vendor/boardui/LICENSE), which is not imported, and neither
-   are its theme.css or typography.css. */
+/* What the BoardUI part in vendor/boardui references, mapped onto --ot-*. Only
+   what's drawn is here: chats use Agent Thinking's infinity variant, with its
+   timer. The rules below come from BoardUI's globals.css (MIT, see
+   vendor/boardui/LICENSE), which is not imported, and neither are its theme.css
+   or typography.css. */
 
 .ink-thinking {
   --color-text-primary: var(--ot-text);
   --color-text-secondary: var(--ot-text-2);
   --color-text-tertiary: var(--ot-text-3);
   --color-blue-500: var(--ot-plan);
+}
+.ink-thinking .text-caption-1-regular {
+  font-size: 11.5px;
+}
+.ink-thinking .text-text-tertiary {
+  color: var(--ot-text-3);
 }
 .ink-thinking .text-body-medium {
   font: 500 13px/1.4 var(--ot-font-ui);
@@ -44,15 +50,6 @@
   to { stroke-dashoffset: -100; }
 }
 
-/* The part sets its animation inline, which only !important can pause. */
-.bui-composer-loader-rect {
-  animation-play-state: var(--ot-ambient-play) !important;
-}
-@keyframes bui-composer-loader-dash {
-  from { stroke-dashoffset: 0; }
-  to { stroke-dashoffset: -100; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .bui-agent-thinking-label {
     color: var(--bui-agent-thinking-tone);
@@ -61,8 +58,5 @@
   }
   .bui-agent-thinking-comet {
     animation: none;
-  }
-  .bui-composer-loader-rect {
-    animation: none !important;
   }
 }

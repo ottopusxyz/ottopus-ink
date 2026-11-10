@@ -255,6 +255,21 @@ export function inkTool(name: string): InkTool | null {
   return INK_TOOLS.find((tool) => tool === short) ?? null
 }
 
+/** A run of a chat: one of your messages, or everything the agent did in answer, under its avatar. */
+export type Turn = { kind: 'you'; item: ChatItem } | { kind: 'agent'; id: string; items: ChatItem[] }
+
+/** A chat's items as turns: each message of yours alone, and what follows it grouped as the agent's answer. */
+export function chatTurns(items: readonly ChatItem[]): Turn[] {
+  const turns: Turn[] = []
+  for (const item of items) {
+    const last = turns.at(-1)
+    if (item.kind === 'user') turns.push({ kind: 'you', item })
+    else if (last?.kind === 'agent') last.items.push(item)
+    else turns.push({ kind: 'agent', id: item.id, items: [item] })
+  }
+  return turns
+}
+
 /** The first chat with a plan waiting on the person's review, for Home's banner. */
 export function waitingPlan(chats: readonly Chat[]): { chatId: string; plan: ChatPlan } | null {
   for (const chat of chats) {

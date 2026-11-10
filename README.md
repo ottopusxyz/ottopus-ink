@@ -102,15 +102,17 @@ Ink talks to NEAR mainnet through [FastNEAR](https://fastnear.com)'s free RPC, a
 
 Ported from [ottopusxyz/ottopus](https://github.com/ottopusxyz/ottopus) (MIT, built for BNB Hack):
 
-- the design tokens and water, sea-life and Otto styles in `src/renderer/src/styles` (`tokens.css`, `dialog.css`, `water.css`, `sea-life.css`, `otto.css`)
+- the design tokens and water and Otto styles in `src/renderer/src/styles` (`tokens.css`, `dialog.css`, `water.css`, `otto.css`)
 - the UI primitives in `src/renderer/src/components/ui`
-- Otto and his badge in `src/renderer/src/components/brand`
-- the bubbles, sea life and stillness in `src/renderer/src/components/motion` (everything there except `sea.tsx`)
+- Otto and his badge in `src/renderer/src/components/brand`, apart from the `wave` pose, which is Ink's own
+- the stillness in `src/renderer/src/components/motion`, and the tentacle ring, step list and ink hold there (`ring.tsx`, `loaders.tsx`), redrawn from the Ottopus loader family
 - the Claude and Codex marks in `src/renderer/src/assets/agents`, which came from [Simple Icons](https://simpleicons.org) (CC0). The marks stay the trademarks of their owners and are used only to show which agent a chat runs on
+
+The chain and token marks in `src/renderer/src/assets/crypto` are from [web3icons](https://web3icons.io) (MIT, by 0xa3k5); its README there lists each one.
 
 Copied from [BoardUI](https://github.com/BoardUI/boardui) 0.5.9 (MIT, Copyright (c) 2026 Mertcan Dundar Esmergul (BoardUI)):
 
-- Agent Thinking and Composer Loader in `src/renderer/src/vendor/boardui`, with their licence and the changes made
+- Agent Thinking in `src/renderer/src/vendor/boardui`, with its licence
 - the keyframes and label shimmer in `src/renderer/src/styles/boardui-bridge.css`, which carries them over onto our tokens
 
 Everything else here is new.

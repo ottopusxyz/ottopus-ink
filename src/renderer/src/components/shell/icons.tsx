@@ -145,3 +145,11 @@ export const BotIcon = icon(
   </>,
   2,
 )
+export const ClockIcon = icon(
+  <>
+    <circle cx="12" cy="13" r="8" />
+    <path d="M12 9v4l2 2M10 2h4" />
+  </>,
+  2,
+)
+export const ExternalIcon = icon(<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />, 2)

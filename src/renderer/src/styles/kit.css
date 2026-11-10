@@ -924,3 +924,38 @@
   width: auto;
   max-width: none;
 }
+
+/* A status chip's dot, and the tide sweep while Approve waits to wake up. */
+.ink-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ink-tide {
+  position: relative;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ot-water-2);
+}
+.ink-tide > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 32%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--ot-plan), transparent);
+  animation: ink-tide 1.4s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ink-tide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-tide > span { animation: none; width: 100%; opacity: 0.4; }
+}
+.ink-review-card--stk {
+  border-radius: 18px;
+  box-shadow: var(--ot-shadow-card);
+}

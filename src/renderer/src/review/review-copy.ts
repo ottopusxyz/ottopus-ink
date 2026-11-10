@@ -87,3 +87,23 @@ export function outcomeOf(state: ReviewState): Outcome | null {
       return null
   }
 }
+
+/** What kind of account the recipient is, in words, under its address. */
+export const ACCOUNT_KIND: Record<ReviewState['plan']['toKind'], string> = {
+  named: 'A named NEAR account',
+  implicit: 'An implicit NEAR account',
+  'eth-implicit': 'An Ethereum-style NEAR account',
+}
+
+/**
+ * The steps a send goes through, for the ink hold while it runs. Once main has
+ * a transaction id the signer has signed, and Ink is waiting for NEAR's answer.
+ */
+export function sendSteps(state: ReviewState): { label: string; status: 'done' | 'active' | 'pending' }[] {
+  const signed = state.transactionId !== null
+  return [
+    { label: signed ? 'Signed in the signer' : 'Signing in the signer', status: signed ? 'done' : 'active' },
+    { label: 'Waiting for NEAR to answer', status: signed ? 'active' : 'pending' },
+    { label: 'Confirmed on chain', status: 'pending' },
+  ]
+}

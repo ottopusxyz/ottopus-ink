@@ -1,6 +1,8 @@
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import type { ReviewFailure, ReviewState } from '../../../shared/review'
 import { Otto, type PoseName } from '@/components/brand/otto'
+import { InkHold } from '@/components/motion/loaders'
+import { ArrowRightIcon } from '@/components/shell/icons'
 import { Badge, Button, Callout, ChainLogo, TokenLogo } from '@/components/ui'
 import { approveLabel, canApprove, failureText, groupAddress, outcomeOf, shortHash, timeLeft } from './review-copy'
 
@@ -86,67 +88,99 @@ export function ReviewApp() {
         </div>
       </header>
 
-      <div className="ink-review-network">
-        <ChainLogo chain="near" size="sm" />
-        <span className="font-semibold">{plan.network}</span>
-        <span className="flex-1" />
-        <span className="text-[11.5px] text-[var(--ot-text-3)]">not simulated</span>
-      </div>
-
-      <Section label="To" card>
-        <Address value={plan.to} />
-        <div className="flex flex-wrap gap-1.5">
-          {plan.toWhy === 'typed' ? <Badge tone="warn">You typed this address in the chat</Badge> : <Badge tone="ok">Your own account</Badge>}
-          {plan.toKind === 'named' ? null : <Badge>New if nothing was sent to it yet</Badge>}
-        </div>
-        {plan.toWhy === 'typed' ? (
-          <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">Check every character against the address you meant. Funds sent to the wrong account can’t be taken back.</p>
-        ) : null}
-      </Section>
-
-      <Section label="Amount" card>
-        <p className="selectable m-0 flex items-center gap-2.5">
-          <TokenLogo symbol="NEAR" chain="near" size="lg" />
-          <span className="font-display text-[32px] leading-none font-bold tracking-[-0.02em]">{plan.amount} NEAR</span>
-        </p>
-        <p className="m-0 text-[13px] text-[var(--ot-text-2)]">
-          {plan.maxFee ? (
-            <>
-              + up to <strong className="selectable">{plan.maxFee} NEAR</strong> network fee
-            </>
-          ) : (
-            'Ink couldn’t read today’s fee. Approve asks NEAR again and shows the maximum, and nothing is signed until you approve that.'
-          )}
-        </p>
-        {plan.maxTotal ? (
-          <p className="m-0 border-t border-dashed border-[var(--ot-border)] pt-2 text-[11.5px] text-[var(--ot-text-3)]">
-            Most that can leave your account: <span className="selectable font-mono text-[var(--ot-text-2)]">{plan.maxTotal} NEAR</span>. Most of
-            the fee comes back.
+      {state.sending ? (
+        <InkHold title="Signing and sending…" detail={`${plan.amount} NEAR → ${plan.to}`}>
+          <p className="m-0 text-[12.5px] text-[rgba(255,240,220,0.7)]">Keep Ink open until NEAR answers.</p>
+        </InkHold>
+      ) : state.status === 'confirmed' ? (
+        <div className="flex flex-col items-center gap-3 py-4 text-center">
+          <Otto pose="confirmed" size={150} />
+          <Badge tone="ok">Confirmed</Badge>
+          <p className="m-0 font-display text-[30px] font-bold">Sent!</p>
+          <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
+            NEAR ran the transaction. {plan.amount} NEAR is on its way to <span className="selectable font-mono">{plan.to}</span>.
           </p>
-        ) : null}
-      </Section>
+        </div>
+      ) : (
+        <>
+        <div className="ink-review-network">
+          <ChainLogo chain="near" size="sm" />
+          <span className="font-semibold">{plan.network}</span>
+          <span className="flex-1" />
+          <span className="text-[11.5px] text-[var(--ot-text-3)]">not simulated</span>
+        </div>
 
-      <Section label="Actions">
-        <ul className="m-0 flex list-none flex-col gap-1 p-0">
-          {plan.actions.map((action, index) => (
-            <li key={index} className="text-[14px]">
-              <span className="font-semibold">{action.kind}</span> <span className="selectable font-mono">{action.amount} NEAR</span>
-              <span className="text-[var(--ot-text-3)]">{action.method ? ` · calls ${action.method}` : ' · no contract call'}</span>
-            </li>
-          ))}
-        </ul>
-        <p className="m-0 text-[12px] text-[var(--ot-text-3)]">Not simulated: NEAR has no dry run.</p>
-      </Section>
+        <Section label="To" card>
+          <div className="flex items-center gap-3">
+            <span className="ink-avatar" aria-hidden>
+              {plan.toKind === 'named' ? plan.to.slice(0, 1).toUpperCase() : '0x'}
+            </span>
+            <Address value={plan.to} />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {plan.toWhy === 'typed' ? <Badge tone="warn">You typed this address in the chat</Badge> : <Badge tone="ok">Your own account</Badge>}
+            {plan.toKind === 'named' ? null : <Badge>New if nothing was sent to it yet</Badge>}
+          </div>
+          {plan.toWhy === 'typed' ? (
+            <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">Check every character against the address you meant. Funds sent to the wrong account can’t be taken back.</p>
+          ) : null}
+        </Section>
 
-      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[12.5px]">
-        <Detail label="Fee">{plan.maxFee ? `Up to ${plan.maxFee} NEAR` : 'Not known yet'}</Detail>
-        <Detail label="From">
-          <Address value={plan.from} small />
-        </Detail>
-        <Detail label="Signing key">{plan.publicKey}</Detail>
-        <Detail label="Exact amount">{plan.amountYocto} yoctoNEAR</Detail>
-        <Detail label="Plan hash">{shortHash(plan.hash)}</Detail>
-      </dl>
+        <Section label="Amount" card>
+          <p className="selectable m-0 flex items-center gap-2.5">
+            <TokenLogo symbol="NEAR" chain="near" size="lg" />
+            <span className="font-display text-[32px] leading-none font-bold tracking-[-0.02em]">{plan.amount} NEAR</span>
+          </p>
+          <p className="m-0 text-[13px] text-[var(--ot-text-2)]">
+            {plan.maxFee ? (
+              <>
+                + up to <strong className="selectable">{plan.maxFee} NEAR</strong> network fee
+              </>
+            ) : (
+              'Ink couldn’t read today’s fee. Approve asks NEAR again and shows the maximum, and nothing is signed until you approve that.'
+            )}
+          </p>
+          {plan.maxTotal ? (
+            <p className="m-0 border-t border-dashed border-[var(--ot-border)] pt-2 text-[11.5px] text-[var(--ot-text-3)]">
+              Most that can leave your account: <span className="selectable font-mono text-[var(--ot-text-2)]">{plan.maxTotal} NEAR</span>. Most of
+              the fee comes back.
+            </p>
+          ) : null}
+        </Section>
+
+        <Section label="Actions">
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {plan.actions.map((action, index) => (
+              <li key={index} className="ink-review-card flex items-center gap-3 py-3">
+                <span className="ink-tool__glyph" style={{ background: '#FFD2C2' }} aria-hidden>
+                  <ArrowRightIcon size={14} />
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-[14px] font-semibold">
+                    {action.kind} <span className="selectable font-mono">{action.amount} NEAR</span>
+                  </span>
+                  <span className="text-[12.5px] text-[var(--ot-text-3)]">{action.method ? `Calls ${action.method}` : 'Calls no contract'}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="m-0 text-[12px] text-[var(--ot-text-3)]">Not simulated: NEAR has no dry run.</p>
+        </Section>
+
+        <details className="ink-review-card ink-review-details" open>
+          <summary>The exact details</summary>
+          <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 pt-2 text-[12.5px]">
+            <Detail label="Fee">{plan.maxFee ? `Up to ${plan.maxFee} NEAR` : 'Not known yet'}</Detail>
+            <Detail label="From">
+              <Address value={plan.from} small />
+            </Detail>
+            <Detail label="Signing key">{plan.publicKey}</Detail>
+            <Detail label="Exact amount">{plan.amountYocto} yoctoNEAR</Detail>
+            <Detail label="Plan hash">{shortHash(plan.hash)}</Detail>
+          </dl>
+        </details>
+        </>
+      )}
 
       {!state.unlocked && !outcome ? (
         <Callout severity="caution" title="Ink is locked" compact>
@@ -167,9 +201,12 @@ export function ReviewApp() {
       <footer className="mt-auto flex flex-col gap-3 border-t border-[var(--ot-border)] pt-4">
         {outcome ? (
           <>
-            <Callout severity={outcome.tone} title={outcome.title} compact>
-              {outcome.text}
-            </Callout>
+            {/* Sending and sent have their own screen above, so they don't repeat it here. */}
+            {state.sending || state.status === 'confirmed' ? null : (
+              <Callout severity={outcome.tone} title={outcome.title} compact>
+                {outcome.text}
+              </Callout>
+            )}
             {state.transactionId ? (
               <p className="m-0 text-[12.5px]">
                 <span className="text-[var(--ot-text-3)]">Transaction </span>

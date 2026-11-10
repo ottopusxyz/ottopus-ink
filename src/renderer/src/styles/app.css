@@ -6,6 +6,7 @@
 @import "./sea.css";
 @import "./shell.css";
 @import "./boardui-bridge.css";
+@import "./kit.css";
 
 /* Divergences from the design project live here, never in the ported files, so
    re-syncing tokens.css cannot silently drop them. The first two blocks are

@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { AgentId, AgentState, AgentStatus, ExternalItem } from '../../../../shared/ipc'
+import { Otto } from '@/components/brand/otto'
 import { AgentMark } from '@/components/chat/agent-picker'
 import { Badge, Button, Callout, Dialog, Tooltip, type Tone } from '@/components/ui'
 import { BotIcon, CloseIcon, PlugIcon, RefreshIcon, ShieldIcon, SlidersIcon, WalletIcon } from '@/components/shell/icons'
@@ -120,7 +121,7 @@ function AgentTab({
   const [send, setSend] = useState('queue')
   return (
     <>
-      <h2 className="m-0 text-[16px] font-semibold">Agent</h2>
+      <h2 className="m-0 font-display text-[22px] font-bold tracking-[-0.02em]">Agent</h2>
       <p className="mt-1.5 mb-3.5 text-[13px] text-[var(--ot-text-2)]">
         The agents Ink found on this computer, and how new chats use them.
       </p>
@@ -138,10 +139,7 @@ function AgentTab({
           agents.map((agent) => {
             const copy = describeAgent(agent)
             return (
-              <div
-                key={agent.id}
-                className="flex items-start gap-3 rounded-[12px] border border-[var(--ot-border)] bg-[var(--ot-card)] px-3 py-2.5"
-              >
+              <div key={agent.id} className={agent.id === selectedAgent ? 'ink-agent-card ink-agent-card--on' : 'ink-agent-card'}>
                 <AgentMark id={agent.id} />
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2">
@@ -203,21 +201,23 @@ function WalletTab() {
   const [lock, setLock] = useState('15')
   return (
     <>
-      <h2 className="m-0 text-[16px] font-semibold">Wallet and backup</h2>
+      <h2 className="m-0 font-display text-[22px] font-bold tracking-[-0.02em]">Wallet and backup</h2>
       <p className="mt-1.5 mb-3.5 text-[13px] text-[var(--ot-text-2)]">
         Your keys live on this device, encrypted with your password.
       </p>
       <NotSavedYet />
-      <Setting
-        title="Back up your recovery phrase"
-        description="See your 12 or 24 words again, after entering your password."
-      >
+      <div className="ink-backup-card">
+        <Otto pose="heads-up" size={62} />
+        <div className="min-w-0 flex-1">
+          <h3 className="m-0 text-[15px] font-bold text-[var(--ot-warn-text)]">Back up your recovery phrase</h3>
+          <p className="m-0 mt-0.5 text-[12.5px] leading-[1.45]">See your 12 or 24 words again, after entering your password.</p>
+        </div>
         <Tooltip text={NEEDS_WALLET}>
           <Button size="sm" variant="primary" aria-disabled>
             Back up now
           </Button>
         </Tooltip>
-      </Setting>
+      </div>
       <Setting
         title="Restore a different wallet"
         description="Replace this wallet with one from a 12 or 24 word recovery phrase."
@@ -263,7 +263,12 @@ function WalletTab() {
 }
 
 function EmptyTab() {
-  return <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Nothing to set here yet.</p>
+  return (
+    <div className="flex flex-col items-center gap-2 py-10 text-center">
+      <Otto pose="base" size={96} />
+      <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Nothing to set here yet.</p>
+    </div>
+  )
 }
 
 function Setting({ title, description, children }: { title: string; description: string; children: ReactNode }) {

@@ -199,6 +199,7 @@ export function App() {
           onSubmit={send}
           onStop={() => chatActions.stop(current)}
           onEnd={() => chatActions.end(current)}
+          onToolsSettings={() => openSettings('tools')}
         />
       ) : (
         <HomeView
@@ -209,6 +210,7 @@ export function App() {
           onOpenChat={openChat}
           onPortfolio={() => setView({ kind: 'page', page: 'portfolio' })}
           onBackup={() => openSettings('wallet')}
+          onToolsSettings={() => openSettings('tools')}
           composerRef={composerRef}
           agentPicker={agentPicker}
           canSend={selectedAgent !== null}

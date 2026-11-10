@@ -28,6 +28,8 @@ export interface HomeViewProps {
   onPortfolio: () => void
   /** Opens Settings on the wallet and backup section. */
   onBackup: () => void
+  /** Opens Settings on tools and skills. */
+  onToolsSettings: () => void
   composerRef?: Ref<HTMLTextAreaElement>
   agentPicker: ReactNode
   /** Off until there's a ready agent to send to. */
@@ -52,6 +54,7 @@ export function HomeView({
   onOpenChat,
   onPortfolio,
   onBackup,
+  onToolsSettings,
   composerRef,
   agentPicker,
   canSend,
@@ -110,6 +113,7 @@ export function HomeView({
             agentPicker={agentPicker}
             canSend={canSend}
             external={external}
+            tools={{ scope: 'new', onSettings: onToolsSettings }}
             prominent
             placeholder="Tell your agent what to do: swap, send, bridge or stake."
           />

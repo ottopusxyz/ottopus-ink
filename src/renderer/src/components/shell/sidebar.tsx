@@ -1,16 +1,14 @@
 import { useMemo, useState, type Ref } from 'react'
 import type { SignerStatus } from '../../../../shared/ipc'
 import { AgentMark } from '@/components/chat/agent-picker'
-import { SignInIcon } from '@/components/settings/sign-in-icon'
 import { Badge, Button, ChainStack, TokenLogo, Tooltip } from '@/components/ui'
 import { agentInfo } from '@/lib/agents'
-import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
+import { filterChats, isWorking, type Chat } from '@/lib/chats'
 import { ACCOUNT_CHAIN_MARK } from '@/lib/logos'
 import {
   ActivityIcon,
   CheckIcon,
   ChevronDownIcon,
-  PlugIcon,
   ReceiveIcon,
   PlusIcon,
   SearchIcon,
@@ -64,7 +62,6 @@ export function Sidebar({
   const shown = useMemo(() => filterChats(chats, query), [chats, query])
   // A search shows every match; otherwise the newest few, until All chats opens the rest.
   const listed = query || all ? shown : shown.slice(0, RECENT_CHATS)
-  const openChat = view.kind === 'chat' ? chats.find((chat) => chat.id === view.chatId) : undefined
 
   return (
     <nav className="ink-sidebar" aria-label="Chats and pages">
@@ -155,7 +152,6 @@ export function Sidebar({
         <kbd className="ink-kbd">{shortcutLabel('settings', mac)}</kbd>
       </button>
 
-      {openChat ? <LockIndicator chat={openChat} /> : null}
       <VaultCard signer={signer} lockKey={shortcutLabel('lock', mac)} onLock={onLock} />
     </nav>
   )
@@ -186,32 +182,6 @@ function ChatStatusMark({ chat }: { chat: Chat }) {
     )
   }
   return null
-}
-
-const LOCK_COLOURS = {
-  ok: 'var(--ot-ok)',
-  plan: 'var(--ot-plan)',
-  block: 'var(--ot-block-solid)',
-  neutral: 'var(--ot-text-3)',
-} as const
-
-/** Whether the open chat's agent is held to Ottopus tools. Each chat has its own session, so each has its own answer. */
-function LockIndicator({ chat }: { chat: Chat }) {
-  const { text, hint, tone } = lockStatus(chat)
-  // Side by side rather than nested, so each shows only its own tooltip.
-  return (
-    <div className="ink-signer">
-      <Tooltip text={hint} className="min-w-0 flex-1">
-        <div className="flex w-full items-center gap-2" role="status" tabIndex={0}>
-          <span style={{ color: LOCK_COLOURS[tone] }}>
-            <PlugIcon />
-          </span>
-          <span className="flex-1">{text}</span>
-        </div>
-      </Tooltip>
-      {chat.phase !== 'ended' && chat.lock === 'locked' ? <SignInIcon names={chat.needsSignIn} /> : null}
-    </div>
-  )
 }
 
 /**

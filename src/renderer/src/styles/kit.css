@@ -1153,3 +1153,57 @@
   color: var(--ot-text-3);
   font-size: 11px;
 }
+
+/* Popovers that open above what they belong to, such as the composer's tools chip. */
+.ink-popover--up {
+  position-area: top span-left;
+}
+.ink-tools-pop {
+  width: 400px;
+  max-height: min(560px, 80vh);
+}
+.ink-tools-pop__glyph {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+.ink-tools-pop__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+.ink-tools-pop__row:hover { background: var(--ot-surface-2); }
+.ink-tools-pop__foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 6px 4px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: var(--ot-navy);
+  color: var(--ot-cream);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ink-tools-pop__settings {
+  display: block;
+  width: calc(100% - 12px);
+  margin: 4px 6px 2px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ot-plan-text);
+  font: 600 12px var(--ot-font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.ink-tools-pop__settings:hover { background: var(--ot-plan-bg); }
+button.ink-connector { cursor: pointer; }
+.ink-chat-menu {
+  position-area: bottom span-left;
+  width: 260px;
+}
+.ink-composer__hint .ink-kbd { font-size: 10.5px; }

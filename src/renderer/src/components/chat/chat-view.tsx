@@ -1,10 +1,11 @@
-import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
 import { Otto } from '@/components/brand/otto'
 import { Callout, ErrorState, TokenLogo, Tooltip } from '@/components/ui'
 import { Sea } from '@/components/motion/sea'
-import { PlugIcon } from '@/components/shell/icons'
+import { SignInIcon } from '@/components/settings/sign-in-icon'
+import { MoreIcon, PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
-import { chatTurns, trimmedPlan, type Chat, type ChatItem } from '@/lib/chats'
+import { chatTurns, lockStatus, trimmedPlan, type Chat, type ChatItem } from '@/lib/chats'
 import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { AgentMark } from './agent-picker'
@@ -20,6 +21,8 @@ export interface ChatViewProps {
   onSubmit: () => void
   onStop: () => void
   onEnd: () => void
+  /** Opens Settings on tools and skills. */
+  onToolsSettings: () => void
 }
 
 /** How near the bottom counts as following along. Further up, someone is reading. */
@@ -41,7 +44,7 @@ const WORKING: Partial<Record<Chat['phase'], string>> = {
  * it sends is drawn as plain text, so it has no way to load an image or disguise
  * where a link goes.
  */
-export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: ChatViewProps) {
+export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onToolsSettings }: ChatViewProps) {
   const scroller = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const following = useRef(true)
@@ -84,9 +87,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
             {chip.text}
           </span>
         </Tooltip>
-        <button type="button" className="ink-picker" disabled={chat.phase === 'ended' || !chat.sessionId} onClick={onEnd}>
-          End chat
-        </button>
+        <ChatMenu canEnd={chat.phase !== 'ended' && Boolean(chat.sessionId)} onEnd={onEnd} />
       </div>
 
       <div
@@ -139,6 +140,12 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
               </span>
             }
             external={chat.external}
+            tools={{
+              scope: 'chat',
+              status: lockStatus(chat),
+              extra: chat.phase !== 'ended' && chat.lock === 'locked' ? <SignInIcon names={chat.needsSignIn} /> : null,
+              onSettings: onToolsSettings,
+            }}
             value={draft}
             onChange={onDraft}
             onSubmit={onSubmit}
@@ -151,6 +158,38 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
         </div>
       </div>
     </main>
+  )
+}
+
+/** The chat's options behind "…". Ending it is the one there is. */
+function ChatMenu({ canEnd, onEnd }: { canEnd: boolean; onEnd: () => void }) {
+  const id = useId()
+  const popoverId = `ink-chat-menu-${id}`
+  const anchor = `--ink-chat-menu-${id.replace(/[^\w-]/g, '')}`
+  const menu = useRef<HTMLDivElement>(null)
+  return (
+    <>
+      <button type="button" className="ink-round" aria-label="Chat options" popoverTarget={popoverId} style={{ anchorName: anchor } as CSSProperties}>
+        <MoreIcon />
+      </button>
+      <div ref={menu} id={popoverId} popover="auto" role="menu" className="ink-popover ink-chat-menu" style={{ positionAnchor: anchor } as CSSProperties}>
+        <button
+          type="button"
+          role="menuitem"
+          className="ink-agent-option"
+          disabled={!canEnd}
+          onClick={() => {
+            menu.current?.hidePopover()
+            onEnd()
+          }}
+        >
+          <span className="min-w-0 flex-1">
+            <b className="text-[13.5px] font-semibold">End chat</b>
+            <span className="block text-[12px] text-[var(--ot-text-3)]">Stops its agent. Nothing more can be written here after.</span>
+          </span>
+        </button>
+      </div>
+    </>
   )
 }
 

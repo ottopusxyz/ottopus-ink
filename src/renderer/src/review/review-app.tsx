@@ -9,12 +9,12 @@ import { approveLabel, canApprove, failureText, groupAddress, outcomeOf, shortHa
 /** Refusals about the click itself, which the plan's own state doesn't show. */
 const CLICK_FAILURES: ReadonlySet<ReviewFailure> = new Set(['not-armed', 'no-gesture', 'stale', 'busy', 'cannot-move'])
 
-/** Otto's pose for where the plan on show stands. He moves only while it waits on the person or goes out. */
+/**
+ * Otto's pose in the header for where the plan on show stands. Sending and sent
+ * have their own bigger Otto instead. He moves only while the plan waits on the person.
+ */
 function ottoFor(state: ReviewState): { pose: PoseName; moving: boolean } {
-  if (state.sending) return { pose: 'loader', moving: true }
   switch (state.status) {
-    case 'confirmed':
-      return { pose: 'confirmed', moving: false }
     case 'failed':
     case 'blocked':
       return { pose: 'ink', moving: false }
@@ -81,7 +81,8 @@ export function ReviewApp() {
   return (
     <Shell>
       <header className="flex items-center gap-3">
-        <Otto pose={otto.pose} size={64} animated={otto.moving} />
+        {/* One Otto at a time: sending and sent have their own, bigger one. */}
+        {state.sending || state.status === 'confirmed' ? null : <Otto pose={otto.pose} size={64} animated={otto.moving} />}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="ink-eyebrow">Your agent asks to</span>
           <h1 className="m-0 font-display text-[24px] font-bold tracking-[-0.02em]">Send {plan.amount} NEAR</h1>

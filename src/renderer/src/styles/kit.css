@@ -941,3 +941,9 @@
 @media (prefers-reduced-motion: reduce) {
   .ink-rim--on::before, .ink-rim--on::after { animation: none; }
 }
+.ink-tool,
+.ink-tool[open] {
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+}

@@ -2,14 +2,14 @@ import { memo, useEffect, useRef, type ReactNode } from 'react'
 import { Otto } from '@/components/brand/otto'
 import { Callout, ErrorState, Tooltip } from '@/components/ui'
 import { Sea } from '@/components/motion/sea'
-import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
+import { ListIcon, PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
 import type { Chat, ChatItem } from '@/lib/chats'
 import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { ComposerLoader } from '@/vendor/boardui/composer-loader'
 import { AgentMark } from './agent-picker'
-import { Composer, SKILLS_HINT, toolsChip } from './composer'
+import { Composer, toolsChip } from './composer'
 import { Markdown } from './markdown'
 import { PlanCard } from './plan-card'
 import { ToolCall } from './tool-call'
@@ -73,12 +73,6 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
             {agent.name}
           </span>
           <span className="flex-1" />
-          <Tooltip text={SKILLS_HINT}>
-            <button type="button" className="ink-picker" aria-disabled>
-              Skills
-              <ChevronDownIcon size={12} />
-            </button>
-          </Tooltip>
           <Tooltip text={chip.hint}>
             <span className={cn('ink-connector', chip.open && 'ink-connector--open')} tabIndex={0}>
               <PlugIcon size={13} />
@@ -104,19 +98,27 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
           {chat.items.map((item) => (
             <ConversationItem key={item.id} item={item} />
           ))}
-          {working ? <AgentThinking className="ink-thinking" variant="infinity" label={working} showTimer={false} /> : null}
+          {working ? <AgentThinking className="ink-thinking" variant="infinity" label={working} shimmer={false} showTimer={false} /> : null}
         </div>
 
         <ComposerLoader
           className={cn('ink-composer-light', !working && 'ink-composer-light--off')}
           active={working !== undefined}
           colors={COMPOSER_LIGHT}
+          intensity={0.5}
           radius={18}
           surface={false}
         >
           <Composer
             compact
             textareaRef={composer}
+            agentPicker={
+              <span className="ink-picker cursor-default">
+                <AgentMark id={chat.agent} small />
+                {agent.name}
+              </span>
+            }
+            external={chat.external}
             value={draft}
             onChange={onDraft}
             onSubmit={onSubmit}

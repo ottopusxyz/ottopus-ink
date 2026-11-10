@@ -1,10 +1,9 @@
 import { useId, type ReactNode, type Ref } from 'react'
 import { externalCount } from '@/lib/chats'
 import { cn } from '@/lib/cn'
-import { ArrowUpIcon, ChevronDownIcon, PlugIcon, PlusIcon, StopIcon } from '@/components/shell/icons'
+import { ArrowUpIcon, PlugIcon, PlusIcon, StopIcon } from '@/components/shell/icons'
 import { Tooltip } from '@/components/ui'
 
-export const SKILLS_HINT = "Turn skills on in Settings, under Tools and skills. Ink's own are on the way."
 export const TOOLS_HINT = 'Ink starts chats with only its own tools: reading balances and proposing plans. No shell, file or web access.'
 
 /** What a chat can use, for the chip beside the composer and the chat's toolbar. */
@@ -36,13 +35,14 @@ export interface ComposerProps {
   stopping?: boolean
   /** What new chats get beyond Ottopus tools, by name. */
   external?: readonly string[]
+  /** The home composer: the screen's focus, with the sticker edge. */
+  prominent?: boolean
 }
 
 /**
  * Where a person tells their agent what to do. Enter sends and Shift+Enter
  * breaks the line. While a turn runs, writing still works and only sending waits.
- *
- * The Skills picker is drawn but off until the skills bundle (issue #11).
+ * Home and chats share one row: agent, tools, send.
  */
 export function Composer({
   value,
@@ -57,6 +57,7 @@ export function Composer({
   onStop,
   stopping = false,
   external = [],
+  prominent = false,
 }: ComposerProps) {
   const id = useId()
   const chip = toolsChip(external)
@@ -64,7 +65,7 @@ export function Composer({
 
   return (
     <form
-      className={cn('ink-composer', compact && 'ink-composer--compact')}
+      className={cn('ink-composer', compact && 'ink-composer--compact', prominent && 'ink-composer--prominent')}
       onSubmit={(event) => {
         event.preventDefault()
         if (sendable) onSubmit()
@@ -93,28 +94,14 @@ export function Composer({
             <PlusIcon />
           </button>
         </Tooltip>
-        {compact ? null : (
-          <>
-            <span className="ml-1">{agentPicker}</span>
-            <Tooltip text={SKILLS_HINT}>
-              <button type="button" className="ink-picker" aria-disabled>
-                Skills
-                <ChevronDownIcon size={12} />
-              </button>
-            </Tooltip>
-          </>
-        )}
+        {agentPicker ? <span className="ml-1">{agentPicker}</span> : null}
         <span className="flex-1" />
-        {compact ? (
-          <span className="mr-2 text-[12px] text-[var(--ot-text-3)]">Enter sends · Shift+Enter for a new line</span>
-        ) : (
-          <Tooltip text={chip.hint}>
-            <span className={cn('ink-connector', chip.open && 'ink-connector--open')} tabIndex={0}>
-              <PlugIcon size={13} />
-              {chip.text}
-            </span>
-          </Tooltip>
-        )}
+        <Tooltip text={chip.hint}>
+          <span className={cn('ink-connector', chip.open && 'ink-connector--open')} tabIndex={0}>
+            <PlugIcon size={13} />
+            {chip.text}
+          </span>
+        </Tooltip>
         {onStop ? (
           <button type="button" className="ink-send" aria-label="Stop" disabled={stopping} onClick={onStop}>
             <StopIcon />
@@ -125,6 +112,7 @@ export function Composer({
           </button>
         )}
       </div>
+      {compact ? <span className="ink-composer__hint">Enter sends · Shift+Enter for a new line</span> : null}
     </form>
   )
 }

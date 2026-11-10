@@ -67,6 +67,7 @@ export function HomeView({
             agentPicker={agentPicker}
             canSend={canSend}
             external={external}
+            prominent
             placeholder="Tell your agent what to do: swap, send, bridge or stake."
           />
 

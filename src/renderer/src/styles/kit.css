@@ -66,3 +66,21 @@
   color: var(--ot-text-2);
   font: 700 10px/1 var(--ot-font-ui);
 }
+
+/* The home composer is the screen's focus: Otto's navy edge and a sticker shadow. */
+.ink-composer--prominent {
+  border: 2px solid var(--ot-navy);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+.ink-composer--prominent:focus-within {
+  border-color: var(--ot-navy);
+}
+[data-theme="dark"] .ink-composer--prominent { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-composer--prominent { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+.ink-composer__hint {
+  align-self: flex-end;
+  color: var(--ot-text-3);
+  font-size: 11.5px;
+}

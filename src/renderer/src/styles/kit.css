@@ -189,3 +189,83 @@
   padding: 9px 12px;
 }
 
+/* A plan as a ticket: the lead line and Otto above a perforation, the details
+   below it. The navy edge is kept for this and the main buttons only. */
+.ink-ticket {
+  position: relative;
+  flex: none;
+  width: 100%;
+  max-width: 520px;
+  overflow: hidden;
+  border: 2px solid var(--ot-navy);
+  border-radius: 20px;
+  background: var(--ot-card);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+[data-theme="dark"] .ink-ticket { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-ticket { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+.ink-ticket__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px 12px;
+}
+.ink-ticket__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+.ink-ticket__amount {
+  font: 700 26px/1.1 var(--ot-font-display);
+  letter-spacing: -0.02em;
+}
+.ink-ticket__arrow {
+  flex: none;
+  color: var(--ot-text);
+}
+.ink-ticket__to {
+  min-width: 0;
+  font: 700 19px/1.25 var(--ot-font-mono);
+  overflow-wrap: anywhere;
+}
+.ink-ticket__pocket {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--ot-cream);
+}
+.ink-ticket__perf {
+  position: relative;
+  margin: 0 18px;
+  border-top: 2px dashed var(--ot-border-strong);
+}
+.ink-ticket__perf::before,
+.ink-ticket__perf::after {
+  content: "";
+  position: absolute;
+  top: -12px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--ot-navy);
+  border-radius: 50%;
+  background: var(--ot-surface);
+}
+.ink-ticket__perf::before { left: -31px; }
+.ink-ticket__perf::after { right: -31px; }
+[data-theme="dark"] .ink-ticket__perf::before, [data-theme="dark"] .ink-ticket__perf::after { border-color: var(--ot-border-strong); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-ticket__perf::before, :root:not([data-theme="light"]) .ink-ticket__perf::after { border-color: var(--ot-border-strong); }
+}
+.ink-ticket__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 14px;
+}

@@ -568,16 +568,6 @@
   user-select: text;
 }
 
-.ink-plan-card {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-  max-width: 420px;
-  padding: 14px;
-}
-
 /* The agent picker's list: a native popover, placed under its button with
    CSS anchor positioning and flipped above when there's no room below. */
 .ink-tip {

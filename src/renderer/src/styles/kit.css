@@ -84,3 +84,108 @@
   color: var(--ot-text-3);
   font-size: 11.5px;
 }
+
+/* L1 · Tentacle ring. Eight dots, never six, never twelve. */
+.ink-ring {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--ink-ring);
+  height: var(--ink-ring);
+  color: inherit;
+  animation: ink-ring-spin 2.4s linear infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ink-ring--plan { color: var(--ot-plan); }
+.ink-ring i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(var(--ink-ring) * 0.2);
+  height: calc(var(--ink-ring) * 0.2);
+  margin: calc(var(--ink-ring) * -0.1) 0 0 calc(var(--ink-ring) * -0.1);
+  border-radius: 50%;
+  background: currentColor;
+  transform: rotate(calc(var(--i) * 45deg)) translateY(calc(var(--ink-ring) * -0.4));
+  animation: ink-ring-dot 1.6s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.2s);
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ink-ring-spin { to { rotate: 360deg; } }
+@keyframes ink-ring-dot {
+  0%, 100% { opacity: 0.18; scale: 0.72; }
+  45% { opacity: 1; scale: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-ring, .ink-ring i { animation: none; }
+  .ink-ring i { opacity: 0.55; }
+}
+
+/* A chat's tool calls hang off a tentacle: a dashed coral line with a sucker
+   at each call. Consecutive calls join into one line. */
+.ink-tool {
+  position: relative;
+  margin-left: 22px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ot-card) 82%, transparent);
+}
+.ink-tool::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  bottom: -12px;
+  left: -14px;
+  width: 3px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(180deg, var(--ot-coral-shade) 0 7px, transparent 7px 11px);
+  opacity: 0.9;
+}
+.ink-tool::after {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: -19px;
+  width: 9px;
+  height: 9px;
+  border: 2.5px solid var(--ot-coral);
+  border-radius: 50%;
+  background: var(--ot-cream);
+}
+.ink-tool__glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid #16213E;
+  border-radius: 9px;
+  color: #16213E;
+}
+.ink-tool__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.ink-tool__title {
+  color: var(--ot-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+.ink-tool__sub {
+  overflow: hidden;
+  color: var(--ot-text-3);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ink-tool__sub .font-mono {
+  color: var(--ot-text-2);
+  font-size: 12px;
+}
+.ink-tool summary {
+  gap: 10px;
+  padding: 9px 12px;
+}
+

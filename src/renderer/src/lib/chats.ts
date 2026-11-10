@@ -243,8 +243,16 @@ const INK_TOOL_PREFIX = 'mcp__ottopus-ink__'
  * so it stands out. An agent can make up a name like `mcp__ottopus-ink__sign`.
  */
 export function toolLabel(name: string): string {
+  return inkTool(name) ?? name
+}
+
+export type InkTool = (typeof INK_TOOLS)[number]
+
+/** Which of Ink's own tools a call was, or null for anything else, including made-up names under Ink's prefix. */
+export function inkTool(name: string): InkTool | null {
+  if (!name.startsWith(INK_TOOL_PREFIX)) return null
   const short = name.slice(INK_TOOL_PREFIX.length)
-  return name.startsWith(INK_TOOL_PREFIX) && INK_TOOLS.some((tool) => tool === short) ? short : name
+  return INK_TOOLS.find((tool) => tool === short) ?? null
 }
 
 /** A plan in one line, such as "Swap 0.1 ETH to USDC". */

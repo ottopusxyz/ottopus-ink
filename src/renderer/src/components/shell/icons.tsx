@@ -106,3 +106,34 @@ export const EyeIcon = icon(
     <circle cx="12" cy="12" r="3" />
   </>,
 )
+
+/* Glyphs for Ink's own tools in a chat. KeyIcon and EyeIcon cover accounts and plans. */
+export const PieIcon = icon(
+  <>
+    <path d="M12 3a9 9 0 1 0 9 9h-9z" />
+    <path d="M15 3.5A9 9 0 0 1 20.5 9H15z" />
+  </>,
+  2,
+)
+export const RouteIcon = icon(
+  <>
+    <circle cx="6" cy="18" r="2.5" />
+    <circle cx="18" cy="6" r="2.5" />
+    <path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5" />
+  </>,
+  2,
+)
+export const ReceiptIcon = icon(
+  <>
+    <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+    <path d="M9 8h6M9 12h6M9 16h3" />
+  </>,
+  2,
+)
+export const CancelIcon = icon(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m9 9 6 6M15 9l-6 6" />
+  </>,
+  2,
+)

@@ -227,6 +227,11 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         agents={agents}
         selectedAgent={selectedAgent}
+        onSelectAgent={setAgentPick}
+        onSeeAddresses={() => {
+          setSettingsOpen(false)
+          setView({ kind: 'page', page: 'receive' })
+        }}
         checking={checkingAgents}
         onCheckAgain={() => {
           setCheckingAgents(true)

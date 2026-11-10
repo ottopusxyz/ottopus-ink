@@ -4,7 +4,7 @@ import { AgentPicker } from '@/components/chat/agent-picker'
 import { ChatView } from '@/components/chat/chat-view'
 import { HomeView } from '@/components/home/home-view'
 import { PageView } from '@/components/pages/page-view'
-import { SettingsDialog } from '@/components/settings/settings-dialog'
+import { SettingsDialog, type SettingsTab } from '@/components/settings/settings-dialog'
 import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
@@ -43,6 +43,11 @@ export function App() {
   const [checkingAgents, setCheckingAgents] = useState(true)
   const [beginDetection] = useState(latestOnly)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('agent')
+  const openSettings = (tab: SettingsTab = 'agent') => {
+    setSettingsTab(tab)
+    setSettingsOpen(true)
+  }
   // What new chats get beyond Ink's own tools, for the home composer to say so.
   const [externalItems, setExternalItems] = useState<ExternalItem[]>([])
   // A wallet made or restored in this run gets the last setup step, Meet your
@@ -114,7 +119,10 @@ export function App() {
       if (action === 'new-chat') newChat()
       else if (action === 'search') searchRef.current?.focus()
       else if (action === 'lock') void window.ink.lockVault()
-      else setSettingsOpen(true)
+      else {
+        setSettingsTab('agent')
+        setSettingsOpen(true)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -168,14 +176,13 @@ export function App() {
         <Sidebar
           view={view}
           chats={chats}
-          version={info?.version}
           signer={signer}
           mac={mac}
           searchRef={searchRef}
           onNewChat={newChat}
           onOpenChat={openChat}
           onPage={(page) => setView({ kind: 'page', page })}
-          onSettings={() => setSettingsOpen(true)}
+          onSettings={() => openSettings()}
           onLock={() => void window.ink.lockVault()}
         />
       }
@@ -201,6 +208,7 @@ export function App() {
           live={chats.filter((chat) => chat.status === 'live' || isWorking(chat))}
           onOpenChat={openChat}
           onPortfolio={() => setView({ kind: 'page', page: 'portfolio' })}
+          onBackup={() => openSettings('wallet')}
           composerRef={composerRef}
           agentPicker={agentPicker}
           canSend={selectedAgent !== null}
@@ -212,6 +220,8 @@ export function App() {
       <SettingsDialog
         onExternalChange={setExternalItems}
         open={settingsOpen}
+        startTab={settingsTab}
+        version={info?.version}
         onClose={() => setSettingsOpen(false)}
         agents={agents}
         selectedAgent={selectedAgent}

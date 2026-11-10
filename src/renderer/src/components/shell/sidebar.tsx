@@ -2,14 +2,14 @@ import { useMemo, useState, type Ref } from 'react'
 import type { SignerStatus } from '../../../../shared/ipc'
 import { AgentMark } from '@/components/chat/agent-picker'
 import { SignInIcon } from '@/components/settings/sign-in-icon'
-import { Badge, ChainStack, TokenLogo, Tooltip } from '@/components/ui'
+import { Badge, Button, ChainStack, TokenLogo, Tooltip } from '@/components/ui'
 import { agentInfo } from '@/lib/agents'
 import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
 import { ACCOUNT_CHAIN_MARK } from '@/lib/logos'
 import {
   ActivityIcon,
   CheckIcon,
-  LockIcon,
+  ChevronDownIcon,
   PlugIcon,
   ReceiveIcon,
   PlusIcon,
@@ -20,6 +20,9 @@ import {
 } from './icons'
 import { PAGES, shortcutLabel, type PageId, type View } from './nav'
 
+/** How many chats the list shows before All chats opens the rest. */
+const RECENT_CHATS = 8
+
 const PAGE_ICONS: Record<PageId, typeof WalletIcon> = {
   portfolio: WalletIcon,
   receive: ReceiveIcon,
@@ -29,7 +32,6 @@ const PAGE_ICONS: Record<PageId, typeof WalletIcon> = {
 export interface SidebarProps {
   view: View
   chats: readonly Chat[]
-  version: string | undefined
   signer: SignerStatus | null
   mac: boolean
   searchRef: Ref<HTMLInputElement>
@@ -48,7 +50,6 @@ export interface SidebarProps {
 export function Sidebar({
   view,
   chats,
-  version,
   signer,
   mac,
   searchRef,
@@ -59,13 +60,18 @@ export function Sidebar({
   onLock,
 }: SidebarProps) {
   const [query, setQuery] = useState('')
+  const [all, setAll] = useState(false)
   const shown = useMemo(() => filterChats(chats, query), [chats, query])
+  // A search shows every match; otherwise the newest few, until All chats opens the rest.
+  const listed = query || all ? shown : shown.slice(0, RECENT_CHATS)
   const openChat = view.kind === 'chat' ? chats.find((chat) => chat.id === view.chatId) : undefined
 
   return (
     <nav className="ink-sidebar" aria-label="Chats and pages">
       <button type="button" className="ink-side-item ink-side-item--strong" onClick={onNewChat}>
-        <PlusIcon />
+        <span className="ink-new-tile" aria-hidden>
+          <PlusIcon size={13} />
+        </span>
         <span className="ink-side-item__label">New chat</span>
         <kbd className="ink-kbd">{shortcutLabel('new-chat', mac)}</kbd>
       </button>
@@ -86,9 +92,9 @@ export function Sidebar({
         <kbd className="ink-kbd">{shortcutLabel('search', mac)}</kbd>
       </label>
 
-      <div className="ink-side-heading">Recent</div>
+      <div className="ink-side-heading">Chats</div>
       <ul className="m-0 flex min-h-0 list-none flex-col gap-0.5 overflow-auto p-0">
-        {shown.map((chat) => (
+        {listed.map((chat) => (
           <li key={chat.id}>
             <button
               type="button"
@@ -106,6 +112,16 @@ export function Sidebar({
             </button>
           </li>
         ))}
+        {!query && shown.length > RECENT_CHATS ? (
+          <li>
+            <button type="button" className="ink-side-item ink-side-item--more" aria-expanded={all} onClick={() => setAll(!all)}>
+              <span className={all ? 'ink-chevron ink-chevron--up' : 'ink-chevron'} aria-hidden>
+                <ChevronDownIcon size={14} />
+              </span>
+              <span className="ink-side-item__label">{all ? 'Fewer chats' : `All chats (${shown.length})`}</span>
+            </button>
+          </li>
+        ) : null}
       </ul>
       {chats.length === 0 ? (
         <p className="m-0 px-2.5 py-1.5 text-[12.5px] leading-[1.45] text-[var(--ot-text-3)]">
@@ -138,14 +154,9 @@ export function Sidebar({
         <span className="ink-side-item__label">Settings</span>
         <kbd className="ink-kbd">{shortcutLabel('settings', mac)}</kbd>
       </button>
-      <button type="button" className="ink-side-item ink-side-item--page" onClick={onLock}>
-        <LockIcon />
-        <span className="ink-side-item__label">Lock</span>
-        <kbd className="ink-kbd">{shortcutLabel('lock', mac)}</kbd>
-      </button>
 
       {openChat ? <LockIndicator chat={openChat} /> : null}
-      <SignerIndicator status={signer} version={version} />
+      <VaultCard signer={signer} lockKey={shortcutLabel('lock', mac)} onLock={onLock} />
     </nav>
   )
 }
@@ -204,30 +215,38 @@ function LockIndicator({ chat }: { chat: Chat }) {
 }
 
 /**
- * Where the vault's lock timer goes once the vault exists (issue #12). Until
- * then it reports the one thing that is real: the signer process is up and
- * isolated from this window.
+ * The wallet's state, at the foot of the sidebar: unlocked, when it locks
+ * itself, and Lock. While the signer isn't up, that's what it says instead,
+ * since nothing can be signed then.
  */
-function SignerIndicator({ status, version }: { status: SignerStatus | null; version: string | undefined }) {
-  const copy =
-    status === 'ready' ? 'Signer isolated' : status === 'stopped' ? 'Signer stopped' : 'Signer starting'
-  const colour =
-    status === 'ready' ? 'var(--ot-ok)' : status === 'stopped' ? 'var(--ot-block-solid)' : 'var(--ot-plan)'
+function VaultCard({ signer, lockKey, onLock }: { signer: SignerStatus | null; lockKey: string; onLock: () => void }) {
+  const tone = signer === 'ready' ? 'ok' : signer === 'stopped' ? 'block' : 'plan'
+  const line = signer === 'ready' ? 'locks after 10 min idle' : signer === 'stopped' ? 'signer stopped' : 'signer starting'
   const hint =
-    status === 'ready'
-      ? 'Signing runs in its own process, apart from this window and your agent.'
-      : status === 'stopped'
+    signer === 'ready'
+      ? 'Ink locks itself after 10 minutes without use. Signing runs in its own process, apart from this window and your agent.'
+      : signer === 'stopped'
         ? "The signing process isn't running, so nothing can be signed."
         : 'The signing process is starting.'
   return (
-    <Tooltip text={hint} className="ink-tip--block">
-      <div className="ink-signer" role="status" tabIndex={0}>
-        <span style={{ color: colour }}>
-          <ShieldIcon />
-        </span>
-        <span className="flex-1">{copy}</span>
-        <span className="font-mono text-[11px] text-[var(--ot-text-3)]">v{version ?? '…'}</span>
-      </div>
-    </Tooltip>
+    <div className="ink-vault">
+      <Tooltip text={hint} className="min-w-0 flex-1">
+        <div className="flex w-full items-center gap-2.5" role="status" tabIndex={0}>
+          <span className={`ink-vault__tile ink-vault__tile--${tone}`} aria-hidden>
+            <ShieldIcon size={14} />
+          </span>
+          <span className="min-w-0 flex-1 leading-[1.3]">
+            <b className="font-bold text-[var(--ot-text)]">Unlocked</b>
+            <br />
+            {line}
+          </span>
+        </div>
+      </Tooltip>
+      <Tooltip text={`Lock now (${lockKey})`}>
+        <Button size="sm" className="h-7 px-2.5" onClick={onLock}>
+          Lock
+        </Button>
+      </Tooltip>
+    </div>
   )
 }

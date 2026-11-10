@@ -17,11 +17,16 @@ const TABS = [
   { id: 'updates', label: 'Updates', Icon: RefreshIcon, tint: '#FDD3D4' },
 ] as const
 
-type TabId = (typeof TABS)[number]['id']
+export type SettingsTab = (typeof TABS)[number]['id']
+type TabId = SettingsTab
 
 export interface SettingsDialogProps {
   open: boolean
+  /** The section it opens on. Agent unless something asked for another. */
+  startTab?: TabId
   onClose: () => void
+  /** Ink's version, for the foot of the nav. */
+  version: string | undefined
   /** What detection found; null until the first check ends. */
   agents: readonly AgentStatus[] | null
   /** The agent new chats use. */
@@ -42,8 +47,14 @@ export interface SettingsDialogProps {
  * no settings store until the vault lands (issue #12), and the tabs say so
  * rather than pretend.
  */
-export function SettingsDialog({ open, onClose, agents, selectedAgent, checking, onCheckAgain, onExternalChange }: SettingsDialogProps) {
-  const [tab, setTab] = useState<TabId>('agent')
+export function SettingsDialog({ open, startTab = 'agent', onClose, version, agents, selectedAgent, checking, onCheckAgain, onExternalChange }: SettingsDialogProps) {
+  const [tab, setTab] = useState<TabId>(startTab)
+  // Each opening starts on the section it was asked for.
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) setTab(startTab)
+  }
 
   return (
     <Dialog open={open} onClose={onClose} title="Settings" hideTitle className="ink-settings">
@@ -77,6 +88,7 @@ export function SettingsDialog({ open, onClose, agents, selectedAgent, checking,
               {item.label}
             </button>
           ))}
+          <span className="ink-settings-nav__foot">Ink {version ?? '…'} · hackathon build</span>
         </nav>
         <div className="min-w-0 flex-1 overflow-auto pt-[18px] pr-7 pb-6 pl-[18px]">
           {tab === 'agent' ? (
@@ -116,7 +128,7 @@ function AgentTab({
   selectedAgent,
   checking,
   onCheckAgain,
-}: Omit<SettingsDialogProps, 'open' | 'onClose' | 'onExternalChange'>) {
+}: Omit<SettingsDialogProps, 'open' | 'onClose' | 'onExternalChange' | 'version' | 'startTab'>) {
   const [send, setSend] = useState('queue')
   return (
     <>

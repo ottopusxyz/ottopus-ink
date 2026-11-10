@@ -1092,3 +1092,64 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .ink-meet-agent--on { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
 }
+
+/* The sidebar: New chat on a coral tile, All chats, and the wallet's own card at the foot. */
+.ink-new-tile {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  border: 2px solid var(--ot-navy);
+  border-radius: 8px;
+  background: var(--ot-coral);
+  color: #16213E;
+}
+.ink-side-item--more {
+  color: var(--ot-text-3);
+}
+.ink-chevron {
+  display: grid;
+  width: 20px;
+  place-items: center;
+  transition: transform var(--ot-dur-fast);
+}
+.ink-chevron--up { transform: rotate(180deg); }
+.ink-vault {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px dashed var(--ot-border-strong);
+  border-radius: 12px;
+  background: var(--ot-surface-2);
+  color: var(--ot-text-2);
+  font-size: 12px;
+}
+.ink-vault__tile {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border: 1.5px solid;
+  border-radius: 9px;
+}
+.ink-vault__tile--ok { border-color: var(--ot-ok-border); background: var(--ot-ok-bg); color: var(--ot-ok-text); }
+.ink-vault__tile--block { border-color: var(--ot-block-border); background: var(--ot-block-bg); color: var(--ot-block-text); }
+.ink-vault__tile--plan { border-color: var(--ot-plan-border); background: var(--ot-plan-bg); color: var(--ot-plan-text); }
+
+/* Home's backup card, on amber. */
+.ink-glance--warn {
+  border-color: var(--ot-warn-border);
+  background: var(--ot-warn-bg);
+}
+
+/* The foot of the settings nav: which Ink this is. */
+.ink-settings-nav__foot {
+  margin-top: auto;
+  padding: 10px 6px 0;
+  color: var(--ot-text-3);
+  font-size: 11px;
+}

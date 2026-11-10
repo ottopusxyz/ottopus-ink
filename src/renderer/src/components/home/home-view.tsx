@@ -5,18 +5,18 @@ import { TOOL_GLYPHS } from '@/components/chat/tool-call'
 import { Composer } from '@/components/chat/composer'
 import { Sea } from '@/components/motion/sea'
 import { Ring } from '@/components/motion/ring'
-import { ChatIcon } from '@/components/shell/icons'
-import { TokenLogo } from '@/components/ui'
+import { Badge, ChainLogo, TokenLogo } from '@/components/ui'
 import { planHeadline, type Chat } from '@/lib/chats'
+import type { ChainId } from '@/lib/logos'
 import { TOOL_COPY } from '@/lib/tool-copy'
 import { INK_TOOLS, type AgentId, type ChatPlan } from '../../../../shared/ipc'
 
 /** Starting points, filled into the composer rather than sent, each with the marks of what it moves. */
-const SUGGESTIONS: readonly { text: string; tokens: readonly string[] }[] = [
-  { text: 'Swap 0.1 ETH to USDC on Base', tokens: ['ETH', 'USDC'] },
-  { text: 'Bridge USDC from Base to NEAR', tokens: ['USDC', 'NEAR'] },
+const SUGGESTIONS: readonly { text: string; tokens?: readonly string[]; chains?: readonly ChainId[] }[] = [
+  { text: 'Send 2 NEAR to alice.near', tokens: ['NEAR'] },
+  { text: 'Swap 25 USDC to NEAR', tokens: ['USDC', 'NEAR'] },
   { text: 'Stake 10 NEAR', tokens: ['NEAR'] },
-  { text: 'What did I spend this week?', tokens: [] },
+  { text: 'What’s my wallet worth?', chains: ['ethereum', 'solana', 'bitcoin'] },
 ]
 
 export interface HomeViewProps {
@@ -26,6 +26,8 @@ export interface HomeViewProps {
   live: readonly Chat[]
   onOpenChat: (id: string) => void
   onPortfolio: () => void
+  /** Opens Settings on the wallet and backup section. */
+  onBackup: () => void
   composerRef?: Ref<HTMLTextAreaElement>
   agentPicker: ReactNode
   /** Off until there's a ready agent to send to. */
@@ -49,6 +51,7 @@ export function HomeView({
   live,
   onOpenChat,
   onPortfolio,
+  onBackup,
   composerRef,
   agentPicker,
   canSend,
@@ -71,8 +74,9 @@ export function HomeView({
                     <AgentMark id={readyAgent.id} small />
                     {readyAgent.name} is ready
                   </span>
-                ) : null}
-                Your agent proposes. You review and sign here.
+                ) : (
+                  'Your agent proposes. You review and sign here.'
+                )}
               </p>
               <h1 className="m-0 font-display text-[42px] leading-[1.05] font-bold tracking-[-0.02em]">
                 Ask for it.
@@ -92,9 +96,9 @@ export function HomeView({
               <TokenLogo symbol={waiting.plan.asset} chain={waiting.plan.chain} size="md" />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
                 <span className="text-[15px] font-bold">{planHeadline(waiting.plan)} is waiting for you</span>
-                <span className="text-[13px] text-[var(--ot-text-2)]">Check it in Ink’s review window. Nothing is signed until you approve.</span>
+                <span className="text-[13px] text-[var(--ot-text-2)]">Open in the review window · nothing is signed until you approve</span>
               </span>
-              <span className="ink-waiting__go">Open chat</span>
+              <span className="ink-waiting__go">See the plan</span>
             </button>
           ) : null}
 
@@ -111,19 +115,16 @@ export function HomeView({
           />
 
           <div className="flex flex-wrap gap-2">
-            {SUGGESTIONS.map(({ text, tokens }) => (
+            {SUGGESTIONS.map(({ text, tokens = [], chains = [] }) => (
               <button key={text} type="button" className="ink-suggestion" onClick={() => onDraft(text)}>
-                {tokens.length > 0 ? (
-                  <span className="ink-logo-stack">
-                    {tokens.map((symbol) => (
-                      <TokenLogo key={symbol} symbol={symbol} size="sm" />
-                    ))}
-                  </span>
-                ) : (
-                  <span className="text-[var(--ot-text-3)]">
-                    <ChatIcon />
-                  </span>
-                )}
+                <span className="ink-logo-stack">
+                  {tokens.map((symbol) => (
+                    <TokenLogo key={symbol} symbol={symbol} size="md" />
+                  ))}
+                  {chains.map((chain) => (
+                    <ChainLogo key={chain} chain={chain} size="md" />
+                  ))}
+                </span>
                 {text}
               </button>
             ))}
@@ -143,24 +144,37 @@ export function HomeView({
                 </span>
                 <span className="text-[12px] text-[var(--ot-text-2)]">{running.step ?? 'Your agent is working'}</span>
               </button>
-            ) : (
-              <div className="ink-glance">
-                <span className="ink-eyebrow">In progress</span>
-                <span className="text-[14px] font-semibold">Nothing running</span>
-                <span className="text-[12px] leading-[1.45] text-[var(--ot-text-2)]">
-                  Plans you approve are tracked here until every step lands.
-                </span>
-              </div>
-            )}
+            ) : null}
             <button
               type="button"
               className="ink-glance cursor-pointer text-left font-[inherit] text-[inherit]"
               onClick={onPortfolio}
             >
-              <span className="ink-eyebrow">Portfolio</span>
+              <span className="flex items-center gap-2">
+                <span className="ink-eyebrow flex-1">Portfolio</span>
+                <span className="ink-logo-stack" aria-hidden>
+                  <TokenLogo symbol="NEAR" size="sm" />
+                  <TokenLogo symbol="USDC" size="sm" />
+                  <TokenLogo symbol="ETH" size="sm" />
+                </span>
+              </span>
               <span className="text-[14px] font-semibold">Balances aren’t shown yet</span>
               <span className="text-[12px] leading-[1.45] text-[var(--ot-text-2)]">
                 Ink can’t read balances yet. Your addresses are on Receive.
+              </span>
+            </button>
+            <button
+              type="button"
+              className="ink-glance ink-glance--warn cursor-pointer text-left font-[inherit] text-[inherit]"
+              onClick={onBackup}
+            >
+              <span className="flex items-center gap-2">
+                <span className="ink-eyebrow flex-1 text-[var(--ot-warn-text)]">Before you hold more</span>
+                <Badge tone="warn">Paper only</Badge>
+              </span>
+              <span className="text-[15px] font-extrabold">Keep your recovery phrase safe</span>
+              <span className="text-[12px] leading-[1.45] text-[var(--ot-text)]">
+                Your words on paper are the only way back if this computer is lost. Ink can’t show them again.
               </span>
             </button>
           </div>

@@ -40,6 +40,8 @@ export interface Pose {
   catchArms?: number[]
   /** Index of the arm that taps, and the suckers that ride with it. */
   tapArm?: number
+  /** Index of the arm that waves hello. */
+  waveArm?: number
   /** [x, y, r] per pupil. The whites stay put; the gaze moves. */
   pupils?: [number, number, number][]
   /** Highlight dots, omitted where the pose wants a flatter eye. */
@@ -268,6 +270,27 @@ const POSES_RAW = {
     ),
     behind: glow,
     prop: (animated: boolean) => cube(animated),
+  },
+
+  /**
+   * Hello: heads-up's raised arm without the triangle, waving, and plan-ready's
+   * smile. Ink's own pose, for Home and onboarding, made only from the poses
+   * above so no path is redrawn.
+   */
+  wave: {
+    arms: withRaised('M154 108 C174 102 188 86 198 68'),
+    frontArm: 'M62 128 C50 144 60 162 82 160',
+    suckers: true,
+    waveArm: 5,
+    pupils: [
+      [82, 77, 8.5],
+      [124, 77, 8.5],
+    ],
+    glints: [
+      [78.5, 72.5],
+      [120.5, 72.5],
+    ],
+    face: [...BROWS_BASE, 'M88 99 Q100 112 112 99'],
   },
 
   /** One arm up, and the amber triangle it is pointing at. */

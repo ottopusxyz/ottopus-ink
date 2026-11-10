@@ -83,6 +83,7 @@ export function Otto({
     const [ox, oy] = armOrigin(d)
     const catches = art.catchArms?.includes(i)
     const taps = art.tapArm === i
+    const waves = art.waveArm === i
     const moving = animated && (catches || taps || true)
 
     return (
@@ -95,7 +96,9 @@ export function Otto({
               ? 'otto-catch'
               : taps
                 ? 'otto-tap'
-                : 'otto-arm'
+                : waves
+                  ? 'otto-wave'
+                  : 'otto-arm'
             : undefined
         }
         style={

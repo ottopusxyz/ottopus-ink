@@ -959,3 +959,32 @@
   border-radius: 18px;
   box-shadow: var(--ot-shadow-card);
 }
+
+/* Meet your agent: one card per agent found, the default on coral with the sticker edge. */
+.ink-meet-agent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--ot-border-strong);
+  border-radius: 16px;
+  background: var(--ot-card);
+}
+.ink-meet-agent > .ink-agent-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+.ink-meet-agent--on {
+  border: 2px solid var(--ot-navy);
+  background: var(--ot-coral-soft);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+.ink-meet-agent--later {
+  border-style: dashed;
+  background: transparent;
+}
+[data-theme="dark"] .ink-meet-agent--on { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-meet-agent--on { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}

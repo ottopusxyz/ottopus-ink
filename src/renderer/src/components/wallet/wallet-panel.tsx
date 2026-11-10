@@ -13,8 +13,8 @@ export interface Guide {
   calm?: boolean
 }
 
-/** The steps of making a wallet, for the progress above the form. */
-export const SETUP_STEPS = ['Write down', 'Check', 'Password'] as const
+/** The steps of making a wallet, for the progress above the form. Welcome comes before the first. */
+export const SETUP_STEPS = ['Write down', 'Check', 'Password', 'Agent'] as const
 
 /**
  * The setup and lock screens: Otto on a seabed on the left, saying what this
@@ -49,11 +49,12 @@ export function WalletPanel({ guide, step, children }: { guide: Guide; step?: nu
   )
 }
 
-/** Where a new wallet's setup is: done, this one, still to come. */
+/** Where a new wallet's setup is: done, this one, still to come. Before the first step, `at` is -1. */
 function SetupProgress({ at }: { at: number }) {
+  const count = at < 0 ? 'Four quick steps, about two minutes' : `Step ${at + 1} of ${SETUP_STEPS.length}`
   return (
     <div className="flex flex-col gap-1.5">
-      <ol className="ink-progress" aria-label={`Step ${at + 1} of ${SETUP_STEPS.length}`}>
+      <ol className="ink-progress" aria-label={count}>
         {SETUP_STEPS.map((label, i) => (
           <li key={label} className={cn('ink-progress__step', i < at && 'ink-progress__step--done', i === at && 'ink-progress__step--on')}>
             <span className="ink-progress__dot" aria-hidden>
@@ -63,6 +64,9 @@ function SetupProgress({ at }: { at: number }) {
           </li>
         ))}
       </ol>
+      <span className="text-[12px] font-bold text-[var(--ot-text-3)]" aria-hidden>
+        {count}
+      </span>
     </div>
   )
 }

@@ -9,6 +9,7 @@ import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
 import { LockScreen } from '@/components/wallet/lock-screen'
+import { MeetAgent } from '@/components/wallet/meet-agent'
 import { ReceiveView } from '@/components/wallet/receive-view'
 import { SetupScreen } from '@/components/wallet/setup-screen'
 import { agentInfo, chooseAgent } from '@/lib/agents'
@@ -44,6 +45,14 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // What new chats get beyond Ink's own tools, for the home composer to say so.
   const [externalItems, setExternalItems] = useState<ExternalItem[]>([])
+  // A wallet made or restored in this run gets the last setup step, Meet your
+  // agent, before Home. Seen as the vault going from none to unlocked.
+  const [meeting, setMeeting] = useState(false)
+  const [seenState, setSeenState] = useState(vault?.state)
+  if (vault?.state !== seenState) {
+    setSeenState(vault?.state)
+    if (seenState === 'none' && vault?.state === 'unlocked') setMeeting(true)
+  }
   const searchRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
 
@@ -134,6 +143,23 @@ export function App() {
   if (!vault) return <AppShell mac={mac}>{null}</AppShell>
   if (vault.state === 'none') return <AppShell mac={mac}><SetupScreen phraseWaiting={vault.phraseWaiting} /></AppShell>
   if (vault.state === 'locked') return <AppShell mac={mac}><LockScreen /></AppShell>
+  if (meeting) {
+    return (
+      <AppShell mac={mac}>
+        <MeetAgent
+          agents={agents}
+          selected={selectedAgent}
+          onSelect={setAgentPick}
+          onStart={(text) => {
+            setMeeting(false)
+            if (text) setDrafts((all) => withDraft(all, HOME_DRAFT, text))
+            setView({ kind: 'home' })
+            requestAnimationFrame(() => composerRef.current?.focus())
+          }}
+        />
+      </AppShell>
+    )
+  }
 
   return (
     <AppShell

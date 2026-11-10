@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Account, AccountChain } from '../../../../shared/accounts'
 import { Otto } from '@/components/brand/otto'
 import { Sea } from '@/components/motion/sea'
@@ -133,7 +133,8 @@ export function ReceiveView() {
               </section>
             </div>
 
-            <AddressCard account={account} asset={receiveAsset(account.chain, asset)} network={network} />
+            {/* Keyed by chain, so Copied never carries over to another chain's address. */}
+            <AddressCard key={account.chain} account={account} asset={receiveAsset(account.chain, asset)} network={network} />
           </div>
         ) : null}
       </div>
@@ -147,11 +148,24 @@ function AddressCard({ account, asset, network }: { account: Account; asset: str
   const networkName = receiveNetwork(account.chain, info.name, network)
   const { start, middle, end } = addressParts(account.address)
   const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no')
+  const alive = useRef(true)
+  const timer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+      window.clearTimeout(timer.current)
+    }
+  }, [])
 
   const copy = async () => {
     const result = await window.ink.copyAddress(account.chain).catch(() => ({ ok: false as const }))
+    // The card may be gone by now, if someone picked another chain while the copy ran.
+    if (!alive.current) return
     setCopied(result.ok ? 'yes' : 'failed')
-    window.setTimeout(() => setCopied('no'), 2000)
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setCopied('no'), 2000)
   }
 
   return (

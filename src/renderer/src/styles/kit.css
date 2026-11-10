@@ -1021,6 +1021,7 @@
 /* A checked word that matches: a green edge and a tick. */
 .ink-input--right {
   border-color: var(--ot-ok) !important;
+  box-shadow: 0 0 0 1px var(--ot-ok);
 }
 .ink-input-tick {
   position: absolute;
@@ -1242,6 +1243,9 @@ button.ink-connector { cursor: pointer; }
 .ink-agent-grid .ink-agent-mark {
   width: 34px;
   height: 34px;
+}
+.ink-agent-grid .ink-agent-card:not(.ink-agent-card--later) > :last-child {
+  margin-top: auto;
 }
 .ink-agent-card--later {
   justify-content: center;

@@ -118,7 +118,7 @@ export function ReviewApp() {
       )}
 
       {state.sending ? (
-        <InkHold title="Signing and sending…" detail={`${plan.amount} NEAR → ${plan.to} · ${plan.network}`}>
+        <InkHold className="min-h-[420px] flex-1" title="Signing and sending…" detail={`${plan.amount} NEAR → ${plan.to} · ${plan.network}`}>
           <div className="flex flex-col items-center gap-3">
             <div className="w-[230px] text-left">
               <StepList steps={sendSteps(state)} tone="dark" />

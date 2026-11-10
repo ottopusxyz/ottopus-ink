@@ -15,7 +15,7 @@ export const TONE_CLASSES: Record<Tone, string> = {
   block: 'bg-[var(--ot-block-bg)] text-[var(--ot-block-text)]',
   coral: 'bg-[var(--ot-coral-soft)] text-[var(--ot-coral-text)]',
   // Otto's own navy, for a state that belongs to Ink itself: Locked, Default.
-  navy: 'bg-[var(--ot-navy)] text-[var(--ot-cream)] font-bold',
+  navy: 'bg-[var(--ot-navy)] text-[var(--ot-cream)] font-bold ring-1 ring-[var(--ot-border-strong)]',
 }
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {

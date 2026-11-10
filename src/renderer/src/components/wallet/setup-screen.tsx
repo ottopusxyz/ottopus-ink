@@ -406,7 +406,7 @@ function PasswordFields({ password, confirm, onPassword, onConfirm, shownError, 
   return (
     <>
       <Field label="Password" hint={meter ? undefined : 'At least 12 characters. Ink asks for it every time it unlocks.'}>
-        <Input type="password" autoComplete="new-password" value={password} onChange={(event) => onPassword(event.target.value)} />
+        <Input type="password" autoFocus={meter} autoComplete="new-password" value={password} onChange={(event) => onPassword(event.target.value)} />
       </Field>
       {meter ? <StrengthMeter password={password} /> : null}
       <Field label="Type it again" error={shownError}>

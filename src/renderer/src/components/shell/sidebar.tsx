@@ -191,7 +191,7 @@ function ChatStatusMark({ chat }: { chat: Chat }) {
  */
 function VaultCard({ signer, lockKey, onLock }: { signer: SignerStatus | null; lockKey: string; onLock: () => void }) {
   const tone = signer === 'ready' ? 'ok' : signer === 'stopped' ? 'block' : 'plan'
-  const line = signer === 'ready' ? 'locks after 10 min idle' : signer === 'stopped' ? 'signer stopped' : 'signer starting'
+  const line = signer === 'ready' ? 'locks after 10 min' : signer === 'stopped' ? 'signer stopped' : 'signer starting'
   const hint =
     signer === 'ready'
       ? 'Ink locks itself after 10 minutes without use. Signing runs in its own process, apart from this window and your agent.'
@@ -205,7 +205,7 @@ function VaultCard({ signer, lockKey, onLock }: { signer: SignerStatus | null; l
           <span className={`ink-vault__tile ink-vault__tile--${tone}`} aria-hidden>
             <ShieldIcon size={14} />
           </span>
-          <span className="min-w-0 flex-1 leading-[1.3]">
+          <span className="min-w-0 flex-1 truncate leading-[1.3]">
             <b className="font-bold text-[var(--ot-text)]">Unlocked</b>
             <br />
             {line}

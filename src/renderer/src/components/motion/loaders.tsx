@@ -43,9 +43,9 @@ export function StepList({ steps, tone = 'light' }: { steps: readonly LoaderStep
  * L6 · Ink hold: the one dark loader, for a wait that's out of the app's hands,
  * such as a transaction on its way. Otto juggles in the middle of two ripples.
  */
-export function InkHold({ title, detail, children }: { title: string; detail?: string; children?: ReactNode }) {
+export function InkHold({ title, detail, className, children }: { title: string; detail?: string; className?: string; children?: ReactNode }) {
   return (
-    <div role="status" className="ink-hold">
+    <div role="status" className={cn('ink-hold', className)}>
       <span className="ink-hold__ripple" aria-hidden />
       <span className="ink-hold__ripple ink-hold__ripple--late" aria-hidden />
       <Otto pose="loader" size={140} animated className="relative" />

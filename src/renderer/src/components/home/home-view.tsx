@@ -178,7 +178,7 @@ export function HomeView({
               </span>
               <span className="text-[15px] font-extrabold">Keep your recovery phrase safe</span>
               <span className="text-[12px] leading-[1.45] text-[var(--ot-text)]">
-                Your words on paper are the only way back if this computer is lost. Ink can’t show them again.
+                The words you wrote down are the only way back if this computer is lost. Keep them on paper, somewhere safe.
               </span>
             </button>
           </div>

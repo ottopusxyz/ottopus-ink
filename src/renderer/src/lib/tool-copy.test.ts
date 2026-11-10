@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { inkTool, toolLabel } from './chats'
-import { TOOL_COPY, toolSummary, toolTitle } from './tool-copy'
+import { TOOL_COPY, toolDuration, toolSummary, toolTitle } from './tool-copy'
 import { INK_TOOLS } from '../../../shared/ipc'
 
 describe('which tool a call was', () => {
@@ -42,5 +42,14 @@ describe('a tool call’s summary', () => {
     expect(toolSummary('')).toBeNull()
     expect(toolSummary(null)).toBeNull()
     expect(toolSummary('   \n  ')).toBeNull()
+  })
+})
+
+describe('toolDuration', () => {
+  it('says how long a call took, once that is worth saying', () => {
+    expect(toolDuration(null)).toBeNull()
+    expect(toolDuration(40)).toBeNull()
+    expect(toolDuration(1420)).toBe('1.4s')
+    expect(toolDuration(150_000)).toBe('3 min')
   })
 })

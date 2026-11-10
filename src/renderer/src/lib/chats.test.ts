@@ -27,7 +27,7 @@ import {
 } from './chats'
 
 const started = () => chatStarted(newChat('c', 'claude-code', 'hello'), 'session')
-const after = (events: ChatEvent[], chat: Chat = started()) => events.reduce(applyChatEvent, chat)
+const after = (events: ChatEvent[], chat: Chat = started()) => events.reduce((next, event) => applyChatEvent(next, event), chat)
 const texts = (chat: Chat) => chat.items.map((item) => ('text' in item ? item.text : item.kind))
 const plan: ChatPlan = {
   id: 'p',
@@ -79,6 +79,14 @@ describe('applyChatEvent', () => {
     const done = after([{ type: 'tool-result', id: 't', text: 'not set up', isError: true }], chat)
     expect(done.items.at(-1)).toMatchObject({ kind: 'tool', result: { text: 'not set up', isError: true } })
     expect(done.items).toHaveLength(2)
+  })
+
+  it('times a tool call from when it reached the page to its answer', () => {
+    const call = applyChatEvent(started(), { type: 'tool-call', id: 't1', name: 'mcp__ottopus-ink__get_accounts', input: '{}' }, 1_000)
+    const done = applyChatEvent(call, { type: 'tool-result', id: 't1', text: 'ok', isError: false }, 2_400)
+    expect(done.items.at(-1)).toMatchObject({ kind: 'tool', startedAt: 1_000, result: { ms: 1_400 } })
+    const untimed = applyChatEvent(applyChatEvent(started(), { type: 'tool-call', id: 't2', name: 'x', input: '' }), { type: 'tool-result', id: 't2', text: '', isError: false })
+    expect(untimed.items.at(-1)).toMatchObject({ result: { ms: null } })
   })
 
   it('shows a tool call with no input', () => {

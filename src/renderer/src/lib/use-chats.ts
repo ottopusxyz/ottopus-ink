@@ -23,7 +23,8 @@ export interface ChatActions {
 export function useChats(): [Chat[], ChatActions] {
   const [chats, setChats] = useState<Chat[]>([])
   const chatIds = useRef(new Map<string, string>())
-  const queue = useRef<[string, ChatEvent][]>([])
+  // Each event with when it reached the page, so a tool call can say how long it took.
+  const queue = useRef<[string, ChatEvent, number][]>([])
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const update = useCallback((id: string, change: (chat: Chat) => Chat) => {
@@ -32,29 +33,29 @@ export function useChats(): [Chat[], ChatActions] {
 
   const flush = useCallback(() => {
     timer.current = null
-    const ready = new Map<string, ChatEvent[]>()
-    const waiting: [string, ChatEvent][] = []
+    const ready = new Map<string, [ChatEvent, number][]>()
+    const waiting: [string, ChatEvent, number][] = []
     for (const entry of queue.current) {
-      const [sessionId, event] = entry
+      const [sessionId, event, at] = entry
       const id = chatIds.current.get(sessionId)
       if (!id) {
         waiting.push(entry)
         continue
       }
       const events = ready.get(id)
-      if (events) events.push(event)
-      else ready.set(id, [event])
+      if (events) events.push([event, at])
+      else ready.set(id, [[event, at]])
     }
     queue.current = waiting.slice(-MAX_WAITING_EVENTS)
     if (ready.size === 0) return
     setChats((all) =>
-      all.map((chat) => ready.get(chat.id)?.reduce((next, event) => applyChatEvent(next, event), chat) ?? chat),
+      all.map((chat) => ready.get(chat.id)?.reduce((next, [event, at]) => applyChatEvent(next, event, at), chat) ?? chat),
     )
   }, [])
 
   useEffect(() => {
     const unsubscribe = window.ink.onChatEvent((sessionId, event) => {
-      queue.current.push([sessionId, event])
+      queue.current.push([sessionId, event, Date.now()])
       timer.current ??= setTimeout(flush, BATCH_MS)
     })
     return () => {

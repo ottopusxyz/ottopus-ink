@@ -7,7 +7,17 @@ export type ChatStatus = 'idle' | 'live' | 'settled'
 export type ChatItem =
   | { kind: 'user'; id: string; text: string }
   | { kind: 'agent'; id: string; text: string }
-  | { kind: 'tool'; id: string; toolId: string; name: string; input: string; result: { text: string; isError: boolean } | null }
+  | {
+      kind: 'tool'
+      id: string
+      toolId: string
+      name: string
+      input: string
+      /** When the call reached the page, in ms since the epoch. */
+      startedAt: number | null
+      /** `ms` is how long the answer took to follow, as the page saw it. */
+      result: { text: string; isError: boolean; ms: number | null } | null
+    }
   | { kind: 'plan'; id: string; plan: ChatPlan }
   /** `ends` marks the failure that finished a chat, which gets more room than one it can carry on from. */
   | { kind: 'notice'; id: string; severity: 'info' | 'block'; title: string; text: string | null; ends?: true }
@@ -111,8 +121,8 @@ export function messageFailed(chat: Chat, error: string): Chat {
   return { ...withItem(chat, { kind: 'notice', severity: 'block', title: "Your message wasn't sent", text: withNothingSigned(error) }), phase: 'ready' }
 }
 
-/** What one event from the chat's session does to it. */
-export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
+/** What one event from the chat's session does to it. `at` is when the event reached the page. */
+export function applyChatEvent(chat: Chat, event: ChatEvent, at?: number): Chat {
   // Ending a chat takes a moment in the main process, and it stops here at once. The
   // exception is the lock: a person who pressed End must still hear that it broke.
   if (chat.phase === 'ended' && event.type !== 'lock') return chat
@@ -168,6 +178,7 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
         toolId: event.id,
         name: event.name,
         input: clipped(event.input, MAX_TOOL_CHARS),
+        startedAt: at ?? null,
         result: null,
       })
     case 'tool-result':
@@ -175,7 +186,14 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
         ...chat,
         items: chat.items.map((item) =>
           item.kind === 'tool' && item.toolId === event.id
-            ? { ...item, result: { text: clipped(event.text, MAX_TOOL_CHARS), isError: event.isError } }
+            ? {
+                ...item,
+                result: {
+                  text: clipped(event.text, MAX_TOOL_CHARS),
+                  isError: event.isError,
+                  ms: at !== undefined && item.startedAt !== null ? Math.max(0, at - item.startedAt) : null,
+                },
+              }
             : item,
         ),
       }

@@ -25,6 +25,12 @@ export function toolTitle(tool: InkTool | null, label: string, state: ToolState)
   return tool ? TOOL_COPY[tool][state] : label
 }
 
+/** How long a call took, as a Done chip shows it, or null when it's too quick or unknown to be worth saying. */
+export function toolDuration(ms: number | null | undefined): string | null {
+  if (ms === null || ms === undefined || ms < 100) return null
+  return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms / 60_000)} min`
+}
+
 /** The first line of what a tool sent back, collapsed and cut to fit one line under the heading. */
 export function toolSummary(text: string | null | undefined, max = 90): string | null {
   const line = (text ?? '')

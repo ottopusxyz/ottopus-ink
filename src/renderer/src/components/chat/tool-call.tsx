@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui'
 import { Ring } from '@/components/motion/ring'
 import { CancelIcon, ChevronDownIcon, EyeIcon, KeyIcon, PieIcon, PlugIcon, ReceiptIcon, RouteIcon, type IconProps } from '@/components/shell/icons'
 import { inkTool, toolLabel, type ChatItem, type InkTool } from '@/lib/chats'
-import { TOOL_COPY, toolSummary, toolTitle, type ToolState } from '@/lib/tool-copy'
+import { TOOL_COPY, toolDuration, toolSummary, toolTitle, type ToolState } from '@/lib/tool-copy'
 
 /** Each of Ink's tools' glyph, shared with Home's list of what the agent can reach. */
 export const TOOL_GLYPHS: Record<InkTool, ComponentType<IconProps>> = {
@@ -52,7 +52,7 @@ export function ToolCall({ name, input, result }: Extract<ChatItem, { kind: 'too
         ) : state === 'failed' ? (
           <Badge tone="block">Failed</Badge>
         ) : (
-          <Badge tone="ok">Done</Badge>
+          <Badge tone="ok">{toolDuration(result?.ms) ? `Done · ${toolDuration(result?.ms)}` : 'Done'}</Badge>
         )}
         <ChevronDownIcon size={12} />
       </summary>

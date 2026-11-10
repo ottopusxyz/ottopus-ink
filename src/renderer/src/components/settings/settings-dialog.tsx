@@ -1,11 +1,10 @@
-import { useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { AgentId, AgentState, AgentStatus, ExternalItem } from '../../../../shared/ipc'
 import { Otto } from '@/components/brand/otto'
 import { AgentMark } from '@/components/chat/agent-picker'
-import { Badge, Button, Callout, Dialog, Tooltip, type Tone } from '@/components/ui'
+import { Badge, Button, Callout, Dialog, Segmented, Tooltip, type Tone } from '@/components/ui'
 import { BotIcon, CloseIcon, PlugIcon, RefreshIcon, ShieldIcon, SlidersIcon, WalletIcon } from '@/components/shell/icons'
 import { agentInfo, describeAgent, LATER_AGENTS } from '@/lib/agents'
-import { stepIndex } from '@/lib/roving'
 import { ToolsTab } from './tools-tab'
 
 /** Each section with its glyph on a pastel tile, the same tints as the tools in a chat. */
@@ -279,47 +278,6 @@ function Setting({ title, description, children }: { title: string; description:
         <p>{description}</p>
       </div>
       {children}
-    </div>
-  )
-}
-
-function Segmented({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  options: readonly (readonly [string, string])[]
-}) {
-  // A radio group is one tab stop: Tab reaches the chosen option and the arrow
-  // keys move the choice, as the role promises a screen reader.
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const next = stepIndex(event.key, index, options.length)
-    const option = next === null ? undefined : options[next]
-    if (next === null || !option) return
-    event.preventDefault()
-    onChange(option[0])
-    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus()
-  }
-
-  return (
-    <div className="ink-segmented" role="radiogroup" aria-label={label}>
-      {options.map(([id, text], index) => (
-        <button
-          key={id}
-          type="button"
-          role="radio"
-          aria-checked={value === id}
-          tabIndex={value === id ? 0 : -1}
-          onClick={() => onChange(id)}
-          onKeyDown={(event) => onKeyDown(event, index)}
-        >
-          {text}
-        </button>
-      ))}
     </div>
   )
 }

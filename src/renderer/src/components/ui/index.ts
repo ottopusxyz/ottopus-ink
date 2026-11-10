@@ -18,3 +18,4 @@ export {
 export { TokenAmount, type TokenAmountProps } from './token-amount'
 export { Tooltip, type TooltipProps } from './tooltip'
 export { ChainLogo, ChainStack, TokenLogo, type LogoSize } from './logo'
+export { Segmented } from './segmented'

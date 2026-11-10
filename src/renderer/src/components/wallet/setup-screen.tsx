@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import type { BackupAnswer, NewPhrase, VaultWordCount } from '../../../../shared/vault'
 import { Ring } from '@/components/motion/ring'
 import { ChatIcon, EyeIcon, KeyIcon } from '@/components/shell/icons'
-import { Button, Callout, ChainStack, Input } from '@/components/ui'
+import { Button, Callout, ChainStack, Input, Segmented } from '@/components/ui'
 import { passwordProblem, PHRASE_DROPPED, phraseLost, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from '@/lib/wallet'
 import { Field, FormError, PhraseInput, WalletHeading, WalletPanel, type Guide } from './wallet-panel'
 
@@ -194,13 +194,15 @@ function Welcome({
             <b className="text-[15px]">Create a new wallet</b>
             <span className="text-[12.5px] text-[var(--ot-text-3)]">One recovery phrase covers all seven chains.</span>
           </div>
-          <div className="ink-seg" role="radiogroup" aria-label="Recovery phrase length">
-            {([12, 24] as const).map((count) => (
-              <button key={count} type="button" role="radio" aria-checked={size === count} className={size === count ? 'ink-seg--on' : undefined} onClick={() => onSize(count)}>
-                {count} words
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label="Recovery phrase length"
+            value={String(size)}
+            onChange={(value) => onSize(value === '24' ? 24 : 12)}
+            options={[
+              ['12', '12 words'],
+              ['24', '24 words'],
+            ]}
+          />
         </div>
         <ChainStack chains={['near', 'ethereum', 'solana', 'bitcoin', 'tron', 'sui', 'aptos']} />
         <Button variant="primary" size="lg" fullWidth disabled={busy} onClick={onCreate}>

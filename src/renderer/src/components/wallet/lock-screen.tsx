@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Button, Input } from '@/components/ui'
+import { ClockIcon, LockIcon } from '@/components/shell/icons'
+import { Badge, Button, Input } from '@/components/ui'
 import { autoLockNote, vaultMessage } from '@/lib/wallet'
 import { Field, FormError, WalletHeading, WalletPanel } from './wallet-panel'
 
@@ -17,7 +18,13 @@ export function LockScreen() {
         text: 'While Ink is locked, your agent can’t read balances or draft plans. Unlock and we pick up where we were.',
       }}
     >
-      <WalletHeading title="Ink is locked">Enter your password to unlock your wallet.</WalletHeading>
+      <div className="flex flex-col gap-2">
+        <Badge tone="navy">
+          <LockIcon size={12} />
+          Locked
+        </Badge>
+        <WalletHeading title="Ink is locked">Enter your password to unlock your wallet. You’ll be back where you were.</WalletHeading>
+      </div>
       <form
         className="ink-form-card flex flex-col gap-4 p-4"
         onSubmit={async (event) => {
@@ -39,7 +46,8 @@ export function LockScreen() {
           {busy ? 'Unlocking…' : 'Unlock'}
         </Button>
       </form>
-      <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-3)]">
+      <p className="m-0 flex items-center gap-2.5 text-[12.5px] leading-[1.5] text-[var(--ot-text-3)]">
+        <ClockIcon size={16} />
         {autoLockNote(navigator.userAgent)}
       </p>
     </WalletPanel>

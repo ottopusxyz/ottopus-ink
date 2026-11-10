@@ -19,6 +19,7 @@ import {
   newChat,
   planHeadline,
   toolLabel,
+  waitingPlan,
   withDraft,
   type Chat,
 } from './chats'
@@ -376,5 +377,22 @@ describe('withDraft', () => {
   it('returns the same object when clearing a key that is not there', () => {
     const drafts = { 'chat-a': 'x' }
     expect(withDraft(drafts, 'chat-b', '')).toBe(drafts)
+  })
+})
+
+describe('the plan waiting on Home', () => {
+  const withPlan = (id: string, status: ChatPlan['status'] | null): Chat => ({
+    ...chatStarted(newChat(id, 'claude-code', 'hello'), 'session'),
+    plan: status ? { ...plan, id: `p-${id}`, status } : null,
+  })
+
+  it('is the first chat whose plan awaits review', () => {
+    const chats = [withPlan('a', null), withPlan('b', 'draft'), withPlan('c', 'awaiting_review'), withPlan('d', 'awaiting_review')]
+    expect(waitingPlan(chats)).toEqual({ chatId: 'c', plan: { ...plan, id: 'p-c', status: 'awaiting_review' } })
+  })
+
+  it('is nothing when no plan waits on the person', () => {
+    expect(waitingPlan([withPlan('a', 'confirmed'), withPlan('b', 'signing')])).toBeNull()
+    expect(waitingPlan([])).toBeNull()
   })
 })

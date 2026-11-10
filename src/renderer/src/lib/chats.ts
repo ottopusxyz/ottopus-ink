@@ -255,6 +255,14 @@ export function inkTool(name: string): InkTool | null {
   return INK_TOOLS.find((tool) => tool === short) ?? null
 }
 
+/** The first chat with a plan waiting on the person's review, for Home's banner. */
+export function waitingPlan(chats: readonly Chat[]): { chatId: string; plan: ChatPlan } | null {
+  for (const chat of chats) {
+    if (chat.plan?.status === 'awaiting_review') return { chatId: chat.id, plan: chat.plan }
+  }
+  return null
+}
+
 /** A plan in one line, such as "Swap 0.1 ETH to USDC". */
 export function planHeadline({ outcome, amount, asset, toAsset }: ChatPlan): string {
   const verb = `${outcome[0]?.toUpperCase() ?? ''}${outcome.slice(1)}`

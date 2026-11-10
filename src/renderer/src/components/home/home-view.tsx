@@ -3,16 +3,19 @@ import { Otto } from '@/components/brand/otto'
 import { AgentMark } from '@/components/chat/agent-picker'
 import { Composer } from '@/components/chat/composer'
 import { Sea } from '@/components/motion/sea'
-import { ArrowRightIcon, ChatIcon, StakeIcon, SwapIcon } from '@/components/shell/icons'
-import type { Chat } from '@/lib/chats'
+import { Ring } from '@/components/motion/ring'
+import { ChatIcon } from '@/components/shell/icons'
+import { TokenLogo } from '@/components/ui'
+import { planHeadline, type Chat } from '@/lib/chats'
+import type { ChatPlan } from '../../../../shared/ipc'
 
-/** Starting points, filled into the composer rather than sent. */
-const SUGGESTIONS = [
-  { text: 'Swap 0.1 ETH to USDC on Base', Icon: SwapIcon },
-  { text: 'Bridge USDC from Base to NEAR', Icon: ArrowRightIcon },
-  { text: 'Stake 10 NEAR', Icon: StakeIcon },
-  { text: 'What did I spend this week?', Icon: ChatIcon },
-] as const
+/** Starting points, filled into the composer rather than sent, each with the marks of what it moves. */
+const SUGGESTIONS: readonly { text: string; tokens: readonly string[] }[] = [
+  { text: 'Swap 0.1 ETH to USDC on Base', tokens: ['ETH', 'USDC'] },
+  { text: 'Bridge USDC from Base to NEAR', tokens: ['USDC', 'NEAR'] },
+  { text: 'Stake 10 NEAR', tokens: ['NEAR'] },
+  { text: 'What did I spend this week?', tokens: [] },
+]
 
 export interface HomeViewProps {
   draft: string
@@ -27,6 +30,8 @@ export interface HomeViewProps {
   canSend: boolean
   /** What new chats get beyond Ottopus tools, by name. */
   external: readonly string[]
+  /** A plan waiting on the person's review, if one is, and the chat it came from. */
+  waiting: { chatId: string; plan: ChatPlan } | null
 }
 
 /**
@@ -44,6 +49,7 @@ export function HomeView({
   agentPicker,
   canSend,
   external,
+  waiting,
 }: HomeViewProps) {
   const running = live[0]
 
@@ -51,13 +57,33 @@ export function HomeView({
     <main className="ink-panel" id="main">
       <Sea />
       <div className="ink-panel__scroll px-8 pt-16 pb-8">
-        <div className="mx-auto flex max-w-[780px] flex-col gap-[18px]">
-          <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Your agent proposes. You review and sign here.</p>
-          <h1 className="m-0 font-display text-[52px] leading-[1.02] font-bold tracking-[-0.02em]">
-            Ask for it.
-            <br />
-            Sign it yourself.
-          </h1>
+        <div className="mx-auto flex max-w-[880px] flex-col gap-4">
+          <div className="flex flex-wrap items-end gap-5">
+            <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-2">
+              <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Your agent proposes. You review and sign here.</p>
+              <h1 className="m-0 font-display text-[42px] leading-[1.05] font-bold tracking-[-0.02em]">
+                Ask for it.
+                <br />
+                <span className="ink-highlight">Sign it yourself.</span>
+              </h1>
+            </div>
+            <div className="relative h-[104px] w-[250px] flex-none" aria-hidden>
+              <span className="ink-speech">Hi, I’m Otto. Your agent asks me before anything moves.</span>
+              <Otto pose="wave" size={100} animated className="absolute right-0 -bottom-2.5" />
+            </div>
+          </div>
+
+          {waiting ? (
+            <button type="button" className="ink-waiting" onClick={() => onOpenChat(waiting.chatId)}>
+              <Ring size={20} tone="plan" />
+              <TokenLogo symbol={waiting.plan.asset} chain={waiting.plan.chain} size="md" />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+                <span className="text-[15px] font-bold">{planHeadline(waiting.plan)} is waiting for you</span>
+                <span className="text-[13px] text-[var(--ot-text-2)]">Check it in Ink’s review window. Nothing is signed until you approve.</span>
+              </span>
+              <span className="ink-waiting__go">Open chat</span>
+            </button>
+          ) : null}
 
           <Composer
             value={draft}
@@ -72,11 +98,19 @@ export function HomeView({
           />
 
           <div className="flex flex-wrap gap-2">
-            {SUGGESTIONS.map(({ text, Icon }) => (
+            {SUGGESTIONS.map(({ text, tokens }) => (
               <button key={text} type="button" className="ink-suggestion" onClick={() => onDraft(text)}>
-                <span className="text-[var(--ot-text-3)]">
-                  <Icon />
-                </span>
+                {tokens.length > 0 ? (
+                  <span className="ink-logo-stack">
+                    {tokens.map((symbol) => (
+                      <TokenLogo key={symbol} symbol={symbol} size="sm" />
+                    ))}
+                  </span>
+                ) : (
+                  <span className="text-[var(--ot-text-3)]">
+                    <ChatIcon />
+                  </span>
+                )}
                 {text}
               </button>
             ))}
@@ -119,7 +153,6 @@ export function HomeView({
           </div>
         </div>
       </div>
-      <Otto pose="base" size={84} animated label="Otto" className="pointer-events-none absolute right-5 bottom-3" />
     </main>
   )
 }

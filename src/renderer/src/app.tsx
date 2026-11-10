@@ -12,7 +12,7 @@ import { LockScreen } from '@/components/wallet/lock-screen'
 import { ReceiveView } from '@/components/wallet/receive-view'
 import { SetupScreen } from '@/components/wallet/setup-screen'
 import { chooseAgent } from '@/lib/agents'
-import { HOME_DRAFT, isWorking, withDraft, type Drafts } from '@/lib/chats'
+import { HOME_DRAFT, isWorking, waitingPlan, withDraft, type Drafts } from '@/lib/chats'
 import { latestOnly } from '@/lib/latest'
 import { useChats } from '@/lib/use-chats'
 import { useVault } from '@/lib/use-vault'
@@ -179,6 +179,7 @@ export function App() {
           agentPicker={agentPicker}
           canSend={selectedAgent !== null}
           external={externalItems.filter((item) => item.enabled).map((item) => item.name)}
+          waiting={waitingPlan(chats)}
         />
       )}
       <SettingsDialog

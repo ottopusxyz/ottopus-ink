@@ -3,10 +3,10 @@ import type { Account, AccountChain } from '../../../../shared/accounts'
 import { Otto } from '@/components/brand/otto'
 import { Sea } from '@/components/motion/sea'
 import { CheckIcon, CopyIcon } from '@/components/shell/icons'
-import { Callout, ChainLogo, TokenLogo } from '@/components/ui'
+import { Callout, ChainLogo, IntentsLogo, TokenLogo } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { ACCOUNT_CHAIN_MARK, type ChainId } from '@/lib/logos'
-import { CHAIN_ASSETS, CHAIN_SUB, EVM_NETWORKS, receiveAsset, receiveNetwork } from '@/lib/receive'
+import { assetKind, CHAIN_ASSETS, CHAIN_SUB, EVM_NETWORKS, receiveAsset, receiveNetwork } from '@/lib/receive'
 import { addressParts, CHAIN_INFO, vaultMessage } from '@/lib/wallet'
 import { QrCode } from './qr-code'
 
@@ -53,11 +53,6 @@ export function ReceiveView() {
             Pick where the money’s coming from. Ink shows the one address to use, and its QR code.
           </p>
         </div>
-        <Callout severity="info" title="Ink can’t send yet" compact className="max-w-[720px]">
-          Anything you receive stays at these addresses. Another wallet given your recovery phrase reaches them if it uses
-          the same path, shown under each address. Most do, but some use another path for Solana. Deposit addresses for
-          chains like TON and XRP come with NEAR Intents.
-        </Callout>
         {loaded.kind === 'loading' ? (
           <p className="m-0 text-[14px] text-[var(--ot-text-3)]">Working out your addresses…</p>
         ) : loaded.kind === 'failed' ? (
@@ -87,6 +82,16 @@ export function ReceiveView() {
                       </span>
                     </button>
                   ))}
+                  <div className="ink-choice ink-choice--later" aria-label="More chains through NEAR Intents, later">
+                    <span className="ink-logo-stack" aria-hidden>
+                      <IntentsLogo chain="ton" size="sm" />
+                      <IntentsLogo chain="xrp" size="sm" />
+                    </span>
+                    <span className="flex min-w-0 flex-col text-left">
+                      <span className="text-[13px] font-bold">More chains</span>
+                      <span className="text-[11.5px]">through NEAR Intents, later</span>
+                    </span>
+                  </div>
                 </div>
               </section>
 
@@ -126,11 +131,17 @@ export function ReceiveView() {
                       <button key={symbol} type="button" className={cn('ink-pill', on && 'ink-pill--on')} aria-pressed={on} onClick={() => setAsset(symbol)}>
                         <TokenLogo symbol={symbol} size="md" />
                         {symbol}
+                        <span className="text-[11.5px] font-medium text-[var(--ot-text-3)]">{assetKind(account.chain, symbol)}</span>
                       </button>
                     )
                   })}
                 </div>
               </section>
+
+              <p className="m-0 max-w-[62ch] text-[12px] leading-[1.5] text-[var(--ot-text-3)]">
+                Ink can’t send yet, so what you receive stays at these addresses. Another wallet given your recovery phrase
+                reaches them if it uses the same path, shown under the address. Most do, but some use another path for Solana.
+              </p>
             </div>
 
             {/* Keyed by chain, so Copied never carries over to another chain's address. */}

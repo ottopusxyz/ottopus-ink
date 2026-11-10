@@ -23,6 +23,12 @@ export const CHAIN_ASSETS: Record<AccountChain, readonly TokenSymbol[]> = {
   aptos: ['APT', 'USDC'],
 }
 
+/** What kind of asset a symbol is on a chain, for the small print in its pill. */
+export function assetKind(chain: AccountChain, symbol: TokenSymbol): 'native' | 'stablecoin' | 'token' {
+  if (symbol === CHAIN_ASSETS[chain][0]) return 'native'
+  return symbol === 'USDC' || symbol === 'USDT' ? 'stablecoin' : 'token'
+}
+
 /** The networks one EVM address works on. Picking one only labels the QR, so the sender is told the right network. */
 export const EVM_NETWORKS: readonly { id: ChainId; name: string }[] = [
   { id: 'ethereum', name: 'Ethereum' },

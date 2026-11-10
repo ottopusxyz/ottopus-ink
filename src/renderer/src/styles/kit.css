@@ -1207,3 +1207,11 @@ button.ink-connector { cursor: pointer; }
   width: 260px;
 }
 .ink-composer__hint .ink-kbd { font-size: 10.5px; }
+
+/* Receive: chains still to come, on a dashed tile that isn't a choice yet. */
+.ink-choice--later {
+  border-style: dashed;
+  background: transparent;
+  color: var(--ot-text-3);
+  cursor: default;
+}

@@ -9,7 +9,9 @@ import optimismChain from '@/assets/crypto/chains/optimism.svg'
 import polygonChain from '@/assets/crypto/chains/polygon.svg'
 import solanaChain from '@/assets/crypto/chains/solana.svg'
 import suiChain from '@/assets/crypto/chains/sui.svg'
+import tonChain from '@/assets/crypto/chains/ton.svg'
 import tronChain from '@/assets/crypto/chains/tron.svg'
+import xrpChain from '@/assets/crypto/chains/xrp.svg'
 import aptToken from '@/assets/crypto/tokens/apt.svg'
 import btcToken from '@/assets/crypto/tokens/btc.svg'
 import ethToken from '@/assets/crypto/tokens/eth.svg'
@@ -49,6 +51,9 @@ const TOKEN_SRC: Record<TokenSymbol, string> = {
   APT: aptToken,
 }
 
+/** Chains with no key in Ink, whose funds come through NEAR Intents deposit addresses. */
+const INTENTS_SRC = { ton: tonChain, xrp: xrpChain } as const
+
 export type LogoSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
 
 /** A mark on a disc, white in light mode and a soft tint in dark, so every brand colour reads. */
@@ -86,6 +91,11 @@ export function TokenLogo({ symbol, chain, size = 'md', label }: { symbol: strin
       <Mark src={CHAIN_SRC[badge]} size="xs" className="ink-logo-pair__badge" />
     </span>
   )
+}
+
+/** A chain Ink reaches only through NEAR Intents, which has no key of its own here. */
+export function IntentsLogo({ chain, size }: { chain: keyof typeof INTENTS_SRC; size?: LogoSize }) {
+  return <Mark src={INTENTS_SRC[chain]} size={size} />
 }
 
 /** Overlapping chain marks, at most three, then "+N". */

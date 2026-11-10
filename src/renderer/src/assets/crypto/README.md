@@ -19,6 +19,8 @@ package's SVG string as published, with only its `class` attribute removed.
 | `chains/tron.svg` | networks/branded/tron |
 | `chains/sui.svg` | networks/branded/sui |
 | `chains/aptos.svg` | networks/branded/aptos |
+| `chains/ton.svg` | networks/branded/ton |
+| `chains/xrp.svg` | networks/background/xrp, with its square background drawn as a circle, since the branded mark is white |
 | `tokens/<symbol>.svg` | tokens/branded/`<SYMBOL>` |
 
 They name a chain or a token and nothing else: no mark here stands for an

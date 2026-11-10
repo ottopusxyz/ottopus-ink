@@ -7,7 +7,17 @@ export type ChatStatus = 'idle' | 'live' | 'settled'
 export type ChatItem =
   | { kind: 'user'; id: string; text: string }
   | { kind: 'agent'; id: string; text: string }
-  | { kind: 'tool'; id: string; toolId: string; name: string; input: string; result: { text: string; isError: boolean } | null }
+  | {
+      kind: 'tool'
+      id: string
+      toolId: string
+      name: string
+      input: string
+      /** When the call reached the page, in ms since the epoch. */
+      startedAt: number | null
+      /** `ms` is how long the answer took to follow, as the page saw it. */
+      result: { text: string; isError: boolean; ms: number | null } | null
+    }
   | { kind: 'plan'; id: string; plan: ChatPlan }
   /** `ends` marks the failure that finished a chat, which gets more room than one it can carry on from. */
   | { kind: 'notice'; id: string; severity: 'info' | 'block'; title: string; text: string | null; ends?: true }
@@ -111,8 +121,8 @@ export function messageFailed(chat: Chat, error: string): Chat {
   return { ...withItem(chat, { kind: 'notice', severity: 'block', title: "Your message wasn't sent", text: withNothingSigned(error) }), phase: 'ready' }
 }
 
-/** What one event from the chat's session does to it. */
-export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
+/** What one event from the chat's session does to it. `at` is when the event reached the page. */
+export function applyChatEvent(chat: Chat, event: ChatEvent, at?: number): Chat {
   // Ending a chat takes a moment in the main process, and it stops here at once. The
   // exception is the lock: a person who pressed End must still hear that it broke.
   if (chat.phase === 'ended' && event.type !== 'lock') return chat
@@ -168,6 +178,7 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
         toolId: event.id,
         name: event.name,
         input: clipped(event.input, MAX_TOOL_CHARS),
+        startedAt: at ?? null,
         result: null,
       })
     case 'tool-result':
@@ -175,7 +186,14 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
         ...chat,
         items: chat.items.map((item) =>
           item.kind === 'tool' && item.toolId === event.id
-            ? { ...item, result: { text: clipped(event.text, MAX_TOOL_CHARS), isError: event.isError } }
+            ? {
+                ...item,
+                result: {
+                  text: clipped(event.text, MAX_TOOL_CHARS),
+                  isError: event.isError,
+                  ms: at !== undefined && item.startedAt !== null ? Math.max(0, at - item.startedAt) : null,
+                },
+              }
             : item,
         ),
       }
@@ -243,8 +261,49 @@ const INK_TOOL_PREFIX = 'mcp__ottopus-ink__'
  * so it stands out. An agent can make up a name like `mcp__ottopus-ink__sign`.
  */
 export function toolLabel(name: string): string {
+  return inkTool(name) ?? name
+}
+
+export type InkTool = (typeof INK_TOOLS)[number]
+
+/** Which of Ink's own tools a call was, or null for anything else, including made-up names under Ink's prefix. */
+export function inkTool(name: string): InkTool | null {
+  if (!name.startsWith(INK_TOOL_PREFIX)) return null
   const short = name.slice(INK_TOOL_PREFIX.length)
-  return name.startsWith(INK_TOOL_PREFIX) && INK_TOOLS.some((tool) => tool === short) ? short : name
+  return INK_TOOLS.find((tool) => tool === short) ?? null
+}
+
+/** A run of a chat: one of your messages, or everything the agent did in answer, under its avatar. */
+export type Turn = { kind: 'you'; item: ChatItem } | { kind: 'agent'; id: string; items: ChatItem[] }
+
+/** A chat's items as turns: each message of yours alone, and what follows it grouped as the agent's answer. */
+export function chatTurns(items: readonly ChatItem[]): Turn[] {
+  const turns: Turn[] = []
+  for (const item of items) {
+    const last = turns.at(-1)
+    if (item.kind === 'user') turns.push({ kind: 'you', item })
+    else if (last?.kind === 'agent') last.items.push(item)
+    else turns.push({ kind: 'agent', id: item.id, items: [item] })
+  }
+  return turns
+}
+
+/**
+ * The chat's latest plan when its message has been trimmed away, so a long chat
+ * still shows where its plan stands. Null while the plan is in the conversation.
+ */
+export function trimmedPlan(chat: Pick<Chat, 'plan' | 'items'>): ChatPlan | null {
+  const { plan } = chat
+  if (!plan) return null
+  return chat.items.some((item) => item.kind === 'plan' && item.plan.id === plan.id) ? null : plan
+}
+
+/** The first chat with a plan waiting on the person's review, for Home's banner. */
+export function waitingPlan(chats: readonly Chat[]): { chatId: string; plan: ChatPlan } | null {
+  for (const chat of chats) {
+    if (chat.plan?.status === 'awaiting_review') return { chatId: chat.id, plan: chat.plan }
+  }
+  return null
 }
 
 /** A plan in one line, such as "Swap 0.1 ETH to USDC". */

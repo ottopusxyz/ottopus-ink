@@ -106,3 +106,58 @@ export const EyeIcon = icon(
     <circle cx="12" cy="12" r="3" />
   </>,
 )
+
+/* Glyphs for Ink's own tools in a chat. KeyIcon and EyeIcon cover accounts and plans. */
+export const PieIcon = icon(
+  <>
+    <path d="M12 3a9 9 0 1 0 9 9h-9z" />
+    <path d="M15 3.5A9 9 0 0 1 20.5 9H15z" />
+  </>,
+  2,
+)
+export const RouteIcon = icon(
+  <>
+    <circle cx="6" cy="18" r="2.5" />
+    <circle cx="18" cy="6" r="2.5" />
+    <path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5" />
+  </>,
+  2,
+)
+export const ReceiptIcon = icon(
+  <>
+    <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+    <path d="M9 8h6M9 12h6M9 16h3" />
+  </>,
+  2,
+)
+export const CancelIcon = icon(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m9 9 6 6M15 9l-6 6" />
+  </>,
+  2,
+)
+export const RefreshIcon = icon(<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />, 2)
+export const BotIcon = icon(
+  <>
+    <rect x="5" y="8" width="14" height="11" rx="3" />
+    <path d="M12 4v4M9 13h.01M15 13h.01M9.5 16h5" />
+  </>,
+  2,
+)
+export const ClockIcon = icon(
+  <>
+    <circle cx="12" cy="13" r="8" />
+    <path d="M12 9v4l2 2M10 2h4" />
+  </>,
+  2,
+)
+export const ExternalIcon = icon(<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />, 2)
+export const MoreIcon = icon(
+  <>
+    <circle cx="5" cy="12" r="1.2" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.2" fill="currentColor" />
+    <circle cx="19" cy="12" r="1.2" fill="currentColor" />
+  </>,
+  2,
+)

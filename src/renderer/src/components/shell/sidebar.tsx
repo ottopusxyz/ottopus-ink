@@ -1,15 +1,14 @@
 import { useMemo, useState, type Ref } from 'react'
 import type { SignerStatus } from '../../../../shared/ipc'
 import { AgentMark } from '@/components/chat/agent-picker'
-import { SignInIcon } from '@/components/settings/sign-in-icon'
-import { Badge, Tooltip } from '@/components/ui'
+import { Badge, Button, ChainStack, TokenLogo, Tooltip } from '@/components/ui'
 import { agentInfo } from '@/lib/agents'
-import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
+import { filterChats, isWorking, type Chat } from '@/lib/chats'
+import { ACCOUNT_CHAIN_MARK } from '@/lib/logos'
 import {
   ActivityIcon,
   CheckIcon,
-  LockIcon,
-  PlugIcon,
+  ChevronDownIcon,
   ReceiveIcon,
   PlusIcon,
   SearchIcon,
@@ -18,6 +17,9 @@ import {
   WalletIcon,
 } from './icons'
 import { PAGES, shortcutLabel, type PageId, type View } from './nav'
+
+/** How many chats the list shows before All chats opens the rest. */
+const RECENT_CHATS = 8
 
 const PAGE_ICONS: Record<PageId, typeof WalletIcon> = {
   portfolio: WalletIcon,
@@ -28,7 +30,6 @@ const PAGE_ICONS: Record<PageId, typeof WalletIcon> = {
 export interface SidebarProps {
   view: View
   chats: readonly Chat[]
-  version: string | undefined
   signer: SignerStatus | null
   mac: boolean
   searchRef: Ref<HTMLInputElement>
@@ -47,7 +48,6 @@ export interface SidebarProps {
 export function Sidebar({
   view,
   chats,
-  version,
   signer,
   mac,
   searchRef,
@@ -58,13 +58,17 @@ export function Sidebar({
   onLock,
 }: SidebarProps) {
   const [query, setQuery] = useState('')
+  const [all, setAll] = useState(false)
   const shown = useMemo(() => filterChats(chats, query), [chats, query])
-  const openChat = view.kind === 'chat' ? chats.find((chat) => chat.id === view.chatId) : undefined
+  // A search shows every match; otherwise the newest few, until All chats opens the rest.
+  const listed = query || all ? shown : shown.slice(0, RECENT_CHATS)
 
   return (
     <nav className="ink-sidebar" aria-label="Chats and pages">
       <button type="button" className="ink-side-item ink-side-item--strong" onClick={onNewChat}>
-        <PlusIcon />
+        <span className="ink-new-tile" aria-hidden>
+          <PlusIcon size={13} />
+        </span>
         <span className="ink-side-item__label">New chat</span>
         <kbd className="ink-kbd">{shortcutLabel('new-chat', mac)}</kbd>
       </button>
@@ -85,9 +89,9 @@ export function Sidebar({
         <kbd className="ink-kbd">{shortcutLabel('search', mac)}</kbd>
       </label>
 
-      <div className="ink-side-heading">Recent</div>
+      <div className="ink-side-heading">Chats</div>
       <ul className="m-0 flex min-h-0 list-none flex-col gap-0.5 overflow-auto p-0">
-        {shown.map((chat) => (
+        {listed.map((chat) => (
           <li key={chat.id}>
             <button
               type="button"
@@ -97,10 +101,24 @@ export function Sidebar({
             >
               <ChatMark chat={chat} />
               <span className="ink-side-item__label">{chat.title}</span>
-              {chat.status === 'live' && chat.step ? <Badge tone="plan">{chat.step}</Badge> : null}
+              {chat.status === 'live' && chat.step ? (
+                <Badge tone="plan">{chat.step}</Badge>
+              ) : chat.plan?.status === 'awaiting_review' ? (
+                <Badge tone="plan">To review</Badge>
+              ) : null}
             </button>
           </li>
         ))}
+        {!query && shown.length > RECENT_CHATS ? (
+          <li>
+            <button type="button" className="ink-side-item ink-side-item--more" aria-expanded={all} onClick={() => setAll(!all)}>
+              <span className={all ? 'ink-chevron ink-chevron--up' : 'ink-chevron'} aria-hidden>
+                <ChevronDownIcon size={14} />
+              </span>
+              <span className="ink-side-item__label">{all ? 'Fewer chats' : `All chats (${shown.length})`}</span>
+            </button>
+          </li>
+        ) : null}
       </ul>
       {chats.length === 0 ? (
         <p className="m-0 px-2.5 py-1.5 text-[12.5px] leading-[1.45] text-[var(--ot-text-3)]">
@@ -124,6 +142,7 @@ export function Sidebar({
           >
             <Icon />
             <span className="ink-side-item__label">{page.label}</span>
+            {page.id === 'receive' ? <ChainStack chains={RECEIVE_CHAINS} size="xs" /> : null}
           </button>
         )
       })}
@@ -132,22 +151,20 @@ export function Sidebar({
         <span className="ink-side-item__label">Settings</span>
         <kbd className="ink-kbd">{shortcutLabel('settings', mac)}</kbd>
       </button>
-      <button type="button" className="ink-side-item ink-side-item--page" onClick={onLock}>
-        <LockIcon />
-        <span className="ink-side-item__label">Lock</span>
-        <kbd className="ink-kbd">{shortcutLabel('lock', mac)}</kbd>
-      </button>
 
-      {openChat ? <LockIndicator chat={openChat} /> : null}
-      <SignerIndicator status={signer} version={version} />
+      <VaultCard signer={signer} lockKey={shortcutLabel('lock', mac)} onLock={onLock} />
     </nav>
   )
 }
 
+/** The chains Receive covers, for the marks beside it. */
+const RECEIVE_CHAINS = Object.values(ACCOUNT_CHAIN_MARK)
+
+/** A chat's mark: the token its plan moves once it has one, its agent before that. */
 function ChatMark({ chat }: { chat: Chat }) {
   return (
     <span className="ink-chat-mark">
-      <AgentMark id={chat.agent} small />
+      {chat.plan ? <TokenLogo symbol={chat.plan.asset} chain={chat.plan.chain} size="sm" /> : <AgentMark id={chat.agent} small />}
       <span className="sr-only">{agentInfo(chat.agent).name}</span>
       <ChatStatusMark chat={chat} />
     </span>
@@ -167,57 +184,39 @@ function ChatStatusMark({ chat }: { chat: Chat }) {
   return null
 }
 
-const LOCK_COLOURS = {
-  ok: 'var(--ot-ok)',
-  plan: 'var(--ot-plan)',
-  block: 'var(--ot-block-solid)',
-  neutral: 'var(--ot-text-3)',
-} as const
-
-/** Whether the open chat's agent is held to Ottopus tools. Each chat has its own session, so each has its own answer. */
-function LockIndicator({ chat }: { chat: Chat }) {
-  const { text, hint, tone } = lockStatus(chat)
-  // Side by side rather than nested, so each shows only its own tooltip.
-  return (
-    <div className="ink-signer">
-      <Tooltip text={hint} className="min-w-0 flex-1">
-        <div className="flex w-full items-center gap-2" role="status" tabIndex={0}>
-          <span style={{ color: LOCK_COLOURS[tone] }}>
-            <PlugIcon />
-          </span>
-          <span className="flex-1">{text}</span>
-        </div>
-      </Tooltip>
-      {chat.phase !== 'ended' && chat.lock === 'locked' ? <SignInIcon names={chat.needsSignIn} /> : null}
-    </div>
-  )
-}
-
 /**
- * Where the vault's lock timer goes once the vault exists (issue #12). Until
- * then it reports the one thing that is real: the signer process is up and
- * isolated from this window.
+ * The wallet's state, at the foot of the sidebar: unlocked, when it locks
+ * itself, and Lock. While the signer isn't up, that's what it says instead,
+ * since nothing can be signed then.
  */
-function SignerIndicator({ status, version }: { status: SignerStatus | null; version: string | undefined }) {
-  const copy =
-    status === 'ready' ? 'Signer isolated' : status === 'stopped' ? 'Signer stopped' : 'Signer starting'
-  const colour =
-    status === 'ready' ? 'var(--ot-ok)' : status === 'stopped' ? 'var(--ot-block-solid)' : 'var(--ot-plan)'
+function VaultCard({ signer, lockKey, onLock }: { signer: SignerStatus | null; lockKey: string; onLock: () => void }) {
+  const tone = signer === 'ready' ? 'ok' : signer === 'stopped' ? 'block' : 'plan'
+  const line = signer === 'ready' ? 'locks after 10 min' : signer === 'stopped' ? 'signer stopped' : 'signer starting'
   const hint =
-    status === 'ready'
-      ? 'Signing runs in its own process, apart from this window and your agent.'
-      : status === 'stopped'
+    signer === 'ready'
+      ? 'Ink locks itself after 10 minutes without use. Signing runs in its own process, apart from this window and your agent.'
+      : signer === 'stopped'
         ? "The signing process isn't running, so nothing can be signed."
         : 'The signing process is starting.'
   return (
-    <Tooltip text={hint} className="ink-tip--block">
-      <div className="ink-signer" role="status" tabIndex={0}>
-        <span style={{ color: colour }}>
-          <ShieldIcon />
-        </span>
-        <span className="flex-1">{copy}</span>
-        <span className="font-mono text-[11px] text-[var(--ot-text-3)]">v{version ?? '…'}</span>
-      </div>
-    </Tooltip>
+    <div className="ink-vault">
+      <Tooltip text={hint} className="min-w-0 flex-1">
+        <div className="flex w-full items-center gap-2.5" role="status" tabIndex={0}>
+          <span className={`ink-vault__tile ink-vault__tile--${tone}`} aria-hidden>
+            <ShieldIcon size={14} />
+          </span>
+          <span className="min-w-0 flex-1 text-[11.5px] leading-[1.3]">
+            <b className="font-bold text-[var(--ot-text)]">Unlocked</b>
+            <br />
+            {line}
+          </span>
+        </div>
+      </Tooltip>
+      <Tooltip text={`Lock now (${lockKey})`}>
+        <Button size="sm" className="h-7 px-2.5" onClick={onLock}>
+          Lock
+        </Button>
+      </Tooltip>
+    </div>
   )
 }

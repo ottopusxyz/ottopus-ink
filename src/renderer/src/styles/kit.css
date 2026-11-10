@@ -1,0 +1,1263 @@
+/* Parts from the desktop redesign (#67). Ink's own, not ported, so they live
+   apart from the files copied from the Ottopus web app. */
+
+/* Chain and token marks on a disc. White in light mode; a soft tint in dark,
+   so a stack of them doesn't read as a row of bright rings. */
+.ink-logo {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--ot-border);
+}
+.ink-logo img {
+  display: block;
+  width: 92%;
+  height: 92%;
+}
+[data-theme="dark"] .ink-logo { background: #E8EDF6; box-shadow: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-logo { background: #E8EDF6; box-shadow: none; }
+}
+.ink-logo--xs { width: 14px; height: 14px; }
+.ink-logo--sm { width: 20px; height: 20px; }
+.ink-logo--lg { width: 40px; height: 40px; }
+.ink-logo--xl { width: 56px; height: 56px; }
+.ink-logo--text {
+  color: #16213E;
+  font: 700 9px/1 var(--ot-font-ui);
+}
+
+.ink-logo-pair {
+  position: relative;
+  display: inline-block;
+  flex: none;
+}
+.ink-logo-pair__badge {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  box-shadow: 0 0 0 2px var(--ot-card);
+}
+
+.ink-logo-stack {
+  display: inline-flex;
+  align-items: center;
+}
+.ink-logo-stack > .ink-logo {
+  box-shadow: 0 0 0 2px var(--ot-card);
+}
+.ink-logo-stack > * + * {
+  margin-left: -5px;
+}
+.ink-logo-more {
+  display: inline-grid;
+  place-items: center;
+  height: 18px;
+  min-width: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ot-surface-3);
+  box-shadow: 0 0 0 2px var(--ot-card);
+  color: var(--ot-text-2);
+  font: 700 10px/1 var(--ot-font-ui);
+}
+
+/* The home composer is the screen's focus: Otto's navy edge and a sticker shadow. */
+.ink-composer--prominent {
+  border: 2px solid var(--ot-navy);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+.ink-composer--prominent:focus-within {
+  border-color: var(--ot-navy);
+}
+[data-theme="dark"] .ink-composer--prominent { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-composer--prominent { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+.ink-composer__hint {
+  align-self: flex-end;
+  color: var(--ot-text-3);
+  font-size: 11.5px;
+}
+
+/* L1 · Tentacle ring. Eight dots, never six, never twelve. */
+.ink-ring {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--ink-ring);
+  height: var(--ink-ring);
+  color: inherit;
+  animation: ink-ring-spin 2.4s linear infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ink-ring--plan { color: var(--ot-plan); }
+.ink-ring i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(var(--ink-ring) * 0.2);
+  height: calc(var(--ink-ring) * 0.2);
+  margin: calc(var(--ink-ring) * -0.1) 0 0 calc(var(--ink-ring) * -0.1);
+  border-radius: 50%;
+  background: currentColor;
+  transform: rotate(calc(var(--i) * 45deg)) translateY(calc(var(--ink-ring) * -0.4));
+  animation: ink-ring-dot 1.6s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.2s);
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ink-ring-spin { to { rotate: 360deg; } }
+@keyframes ink-ring-dot {
+  0%, 100% { opacity: 0.18; scale: 0.72; }
+  45% { opacity: 1; scale: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-ring, .ink-ring i { animation: none; }
+  .ink-ring i { opacity: 0.55; }
+}
+
+/* A chat's tool calls hang off a tentacle: a dashed coral line with a sucker
+   at each call. Consecutive calls join into one line. */
+.ink-tool {
+  position: relative;
+  margin-left: 22px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ot-card) 82%, transparent);
+}
+.ink-tool::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  bottom: -12px;
+  left: -14px;
+  width: 3px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(180deg, var(--ot-coral-shade) 0 7px, transparent 7px 11px);
+  opacity: 0.9;
+}
+.ink-tool::after {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: -19px;
+  width: 9px;
+  height: 9px;
+  border: 2.5px solid var(--ot-coral);
+  border-radius: 50%;
+  background: var(--ot-cream);
+}
+.ink-tool__glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid #16213E;
+  border-radius: 9px;
+  color: #16213E;
+}
+.ink-tool__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.ink-tool__title {
+  color: var(--ot-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+.ink-tool__sub {
+  overflow: hidden;
+  color: var(--ot-text-3);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ink-tool__sub .font-mono {
+  color: var(--ot-text-2);
+  font-size: 12px;
+}
+.ink-tool summary {
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+/* A plan as a ticket: the lead line and Otto above a perforation, the details
+   below it. The navy edge is kept for this and the main buttons only. */
+.ink-ticket {
+  position: relative;
+  flex: none;
+  width: 100%;
+  max-width: 520px;
+  overflow: hidden;
+  border: 2px solid var(--ot-navy);
+  border-radius: 20px;
+  background: var(--ot-card);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+[data-theme="dark"] .ink-ticket { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-ticket { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+.ink-ticket__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px 12px;
+}
+.ink-ticket__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+.ink-ticket__amount {
+  font: 700 26px/1.1 var(--ot-font-display);
+  letter-spacing: -0.02em;
+}
+.ink-ticket__arrow {
+  flex: none;
+  color: var(--ot-text);
+}
+.ink-ticket__to {
+  min-width: 0;
+  font: 700 19px/1.25 var(--ot-font-mono);
+  overflow-wrap: anywhere;
+}
+.ink-ticket__pocket {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--ot-cream);
+}
+.ink-ticket__perf {
+  position: relative;
+  margin: 0 18px;
+  border-top: 2px dashed var(--ot-border-strong);
+}
+.ink-ticket__perf::before,
+.ink-ticket__perf::after {
+  content: "";
+  position: absolute;
+  top: -12px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--ot-navy);
+  border-radius: 50%;
+  background: var(--ot-surface);
+}
+.ink-ticket__perf::before { left: -31px; }
+.ink-ticket__perf::after { right: -31px; }
+[data-theme="dark"] .ink-ticket__perf::before, [data-theme="dark"] .ink-ticket__perf::after { border-color: var(--ot-border-strong); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-ticket__perf::before, :root:not([data-theme="light"]) .ink-ticket__perf::after { border-color: var(--ot-border-strong); }
+}
+.ink-ticket__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 14px;
+}
+
+/* Home: a calm highlight under the second line, Otto's speech bubble, and the
+   banner for a plan waiting on the person. */
+.ink-highlight {
+  margin-left: -4px;
+  padding: 0 4px;
+  background: linear-gradient(180deg, transparent 64%, var(--ot-plan-bg) 64%);
+}
+.ink-speech {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 148px;
+  padding: 9px 11px;
+  border: 1px solid var(--ot-border-strong);
+  border-radius: 14px 14px 4px 14px;
+  background: var(--ot-card);
+  box-shadow: var(--ot-shadow-card);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.ink-waiting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 12px 16px;
+  border: 2px solid var(--ot-plan);
+  border-radius: 18px;
+  background: var(--ot-plan-bg);
+  color: var(--ot-text);
+  font: inherit;
+  cursor: pointer;
+}
+.ink-waiting__go {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border: 2px solid var(--ot-navy);
+  border-radius: 999px;
+  background: var(--ot-coral);
+  box-shadow: 2px 2px 0 var(--ot-navy);
+  color: var(--ot-on-state);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Otto's wave, for the wave pose: the raised arm swings about its shoulder. */
+.otto-wave {
+  transform-box: view-box;
+  animation: otto-wave 1.1s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes otto-wave {
+  0%, 100% { transform: rotate(-6deg); }
+  50% { transform: rotate(14deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .otto-wave { animation: none !important; }
+}
+
+/* Receive: numbered steps, chain rows, asset pills, and one address card. */
+.ink-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.ink-step__n {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ot-navy);
+  color: var(--ot-cream);
+  font-size: 11.5px;
+}
+.ink-choice,
+.ink-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--ot-border);
+  background: var(--ot-card);
+  color: var(--ot-text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--ot-dur-fast), box-shadow var(--ot-dur-fast);
+}
+.ink-choice {
+  padding: 9px 10px;
+  border-radius: 13px;
+}
+.ink-pill {
+  display: inline-flex;
+  height: 40px;
+  padding: 0 14px 0 6px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.ink-choice:hover,
+.ink-pill:hover {
+  border-color: var(--ot-border-strong);
+}
+.ink-choice--on,
+.ink-pill--on,
+.ink-choice--on:hover,
+.ink-pill--on:hover {
+  border-color: var(--ot-plan);
+  background: var(--ot-plan-bg);
+  box-shadow: 0 0 0 3px var(--ot-plan-bg);
+}
+.ink-address-card {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex: 1 1 340px;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 420px;
+  min-width: 0;
+  margin-top: 30px;
+  padding: 18px;
+  border: 2px solid var(--ot-navy);
+  border-radius: 18px;
+  background: var(--ot-card);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+[data-theme="dark"] .ink-address-card { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-address-card { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+.ink-address-card__otto {
+  position: absolute;
+  top: -50px;
+  right: 18px;
+}
+.ink-qr-frame {
+  position: relative;
+  align-self: center;
+  padding: 10px;
+  border: 2px solid #16213E;
+  border-radius: 18px;
+  background: #fff;
+}
+.ink-qr-frame__mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px #fff, 0 0 0 6px #16213E;
+  transform: translate(-50%, -50%);
+}
+.ink-address {
+  color: var(--ot-text-2);
+  font: 13.5px/1.6 var(--ot-font-mono);
+  overflow-wrap: anywhere;
+}
+.ink-address strong {
+  padding: 0 2px;
+  border-radius: 4px;
+  background: var(--ot-plan-bg);
+  color: var(--ot-plan-text);
+  font-weight: 700;
+}
+.ink-address-card__warn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: -6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ot-warn-bg);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.ink-address-card__warn strong {
+  color: var(--ot-warn-text);
+}
+.ink-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  border: 2px solid var(--ot-navy);
+  border-radius: 999px;
+  background: var(--ot-coral);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+  color: var(--ot-on-state);
+  font: 700 15px var(--ot-font-ui);
+  cursor: pointer;
+}
+.ink-copy:active {
+  box-shadow: 1px 1px 0 var(--ot-navy);
+  transform: translate(2px, 2px);
+}
+
+/* Setup and lock: Otto's stage on the left, the step's progress above the form. */
+.ink-stage {
+  flex: 1 1 360px;
+  max-width: 480px;
+  border: 2px solid var(--ot-navy);
+  background: var(--ot-water-1);
+}
+[data-theme="dark"] .ink-stage { border-color: var(--ot-border-strong); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-stage { border-color: var(--ot-border-strong); }
+}
+.ink-stage .ink-sea {
+  background: linear-gradient(
+    180deg,
+    var(--ot-water-1) 0%,
+    color-mix(in srgb, var(--ot-plan) 10%, var(--ot-water-1)) 40%,
+    color-mix(in srgb, var(--ot-plan) 24%, var(--ot-water-2)) 80%,
+    color-mix(in srgb, var(--ot-plan) 34%, var(--ot-water-3)) 100%
+  );
+}
+.ink-stage__floor {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 90px;
+  background: radial-gradient(120% 90px at 50% 100%, var(--ot-cream) 0 60%, transparent 61%);
+  opacity: 0.85;
+}
+.ink-stage__bubble {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 340px;
+  padding: 14px 16px;
+  border: 1px solid var(--ot-border-strong);
+  border-radius: 20px 20px 20px 6px;
+  background: var(--ot-card);
+  box-shadow: var(--ot-shadow-card);
+}
+.ink-progress {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ink-progress__step {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+.ink-progress__step:not(:last-child)::after {
+  content: "";
+  flex: 1;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--ot-border);
+}
+.ink-progress__step--done:not(:last-child)::after {
+  background: var(--ot-ok);
+}
+.ink-progress__dot {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--ot-text-2);
+  border-radius: 50%;
+  background: var(--ot-card);
+  font-size: 12px;
+  font-weight: 800;
+}
+.ink-progress__step--done .ink-progress__dot {
+  border-color: var(--ot-ok);
+  background: var(--ot-ok);
+  color: #16213E;
+}
+.ink-progress__step--on .ink-progress__dot {
+  border-color: var(--ot-navy);
+  background: var(--ot-coral);
+  box-shadow: 0 0 0 4px var(--ot-coral-soft);
+  color: #16213E;
+}
+.ink-progress__label {
+  color: var(--ot-text-3);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ink-progress__step--on .ink-progress__label {
+  color: var(--ot-text);
+}
+
+/* The review window: the network as a quiet strip, the recipient and amount on cards. */
+.ink-review-network {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--ot-border);
+  border-radius: 12px;
+  background: var(--ot-surface-2);
+  font-size: 13px;
+}
+.ink-review-card {
+  padding: 14px;
+  border: 1px solid var(--ot-border-strong);
+  border-radius: 16px;
+  background: var(--ot-card);
+}
+
+/* Settings: each section's glyph on a pastel tile; the open one lifts. */
+.ink-settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px 0 6px;
+}
+.ink-settings-nav__glyph {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+.ink-settings-nav button[aria-current="page"] {
+  background: var(--ot-card);
+  box-shadow: 0 1px 2px rgba(22, 33, 62, 0.12), 0 0 0 1px var(--ot-border-strong);
+}
+
+/* Coral is for actions and Otto. The open page in the sidebar lifts like an
+   open chat, and your own messages are navy. */
+.ink-side-item--page[aria-current="page"] {
+  background: var(--ot-card);
+  box-shadow: var(--ot-shadow-card);
+}
+.ink-bubble {
+  background: var(--ot-navy);
+  color: var(--ot-cream);
+}
+[data-theme="dark"] .ink-bubble { background: #2B3B69; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-bubble { background: #2B3B69; }
+}
+
+/* The primary button as a sticker: Otto's navy edge and an offset shadow that a
+   press pushes into. Disabled drops back to a flat surface. */
+.ink-sticker {
+  border: 2px solid var(--ot-navy);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+  transition: transform var(--ot-dur-fast) var(--ot-ease-bounce), box-shadow var(--ot-dur-fast), background-color var(--ot-dur-fast);
+}
+.ink-sticker:hover:not(:disabled, [aria-disabled="true"]) {
+  box-shadow: 4px 4px 0 var(--ot-navy);
+  transform: translate(-1px, -1px);
+}
+.ink-sticker:active:not(:disabled, [aria-disabled="true"]) {
+  box-shadow: 1px 1px 0 var(--ot-navy);
+  transform: translate(2px, 2px);
+}
+.ink-sticker:disabled,
+.ink-sticker[aria-disabled="true"] {
+  box-shadow: none;
+}
+[data-theme="dark"] .ink-sticker { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-sticker { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+
+/* L3 step dots and L6 ink hold, from the Ottopus loader family. */
+.ink-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.ink-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ink-dot 1.2s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ink-dots i:nth-child(2) { animation-delay: 0.2s; }
+.ink-dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes ink-dot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+.ink-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.ink-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ink-steps__mark {
+  display: inline-grid;
+  width: 18px;
+  place-items: center;
+}
+.ink-hold {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  overflow: hidden;
+  padding: 32px 24px;
+  border-radius: 18px;
+  background: #16213E;
+  color: #FFF0DC;
+  text-align: center;
+}
+.ink-hold__ripple {
+  position: absolute;
+  top: calc(50% - 110px);
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: rgba(255, 240, 220, 0.1);
+  animation: ink-ripple 2.8s ease-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ink-hold__ripple--late { animation-delay: 1.4s; }
+@keyframes ink-ripple {
+  0% { opacity: 0.5; transform: scale(0.6); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-dots i, .ink-hold__ripple { animation: none; }
+  .ink-hold__ripple { opacity: 0; }
+}
+
+/* Setup and lock forms sit on a card; the create-wallet card gets the sticker edge. */
+.ink-form-card {
+  border: 1px solid var(--ot-border-strong);
+  border-radius: 16px;
+  background: var(--ot-card);
+}
+.ink-form-card--hero {
+  border: 2px solid var(--ot-navy);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+[data-theme="dark"] .ink-form-card--hero { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-form-card--hero { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+.ink-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 2px solid var(--ot-navy);
+  border-radius: 50%;
+  background: var(--ot-plan-bg);
+  color: var(--ot-plan-text);
+  font: 800 16px var(--ot-font-display);
+}
+.ink-review-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* A chat's header: what it's about, who's on it, and how much it has done. */
+.ink-chat-toolbar {
+  gap: 10px;
+  padding: 10px 12px 10px 16px;
+  background: color-mix(in srgb, var(--ot-surface) 86%, transparent);
+}
+
+/* The agent menu: Otto's navy edge, like the plan ticket. */
+.ink-popover {
+  border: 2px solid var(--ot-navy);
+  border-radius: 18px;
+  padding: 8px;
+}
+[data-theme="dark"] .ink-popover { border-color: var(--ot-border-strong); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-popover { border-color: var(--ot-border-strong); }
+}
+.ink-agent-option[aria-current="true"] {
+  background: var(--ot-plan-bg);
+  box-shadow: inset 0 0 0 1px var(--ot-plan-border);
+}
+
+/* The sidebar's status blocks: dashed, like a note pinned at the bottom. */
+.ink-signer {
+  border: 1px dashed var(--ot-border-strong);
+}
+.ink-signer + .ink-tip--block .ink-signer,
+.ink-signer + .ink-signer {
+  margin-top: 6px;
+}
+
+/* Home: which agent is ready, and the six tools it can reach. */
+.ink-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 4px;
+  border: 1px solid var(--ot-ok-border);
+  border-radius: 999px;
+  background: var(--ot-ok-bg);
+  color: var(--ot-ok-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.ink-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px 0 3px;
+  border: 1px solid var(--ot-border);
+  border-radius: 999px;
+  background: var(--ot-surface-2);
+  color: var(--ot-text-2);
+  font-size: 11.5px;
+}
+.ink-tool-chip .ink-tool__glyph {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+}
+
+/* Settings: agent cards, the backup card, and segmented choices like the canvas. */
+.ink-agent-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ot-border);
+  border-radius: 14px;
+  background: var(--ot-card);
+}
+.ink-agent-card--on {
+  border-color: var(--ot-plan-border);
+  background: var(--ot-plan-bg);
+}
+.ink-backup-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 6px;
+  padding: 12px 16px;
+  border: 1px solid var(--ot-warn-border);
+  border-radius: 16px;
+  background: var(--ot-warn-bg);
+}
+.ink-segmented button[aria-checked="true"] {
+  background: var(--ot-card);
+  box-shadow: 0 1px 2px rgba(22, 33, 62, 0.12), 0 0 0 1px var(--ot-border-strong);
+  color: var(--ot-text);
+}
+
+/* A chat as turns: the agent's answer sits under its avatar. */
+.ink-turn {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.ink-turn > .ink-agent-mark {
+  width: 32px;
+  height: 32px;
+  box-shadow: 0 0 0 2px var(--ot-navy);
+}
+.ink-turn__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.ink-thinking svg {
+  color: var(--ot-coral);
+}
+
+/* The composer's edge while the agent works: a coral and blue band orbiting the
+   rim, and a soft glow just outside it. Off, it's a plain composer. */
+@property --ink-rim-a {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.ink-rim {
+  position: relative;
+  isolation: isolate;
+  border-radius: 18px;
+}
+.ink-rim .ink-composer--compact {
+  margin: 0;
+}
+.ink-rim--on::before,
+.ink-rim--on::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: conic-gradient(from var(--ink-rim-a), transparent 0deg, #F58A6A 40deg, #FFB49A 80deg, #2E7CF6 125deg, transparent 170deg);
+  animation: ink-rim-orbit 4.5s linear infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ink-rim--on::before {
+  z-index: 2;
+  padding: 2.5px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.ink-rim--on::after {
+  z-index: 3;
+  inset: -8px;
+  padding: 9px;
+  border-radius: 26px;
+  filter: blur(7px);
+  opacity: 0.28;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+@keyframes ink-rim-orbit {
+  to { --ink-rim-a: 360deg; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-rim--on::before, .ink-rim--on::after { animation: none; }
+}
+.ink-tool,
+.ink-tool[open] {
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+}
+
+/* A status chip's dot, and the tide sweep while Approve waits to wake up. */
+.ink-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ink-tide {
+  position: relative;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ot-water-2);
+}
+.ink-tide > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 32%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--ot-plan), transparent);
+  animation: ink-tide 1.4s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+@keyframes ink-tide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-tide > span { animation: none; width: 100%; opacity: 0.4; }
+}
+.ink-review-card--stk {
+  border-radius: 18px;
+  box-shadow: var(--ot-shadow-card);
+}
+
+/* Setup. How Ink works: the agents' marks overlapping, and the coral sign tile. */
+.ink-mark-stack {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+}
+.ink-mark-stack > .ink-agent-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ot-card);
+}
+.ink-mark-stack > * + * {
+  margin-left: -7px;
+}
+.ink-sign-tile {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 2px solid var(--ot-navy);
+  border-radius: 10px;
+  background: var(--ot-coral);
+  color: #16213E;
+}
+
+/* The recovery phrase: each word on its own tile, covered until shown. */
+.ink-word {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1.5px solid var(--ot-border);
+  border-radius: 11px;
+  background: var(--ot-surface-2);
+}
+.ink-word-cover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--ot-card) 40%, transparent);
+  text-align: center;
+}
+.ink-safety-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.ink-safety-tip > span { margin-top: 1px; }
+
+/* A checked word that matches: a green edge and a tick. */
+.ink-input--right {
+  border-color: var(--ot-ok) !important;
+  box-shadow: 0 0 0 1px var(--ot-ok);
+}
+.ink-input-tick {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ot-ok);
+  color: #16213E;
+  transform: translateY(-50%);
+}
+
+/* The password meter: four bars by length. */
+.ink-meter {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+.ink-meter > span {
+  height: 6px;
+  border-radius: 6px;
+  background: var(--ot-water-3);
+}
+.ink-meter > .ink-meter--ok { background: var(--ot-ok); }
+.ink-meter > .ink-meter--low { background: var(--ot-warn); }
+
+/* A quiet note with a glyph, on a dashed edge. */
+.ink-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--ot-border-strong);
+  border-radius: 12px;
+  background: var(--ot-surface-2);
+  color: var(--ot-text-2);
+  font-size: 12.5px;
+}
+.ink-note > svg { color: var(--ot-text-3); }
+
+/* Meet your agent: one card per agent found, the default on coral with the sticker edge. */
+.ink-meet-agent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--ot-border-strong);
+  border-radius: 16px;
+  background: var(--ot-card);
+}
+.ink-meet-agent > .ink-agent-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+.ink-meet-agent--on {
+  border: 2px solid var(--ot-navy);
+  background: var(--ot-coral-soft);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+.ink-meet-agent--later {
+  border-style: dashed;
+  background: transparent;
+}
+[data-theme="dark"] .ink-meet-agent--on { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-meet-agent--on { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+
+/* The sidebar: New chat on a coral tile, All chats, and the wallet's own card at the foot. */
+.ink-new-tile {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  border: 2px solid var(--ot-navy);
+  border-radius: 8px;
+  background: var(--ot-coral);
+  color: #16213E;
+}
+.ink-side-item--more {
+  color: var(--ot-text-3);
+}
+.ink-chevron {
+  display: grid;
+  width: 20px;
+  place-items: center;
+  transition: transform var(--ot-dur-fast);
+}
+.ink-chevron--up { transform: rotate(180deg); }
+.ink-vault {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px dashed var(--ot-border-strong);
+  border-radius: 12px;
+  background: var(--ot-surface-2);
+  color: var(--ot-text-2);
+  font-size: 12px;
+}
+.ink-vault__tile {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border: 1.5px solid;
+  border-radius: 9px;
+}
+.ink-vault__tile--ok { border-color: var(--ot-ok-border); background: var(--ot-ok-bg); color: var(--ot-ok-text); }
+.ink-vault__tile--block { border-color: var(--ot-block-border); background: var(--ot-block-bg); color: var(--ot-block-text); }
+.ink-vault__tile--plan { border-color: var(--ot-plan-border); background: var(--ot-plan-bg); color: var(--ot-plan-text); }
+
+/* Home's backup card, on amber. */
+.ink-glance--warn {
+  border-color: var(--ot-warn-border);
+  background: var(--ot-warn-bg);
+}
+
+/* The foot of the settings nav: which Ink this is. */
+.ink-settings-nav__foot {
+  margin-top: auto;
+  padding: 10px 6px 0;
+  color: var(--ot-text-3);
+  font-size: 11px;
+}
+
+/* Popovers that open above what they belong to, such as the composer's tools chip. */
+.ink-popover--up {
+  position-area: top span-left;
+}
+.ink-tools-pop {
+  width: 400px;
+  max-height: min(560px, 80vh);
+}
+.ink-tools-pop__glyph {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+.ink-tools-pop__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 10px;
+}
+.ink-tools-pop__row:hover { background: var(--ot-surface-2); }
+.ink-tools-pop__foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 6px 4px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: var(--ot-navy);
+  color: var(--ot-cream);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ink-tools-pop__settings {
+  display: block;
+  width: calc(100% - 12px);
+  margin: 4px 6px 2px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ot-plan-text);
+  font: 600 12px var(--ot-font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.ink-tools-pop__settings:hover { background: var(--ot-plan-bg); }
+button.ink-connector { cursor: pointer; }
+.ink-chat-menu {
+  position-area: bottom span-left;
+  width: 260px;
+}
+.ink-composer__hint .ink-kbd { font-size: 10.5px; }
+
+/* Receive: chains still to come, on a dashed tile that isn't a choice yet. */
+.ink-choice--later {
+  border-style: dashed;
+  background: transparent;
+  color: var(--ot-text-3);
+  cursor: default;
+}
+
+/* Settings › Agent: a card per agent, the default on coral with the sticker edge. */
+.ink-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+.ink-agent-grid .ink-agent-card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: 16px;
+}
+.ink-agent-grid .ink-agent-card--on {
+  border: 2px solid var(--ot-navy);
+  background: var(--ot-coral-soft);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+[data-theme="dark"] .ink-agent-grid .ink-agent-card--on { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-agent-grid .ink-agent-card--on { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+.ink-agent-grid .ink-agent-mark {
+  width: 34px;
+  height: 34px;
+}
+.ink-agent-grid .ink-agent-card:not(.ink-agent-card--later) > :last-child {
+  margin-top: auto;
+}
+.ink-agent-card--later {
+  justify-content: center;
+  border-style: dashed;
+  background: transparent;
+}
+.ink-text-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ot-plan-text);
+  font: 700 12.5px var(--ot-font-ui);
+  cursor: pointer;
+}
+.ink-text-link:hover { text-decoration: underline; }

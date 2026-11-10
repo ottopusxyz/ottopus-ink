@@ -1,16 +1,73 @@
 import type { ReactNode, TextareaHTMLAttributes } from 'react'
+import { Otto, type PoseName } from '@/components/brand/otto'
 import { Sea } from '@/components/motion/sea'
+import { CheckIcon } from '@/components/shell/icons'
 import { cn } from '@/lib/cn'
 
-/** The one panel the setup and lock screens fill, with nothing else in the window to click. */
-export function WalletPanel({ children }: { children: ReactNode }) {
+/** What Otto says beside a setup or lock step, and how he stands while saying it. */
+export interface Guide {
+  pose: PoseName
+  title: string
+  text: string
+  /** Big and moving on welcome and lock; smaller and still while someone types words or a password. */
+  calm?: boolean
+}
+
+/** The steps of making a wallet, for the progress above the form. Welcome comes before the first. */
+export const SETUP_STEPS = ['Write down', 'Check', 'Password', 'Agent'] as const
+
+/**
+ * The setup and lock screens: Otto on a seabed on the left, saying what this
+ * step is for, and the form on the right with the step's progress above it.
+ * Nothing else in the window is there to click.
+ */
+export function WalletPanel({ guide, step, children }: { guide: Guide; step?: number; children: ReactNode }) {
   return (
-    <main className="ink-panel" id="main">
-      <Sea shafts={false} />
-      <div className="ink-panel__scroll flex justify-center px-6 py-14">
-        <div className="flex w-full max-w-[540px] flex-col gap-5">{children}</div>
-      </div>
-    </main>
+    <>
+      <aside className="ink-panel ink-stage" aria-label="Otto explains this step">
+        <Sea shafts />
+        <div className="ink-stage__floor" aria-hidden />
+        <div className="relative flex h-full flex-col justify-end gap-4 p-6">
+          <div className="ink-stage__bubble">
+            <span className="ink-eyebrow text-[var(--ot-coral-text)]">Otto says</span>
+            <span className="font-display text-[20px] leading-[1.2] font-bold">{guide.title}</span>
+            <span className="text-[13.5px] leading-[1.5] text-[var(--ot-text-2)]">{guide.text}</span>
+          </div>
+          <Otto pose={guide.pose} size={guide.calm ? 150 : 220} animated={!guide.calm} className="mb-2 self-center" />
+        </div>
+      </aside>
+      <main className="ink-panel" id="main">
+        <Sea shafts={false} />
+        <div className="ink-panel__scroll flex justify-center px-6 py-12">
+          <div className="my-auto flex w-full max-w-[540px] flex-col gap-5">
+            {step !== undefined ? <SetupProgress at={step} /> : null}
+            {children}
+          </div>
+        </div>
+      </main>
+    </>
+  )
+}
+
+/** Where a new wallet's setup is: done, this one, still to come. Before the first step, `at` is -1. */
+function SetupProgress({ at }: { at: number }) {
+  const count = at < 0 ? 'Four quick steps, about two minutes' : `Step ${at + 1} of ${SETUP_STEPS.length}`
+  return (
+    <div className="flex flex-col gap-1.5">
+      <ol className="ink-progress" aria-label={count}>
+        {SETUP_STEPS.map((label, i) => (
+          <li key={label} className={cn('ink-progress__step', i < at && 'ink-progress__step--done', i === at && 'ink-progress__step--on')}>
+            <span className="ink-progress__dot" aria-hidden>
+              {i < at ? <CheckIcon size={12} /> : i + 1}
+            </span>
+            <span className="ink-progress__label">{label}</span>
+          </li>
+        ))}
+      </ol>
+      <span className="text-[12px] font-bold text-[var(--ot-text-3)]" aria-hidden>
+        {count}
+      </span>
+    </div>
   )
 }
 

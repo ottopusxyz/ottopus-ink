@@ -219,21 +219,6 @@
   font-size: 15px;
 }
 
-/* A chat's composer, inside Composer Loader. The light goes between the composer
-   and the card, so this paints the card and the composer goes clear. */
-.ink-composer-light {
-  margin: 0 14px 14px;
-  border-radius: 18px;
-  background: var(--ot-card);
-}
-.ink-composer-light .ink-composer--compact {
-  margin: 0;
-  background: transparent;
-}
-/* The band isn't showing, so don't keep redrawing its blurs. */
-.ink-composer-light--off {
-  --ot-ambient-play: paused;
-}
 
 .ink-composer__row {
   display: flex;
@@ -568,16 +553,6 @@
   user-select: text;
 }
 
-.ink-plan-card {
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-  max-width: 420px;
-  padding: 14px;
-}
-
 /* The agent picker's list: a native popover, placed under its button with
    CSS anchor positioning and flipped above when there's no room below. */
 .ink-tip {
@@ -669,14 +644,6 @@ button.ink-agent-option:hover {
   user-select: text;
 }
 
-.ink-plan-pane {
-  position: relative;
-  width: 326px;
-  flex: none;
-  overflow: hidden;
-  border: 1px solid var(--ot-border);
-  border-radius: 18px;
-}
 
 /* --- Settings --- */
 

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { OttoBadge } from '@/components/brand/otto-badge'
+import { Badge } from '@/components/ui'
 import { cn } from '@/lib/cn'
 
 export interface AppShellProps {
@@ -20,6 +21,9 @@ export function AppShell({ mac, sidebar, children }: AppShellProps) {
       <header className="ink-brandbar">
         <OttoBadge size={22} />
         <span className="font-display text-[16px] font-bold tracking-[-0.02em]">Ottopus Ink</span>
+        <Badge tone="coral" className="px-2 py-[3px] text-[10.5px] font-bold">
+          NEAR hackathon build
+        </Badge>
       </header>
       <div className="ink-body">
         {sidebar ?? null}

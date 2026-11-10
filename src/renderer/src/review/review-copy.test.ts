@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ReviewState } from '../../../shared/review'
-import { approveLabel, canApprove, failureText, groupAddress, outcomeOf, shortHash, timeLeft } from './review-copy'
+import { ACCOUNT_KIND, approveLabel, canApprove, failureText, groupAddress, outcomeOf, sendSteps, shortHash, timeLeft } from './review-copy'
 
 const STATE: ReviewState = {
   plan: {
@@ -108,5 +108,19 @@ describe('what became of the plan', () => {
 
   it('warns against sending again while a send is unanswered', () => {
     expect(outcomeOf({ ...STATE, status: 'submitted' })).toMatchObject({ tone: 'caution', text: expect.stringMatching(/before sending it again/) })
+  })
+})
+
+describe('while it sends', () => {
+  it('signs first, then waits for NEAR', () => {
+    expect(sendSteps({ ...STATE, sending: true }).map((step) => step.status)).toEqual(['active', 'pending', 'pending'])
+    const signed = sendSteps({ ...STATE, sending: true, transactionId: 'tx' })
+    expect(signed.map((step) => step.status)).toEqual(['done', 'active', 'pending'])
+    expect(signed[0]?.label).toBe('Signed in the signer')
+  })
+
+  it('names every kind of recipient account', () => {
+    expect(ACCOUNT_KIND.named).toMatch(/named/)
+    expect(Object.keys(ACCOUNT_KIND)).toHaveLength(3)
   })
 })

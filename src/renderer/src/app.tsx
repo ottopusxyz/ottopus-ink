@@ -4,15 +4,16 @@ import { AgentPicker } from '@/components/chat/agent-picker'
 import { ChatView } from '@/components/chat/chat-view'
 import { HomeView } from '@/components/home/home-view'
 import { PageView } from '@/components/pages/page-view'
-import { SettingsDialog } from '@/components/settings/settings-dialog'
+import { SettingsDialog, type SettingsTab } from '@/components/settings/settings-dialog'
 import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
 import { Sidebar } from '@/components/shell/sidebar'
 import { LockScreen } from '@/components/wallet/lock-screen'
+import { MeetAgent } from '@/components/wallet/meet-agent'
 import { ReceiveView } from '@/components/wallet/receive-view'
 import { SetupScreen } from '@/components/wallet/setup-screen'
-import { chooseAgent } from '@/lib/agents'
-import { HOME_DRAFT, isWorking, withDraft, type Drafts } from '@/lib/chats'
+import { agentInfo, chooseAgent } from '@/lib/agents'
+import { HOME_DRAFT, isWorking, waitingPlan, withDraft, type Drafts } from '@/lib/chats'
 import { latestOnly } from '@/lib/latest'
 import { useChats } from '@/lib/use-chats'
 import { useVault } from '@/lib/use-vault'
@@ -42,8 +43,21 @@ export function App() {
   const [checkingAgents, setCheckingAgents] = useState(true)
   const [beginDetection] = useState(latestOnly)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('agent')
+  const openSettings = (tab: SettingsTab = 'agent') => {
+    setSettingsTab(tab)
+    setSettingsOpen(true)
+  }
   // What new chats get beyond Ink's own tools, for the home composer to say so.
   const [externalItems, setExternalItems] = useState<ExternalItem[]>([])
+  // A wallet made or restored in this run gets the last setup step, Meet your
+  // agent, before Home. Seen as the vault going from none to unlocked.
+  const [meeting, setMeeting] = useState(false)
+  const [seenState, setSeenState] = useState(vault?.state)
+  if (vault?.state !== seenState) {
+    setSeenState(vault?.state)
+    if (seenState === 'none' && vault?.state === 'unlocked') setMeeting(true)
+  }
   const searchRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
 
@@ -105,7 +119,10 @@ export function App() {
       if (action === 'new-chat') newChat()
       else if (action === 'search') searchRef.current?.focus()
       else if (action === 'lock') void window.ink.lockVault()
-      else setSettingsOpen(true)
+      else {
+        setSettingsTab('agent')
+        setSettingsOpen(true)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -132,8 +149,25 @@ export function App() {
   // Nothing of the app shows until the wallet is set up and unlocked. Chats and
   // drafts live on above this, so unlocking comes back where it was.
   if (!vault) return <AppShell mac={mac}>{null}</AppShell>
-  if (vault.state === 'none') return <AppShell mac={mac}><SetupScreen phraseWaiting={vault.phraseWaiting} /></AppShell>
+  if (vault.state === 'none') return <AppShell mac={mac}><SetupScreen phraseWaiting={vault.phraseWaiting} keyring={vault.keyring} /></AppShell>
   if (vault.state === 'locked') return <AppShell mac={mac}><LockScreen /></AppShell>
+  if (meeting) {
+    return (
+      <AppShell mac={mac}>
+        <MeetAgent
+          agents={agents}
+          selected={selectedAgent}
+          onSelect={setAgentPick}
+          onStart={(text) => {
+            setMeeting(false)
+            if (text) setDrafts((all) => withDraft(all, HOME_DRAFT, text))
+            setView({ kind: 'home' })
+            requestAnimationFrame(() => composerRef.current?.focus())
+          }}
+        />
+      </AppShell>
+    )
+  }
 
   return (
     <AppShell
@@ -142,14 +176,13 @@ export function App() {
         <Sidebar
           view={view}
           chats={chats}
-          version={info?.version}
           signer={signer}
           mac={mac}
           searchRef={searchRef}
           onNewChat={newChat}
           onOpenChat={openChat}
           onPage={(page) => setView({ kind: 'page', page })}
-          onSettings={() => setSettingsOpen(true)}
+          onSettings={() => openSettings()}
           onLock={() => void window.ink.lockVault()}
         />
       }
@@ -166,6 +199,7 @@ export function App() {
           onSubmit={send}
           onStop={() => chatActions.stop(current)}
           onEnd={() => chatActions.end(current)}
+          onToolsSettings={() => openSettings('tools')}
         />
       ) : (
         <HomeView
@@ -175,18 +209,29 @@ export function App() {
           live={chats.filter((chat) => chat.status === 'live' || isWorking(chat))}
           onOpenChat={openChat}
           onPortfolio={() => setView({ kind: 'page', page: 'portfolio' })}
+          onBackup={() => openSettings('wallet')}
+          onToolsSettings={() => openSettings('tools')}
           composerRef={composerRef}
           agentPicker={agentPicker}
           canSend={selectedAgent !== null}
           external={externalItems.filter((item) => item.enabled).map((item) => item.name)}
+          waiting={waitingPlan(chats)}
+          readyAgent={selectedAgent ? { id: selectedAgent, name: agentInfo(selectedAgent).name } : null}
         />
       )}
       <SettingsDialog
         onExternalChange={setExternalItems}
         open={settingsOpen}
+        startTab={settingsTab}
+        version={info?.version}
         onClose={() => setSettingsOpen(false)}
         agents={agents}
         selectedAgent={selectedAgent}
+        onSelectAgent={setAgentPick}
+        onSeeAddresses={() => {
+          setSettingsOpen(false)
+          setView({ kind: 'page', page: 'receive' })
+        }}
         checking={checkingAgents}
         onCheckAgain={() => {
           setCheckingAgents(true)

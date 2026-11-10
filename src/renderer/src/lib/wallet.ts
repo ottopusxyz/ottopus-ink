@@ -64,6 +64,22 @@ export function passwordProblem(password: string, confirm: string): string | nul
   return null
 }
 
+/**
+ * How far a new password is along, for the meter under it: four bars, filled by
+ * length, since length is what makes a password hard to guess. Under the minimum
+ * it says how many more characters it needs.
+ */
+export function passwordStrength(password: string): { bars: 0 | 1 | 2 | 3 | 4; text: string; ok: boolean } {
+  const length = passwordLength(password)
+  if (length === 0) return { bars: 0, text: `At least ${MIN_PASSWORD_LENGTH} characters.`, ok: false }
+  if (length < MIN_PASSWORD_LENGTH) {
+    const more = MIN_PASSWORD_LENGTH - length
+    return { bars: length < MIN_PASSWORD_LENGTH / 2 ? 1 : 2, text: `${more} more character${more === 1 ? '' : 's'} to go.`, ok: false }
+  }
+  if (length < 20) return { bars: 3, text: 'Strong enough. Longer is even better.', ok: true }
+  return { bars: 4, text: 'Strong. Nice and long.', ok: true }
+}
+
 /** The words of a typed phrase, cleaned the way the signer cleans them. */
 export const phraseWords = (text: string): string[] =>
   text

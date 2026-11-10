@@ -64,7 +64,7 @@ The phrase gives one account on each chain, at the path most wallets use, so res
 | Sui | `m/44'/784'/0'/0'/0'` | `0x…` |
 | Aptos | `m/44'/637'/0'/0'/0'` | `0x…`, until you rotate its key |
 
-Addresses are worked out in the signer and are only available while unlocked. The Receive page shows each one with a QR code. Its Copy button has main copy the address the signer gave rather than text from the page, and only while Ink's window is in front. The page still draws the address and its QR code, so compare the first and last characters after you paste. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
+Addresses are worked out in the signer and are only available while unlocked. The Receive page asks which chain and which asset, then shows that one address with its QR code and a warning to send only that asset on that network. Its Copy button has main copy the address the signer gave rather than text from the page, and only while Ink's window is in front. The page still draws the address and its QR code, so compare the first and last characters after you paste. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
 
 ## Plans
 
@@ -80,7 +80,7 @@ The agent can only propose a plan. Main builds it, and a plan can pay only your 
 
 The only place a plan is approved. It's a separate, always-on-top window with its own page and preload, which expose the review channels and nothing else. Main answers those channels only from that window's own top frame on the review page, and the app's page can't use them, open the window or reach into it.
 
-- **What it shows:** what main decodes from the plan's own step, the bytes the signer reads back and signs, never the agent's words. In order: the network, the recipient in full and in groups, the most that can leave your account (the amount plus the fee ceiling at today's gas price), each action and whether it calls a contract, a "not simulated" badge, then the fee, the paying account, its key, the exact amount in yoctoNEAR and the plan hash. It says whether the recipient is your own account or one you typed in the chat.
+- **What it shows:** what main decodes from the plan's own step, the bytes the signer reads back and signs, never the agent's words. In order: the network, the recipient in full and in groups, the amount with the fee ceiling at today's gas price under it and the most that can leave your account below that, each action and whether it calls a contract, a "not simulated" note, then the fee, the paying account, its key, the exact amount in yoctoNEAR and the plan hash. It says whether the recipient is your own account or one you typed in the chat.
 - **Approving:** Approve works only for the plan and hash on show, once the window has been up and in front for 1.5 s. The delay starts again whenever the window takes focus, so a click or key press meant for something else can't approve it. Main also needs a real press of the mouse button, Enter or Space in that window, after it armed and within the last second. Electron reports these from the OS, so a script can't make one. Only the press counts, never its release, and each press approves once. Ink must be unlocked. On Linux under X11, other programs can fake input, so the click check is weaker there.
 - **Sending:** once approved, main signs and sends the plan as described under NEAR, and the window shows what became of it, with a link to the transaction on nearblocks.io. The fee maximum you saw is a limit: if today's gas price could now take more, nothing is signed, the window shows the new maximum, and Approve waits 1.5 s again. A plan shown before NEAR gave a fee gets one before it can be approved. A send that stopped before signing (NEAR unreachable, an earlier send unanswered) keeps the plan approved, and Try again sends it as approved, with another click. The window can't be closed while a send is running.
 - **Rejecting and expiry:** Reject, or closing the window, cancels the plan and signs nothing. A plan nobody approves expires 30 minutes after it was made, and the window shows that. Plans wait their turn and are shown one at a time.
@@ -102,15 +102,17 @@ Ink talks to NEAR mainnet through [FastNEAR](https://fastnear.com)'s free RPC, a
 
 Ported from [ottopusxyz/ottopus](https://github.com/ottopusxyz/ottopus) (MIT, built for BNB Hack):
 
-- the design tokens and water, sea-life and Otto styles in `src/renderer/src/styles` (`tokens.css`, `dialog.css`, `water.css`, `sea-life.css`, `otto.css`)
+- the design tokens and water and Otto styles in `src/renderer/src/styles` (`tokens.css`, `dialog.css`, `water.css`, `otto.css`)
 - the UI primitives in `src/renderer/src/components/ui`
-- Otto and his badge in `src/renderer/src/components/brand`
-- the bubbles, sea life and stillness in `src/renderer/src/components/motion` (everything there except `sea.tsx`)
+- Otto and his badge in `src/renderer/src/components/brand`, apart from the `wave` pose, which is Ink's own
+- the stillness in `src/renderer/src/components/motion`, and the tentacle ring, step list and ink hold there (`ring.tsx`, `loaders.tsx`), redrawn from the Ottopus loader family
 - the Claude and Codex marks in `src/renderer/src/assets/agents`, which came from [Simple Icons](https://simpleicons.org) (CC0). The marks stay the trademarks of their owners and are used only to show which agent a chat runs on
+
+The chain and token marks in `src/renderer/src/assets/crypto` are from [web3icons](https://web3icons.io) (MIT, by 0xa3k5); its README there lists each one.
 
 Copied from [BoardUI](https://github.com/BoardUI/boardui) 0.5.9 (MIT, Copyright (c) 2026 Mertcan Dundar Esmergul (BoardUI)):
 
-- Agent Thinking and Composer Loader in `src/renderer/src/vendor/boardui`, with their licence and the changes made
+- Agent Thinking in `src/renderer/src/vendor/boardui`, with its licence
 - the keyframes and label shimmer in `src/renderer/src/styles/boardui-bridge.css`, which carries them over onto our tokens
 
 Everything else here is new.

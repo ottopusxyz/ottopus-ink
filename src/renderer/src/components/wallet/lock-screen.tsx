@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Otto } from '@/components/brand/otto'
-import { Button, Input } from '@/components/ui'
+import { ClockIcon, LockIcon } from '@/components/shell/icons'
+import { Badge, Button, Input } from '@/components/ui'
 import { autoLockNote, vaultMessage } from '@/lib/wallet'
 import { Field, FormError, WalletHeading, WalletPanel } from './wallet-panel'
 
@@ -11,11 +11,22 @@ export function LockScreen() {
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <WalletPanel>
-      <Otto pose="base" size={110} label="Otto" />
-      <WalletHeading title="Ink is locked">Enter your password to unlock your wallet.</WalletHeading>
+    <WalletPanel
+      guide={{
+        pose: 'base',
+        title: 'I’m keeping watch.',
+        text: 'While Ink is locked, your agent can’t read balances or draft plans. Unlock and we pick up where we were.',
+      }}
+    >
+      <div className="flex flex-col gap-2">
+        <Badge tone="navy">
+          <LockIcon size={12} />
+          Locked
+        </Badge>
+        <WalletHeading title="Ink is locked">Enter your password to unlock your wallet. You’ll be back where you were.</WalletHeading>
+      </div>
       <form
-        className="flex flex-col gap-4"
+        className="ink-form-card flex flex-col gap-4 p-4"
         onSubmit={async (event) => {
           event.preventDefault()
           if (!password) return
@@ -35,7 +46,8 @@ export function LockScreen() {
           {busy ? 'Unlocking…' : 'Unlock'}
         </Button>
       </form>
-      <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-3)]">
+      <p className="m-0 flex items-center gap-2.5 text-[12.5px] leading-[1.5] text-[var(--ot-text-3)]">
+        <ClockIcon size={16} />
         {autoLockNote(navigator.userAgent)}
       </p>
     </WalletPanel>

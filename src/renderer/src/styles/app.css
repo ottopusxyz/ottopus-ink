@@ -2,11 +2,11 @@
 @import "./tokens.css";
 @import "./dialog.css";
 @import "./water.css";
-@import "./sea-life.css";
 @import "./otto.css";
 @import "./sea.css";
 @import "./shell.css";
 @import "./boardui-bridge.css";
+@import "./kit.css";
 
 /* Divergences from the design project live here, never in the ported files, so
    re-syncing tokens.css cannot silently drop them. The first two blocks are
@@ -22,6 +22,39 @@
     --ot-caustic: rgba(91, 155, 255, 0.07);
     --ot-bubble: rgba(158, 194, 255, 0.28);
   }
+}
+
+/* The desktop redesign (#67): small grey text that still reads, dark cards a
+   step above the page, and warnings in a warmer amber. */
+:root { --ot-text-4: #6B7390; }
+[data-theme="dark"] {
+  --ot-text-4: #808BAA;
+  --ot-page: #0B1220;
+  --ot-surface: #111A2D;
+  --ot-card: #1B2742;
+  --ot-surface-2: #18233F;
+  --ot-surface-3: #243457;
+  --ot-warn-bg: #4A3510;
+  --ot-warn-border: #B98420;
+  --ot-warn-text: #FFD580;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ot-text-4: #808BAA;
+    --ot-page: #0B1220;
+    --ot-surface: #111A2D;
+    --ot-card: #1B2742;
+    --ot-surface-2: #18233F;
+    --ot-surface-3: #243457;
+    --ot-warn-bg: #4A3510;
+    --ot-warn-border: #B98420;
+    --ot-warn-text: #FFD580;
+  }
+}
+
+/* The water holds still: what moves is Otto, the loaders and the composer. */
+.ink-still {
+  animation: none !important;
 }
 
 /* Otto's underside shade: a step darker than the body, moving with the theme. */

@@ -5,6 +5,8 @@ import {
   applyChatEvent,
   chatFailedToStart,
   chatStarted,
+  chatTurns,
+  trimmedPlan,
   chatTitle,
   filterChats,
   HOME_DRAFT,
@@ -19,12 +21,13 @@ import {
   newChat,
   planHeadline,
   toolLabel,
+  waitingPlan,
   withDraft,
   type Chat,
 } from './chats'
 
 const started = () => chatStarted(newChat('c', 'claude-code', 'hello'), 'session')
-const after = (events: ChatEvent[], chat: Chat = started()) => events.reduce(applyChatEvent, chat)
+const after = (events: ChatEvent[], chat: Chat = started()) => events.reduce((next, event) => applyChatEvent(next, event), chat)
 const texts = (chat: Chat) => chat.items.map((item) => ('text' in item ? item.text : item.kind))
 const plan: ChatPlan = {
   id: 'p',
@@ -76,6 +79,14 @@ describe('applyChatEvent', () => {
     const done = after([{ type: 'tool-result', id: 't', text: 'not set up', isError: true }], chat)
     expect(done.items.at(-1)).toMatchObject({ kind: 'tool', result: { text: 'not set up', isError: true } })
     expect(done.items).toHaveLength(2)
+  })
+
+  it('times a tool call from when it reached the page to its answer', () => {
+    const call = applyChatEvent(started(), { type: 'tool-call', id: 't1', name: 'mcp__ottopus-ink__get_accounts', input: '{}' }, 1_000)
+    const done = applyChatEvent(call, { type: 'tool-result', id: 't1', text: 'ok', isError: false }, 2_400)
+    expect(done.items.at(-1)).toMatchObject({ kind: 'tool', startedAt: 1_000, result: { ms: 1_400 } })
+    const untimed = applyChatEvent(applyChatEvent(started(), { type: 'tool-call', id: 't2', name: 'x', input: '' }), { type: 'tool-result', id: 't2', text: '', isError: false })
+    expect(untimed.items.at(-1)).toMatchObject({ result: { ms: null } })
   })
 
   it('shows a tool call with no input', () => {
@@ -376,5 +387,63 @@ describe('withDraft', () => {
   it('returns the same object when clearing a key that is not there', () => {
     const drafts = { 'chat-a': 'x' }
     expect(withDraft(drafts, 'chat-b', '')).toBe(drafts)
+  })
+})
+
+describe('the plan waiting on Home', () => {
+  const withPlan = (id: string, status: ChatPlan['status'] | null): Chat => ({
+    ...chatStarted(newChat(id, 'claude-code', 'hello'), 'session'),
+    plan: status ? { ...plan, id: `p-${id}`, status } : null,
+  })
+
+  it('is the first chat whose plan awaits review', () => {
+    const chats = [withPlan('a', null), withPlan('b', 'draft'), withPlan('c', 'awaiting_review'), withPlan('d', 'awaiting_review')]
+    expect(waitingPlan(chats)).toEqual({ chatId: 'c', plan: { ...plan, id: 'p-c', status: 'awaiting_review' } })
+  })
+
+  it('is nothing when no plan waits on the person', () => {
+    expect(waitingPlan([withPlan('a', 'confirmed'), withPlan('b', 'signing')])).toBeNull()
+    expect(waitingPlan([])).toBeNull()
+  })
+})
+
+describe('a chat as turns', () => {
+  it('keeps your messages alone and groups what the agent did after each', () => {
+    const chat = after([
+      { type: 'text', text: 'On it.' },
+      { type: 'tool-call', id: 't1', name: 'mcp__ottopus-ink__get_portfolio', input: '{}' },
+      { type: 'plan', plan },
+    ])
+    const turns = chatTurns([...chat.items, { kind: 'user', id: 'u2', text: 'thanks' }, { kind: 'agent', id: 'a2', text: 'Done.' }])
+    expect(turns.map((turn) => (turn.kind === 'you' ? 'you' : turn.items.map((item) => item.kind).join('+')))).toEqual([
+      'you',
+      'agent+tool+plan',
+      'you',
+      'agent',
+    ])
+  })
+
+  it('starts with the agent when the chat does', () => {
+    expect(chatTurns([{ kind: 'notice', id: 'n', severity: 'info', title: 'Stopped', text: null }])).toEqual([
+      { kind: 'agent', id: 'n', items: [{ kind: 'notice', id: 'n', severity: 'info', title: 'Stopped', text: null }] },
+    ])
+    expect(chatTurns([])).toEqual([])
+  })
+})
+
+describe('a plan trimmed out of a long chat', () => {
+  it('is shown on its own once its message is gone', () => {
+    const chat = after([{ type: 'plan', plan }])
+    expect(trimmedPlan(chat)).toBeNull()
+    expect(trimmedPlan({ ...chat, items: chat.items.filter((item) => item.kind !== 'plan') })).toEqual(plan)
+  })
+
+  it('is nothing for a chat without a plan', () => {
+    expect(trimmedPlan(started())).toBeNull()
+  })
+
+  it('follows the latest plan, not an older one still in the chat', () => {
+    const chat = after([{ type: 'plan', plan }])
+    expect(trimmedPlan({ ...chat, plan: { ...plan, id: 'newer' } })).toEqual({ ...plan, id: 'newer' })
   })
 })

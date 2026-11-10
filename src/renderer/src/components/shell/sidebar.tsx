@@ -205,7 +205,7 @@ function VaultCard({ signer, lockKey, onLock }: { signer: SignerStatus | null; l
           <span className={`ink-vault__tile ink-vault__tile--${tone}`} aria-hidden>
             <ShieldIcon size={14} />
           </span>
-          <span className="min-w-0 flex-1 truncate leading-[1.3]">
+          <span className="min-w-0 flex-1 text-[11.5px] leading-[1.3]">
             <b className="font-bold text-[var(--ot-text)]">Unlocked</b>
             <br />
             {line}

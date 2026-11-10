@@ -1008,7 +1008,7 @@
   background: color-mix(in srgb, var(--ot-card) 40%, transparent);
   text-align: center;
 }
-.ink-tip {
+.ink-safety-tip {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -1016,7 +1016,7 @@
   font-size: 12.5px;
   line-height: 1.4;
 }
-.ink-tip > span { margin-top: 1px; }
+.ink-safety-tip > span { margin-top: 1px; }
 
 /* A checked word that matches: a green edge and a tick. */
 .ink-input--right {

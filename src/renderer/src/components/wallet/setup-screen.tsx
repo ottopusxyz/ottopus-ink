@@ -289,19 +289,19 @@ function ShowWords({
         )}
       </div>
       <ul className="m-0 grid list-none grid-cols-3 gap-2 p-0" aria-label="Keeping them safe">
-        <li className="ink-form-card ink-tip">
+        <li className="ink-form-card ink-safety-tip">
           <span className="text-[var(--ot-ok)]">
             <CheckIcon size={16} />
           </span>
           Pen and paper, kept somewhere safe
         </li>
-        <li className="ink-form-card ink-tip">
+        <li className="ink-form-card ink-safety-tip">
           <span className="text-[var(--ot-block)]">
             <CloseIcon size={16} />
           </span>
           No screenshots, photos or cloud notes
         </li>
-        <li className="ink-form-card ink-tip">
+        <li className="ink-form-card ink-safety-tip">
           <span className="text-[var(--ot-block)]">
             <CloseIcon size={16} />
           </span>

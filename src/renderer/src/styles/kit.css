@@ -621,3 +621,99 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .ink-bubble { background: #2B3B69; }
 }
+
+/* The primary button as a sticker: Otto's navy edge and an offset shadow that a
+   press pushes into. Disabled drops back to a flat surface. */
+.ink-sticker {
+  border: 2px solid var(--ot-navy);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+  transition: transform var(--ot-dur-fast) var(--ot-ease-bounce), box-shadow var(--ot-dur-fast), background-color var(--ot-dur-fast);
+}
+.ink-sticker:hover:not(:disabled, [aria-disabled="true"]) {
+  box-shadow: 4px 4px 0 var(--ot-navy);
+  transform: translate(-1px, -1px);
+}
+.ink-sticker:active:not(:disabled, [aria-disabled="true"]) {
+  box-shadow: 1px 1px 0 var(--ot-navy);
+  transform: translate(2px, 2px);
+}
+.ink-sticker:disabled,
+.ink-sticker[aria-disabled="true"] {
+  box-shadow: none;
+}
+[data-theme="dark"] .ink-sticker { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-sticker { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+
+/* L3 step dots and L6 ink hold, from the Ottopus loader family. */
+.ink-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.ink-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ink-dot 1.2s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ink-dots i:nth-child(2) { animation-delay: 0.2s; }
+.ink-dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes ink-dot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+.ink-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.ink-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ink-steps__mark {
+  display: inline-grid;
+  width: 18px;
+  place-items: center;
+}
+.ink-hold {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  overflow: hidden;
+  padding: 32px 24px;
+  border-radius: 18px;
+  background: #16213E;
+  color: #FFF0DC;
+  text-align: center;
+}
+.ink-hold__ripple {
+  position: absolute;
+  top: calc(50% - 110px);
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: rgba(255, 240, 220, 0.1);
+  animation: ink-ripple 2.8s ease-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ink-hold__ripple--late { animation-delay: 1.4s; }
+@keyframes ink-ripple {
+  0% { opacity: 0.5; transform: scale(0.6); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-dots i, .ink-hold__ripple { animation: none; }
+  .ink-hold__ripple { opacity: 0; }
+}

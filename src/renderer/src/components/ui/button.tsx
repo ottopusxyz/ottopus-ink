@@ -37,8 +37,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * darker red does not in every context.
  */
 const VARIANTS: Record<Variant, string> = {
-  primary:
-    'border border-[var(--ot-coral)] bg-[var(--ot-coral)] text-[var(--ot-on-state)] hover:bg-[var(--ot-coral-hover)] hover:border-[var(--ot-coral-hover)]',
+  // The sticker: Otto's navy edge and an offset shadow that a press pushes into (ink-sticker in kit.css).
+  primary: 'ink-sticker bg-[var(--ot-coral)] text-[var(--ot-on-state)] font-semibold hover:bg-[var(--ot-coral-hover)]',
   secondary:
     'border border-[var(--ot-border-strong)] bg-[var(--ot-card)] text-[var(--ot-text)] hover:bg-[var(--ot-surface-2)]',
   ghost:

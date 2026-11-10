@@ -181,6 +181,14 @@ export function applyChatEvent(chat: Chat, event: ChatEvent): Chat {
       }
     case 'plan':
       return { ...withItem(chat, { kind: 'plan', plan: event.plan }), plan: event.plan }
+    case 'plan-status': {
+      const moved = (plan: ChatPlan): ChatPlan => (plan.id === event.id ? { ...plan, status: event.status } : plan)
+      return {
+        ...chat,
+        plan: chat.plan && moved(chat.plan),
+        items: chat.items.map((item) => (item.kind === 'plan' ? { ...item, plan: moved(item.plan) } : item)),
+      }
+    }
     case 'turn-end':
       if (event.outcome === 'stopped') return { ...withItem(chat, { kind: 'notice', severity: 'info', title: 'Stopped', text: null }), phase: 'ready' }
       if (event.outcome === 'failed') {

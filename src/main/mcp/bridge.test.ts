@@ -92,7 +92,7 @@ describe('startMcpBridge plans', () => {
     const params = { name: 'create_plan', arguments: { outcome: 'send', asset: 'NEAR', amount: '1', to: 'alice.near' } }
     state.socket.write(`${hello(session.token)}${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params })}\n`)
     await answered(state)
-    expect(mine).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outcome: 'send', asset: 'NEAR' }))
+    expect(mine).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ outcome: 'send', asset: 'NEAR' }), owners[0])
     expect(theirs).not.toHaveBeenCalled()
     expect(owners).toHaveLength(1)
     expect(owners[0]).toMatch(/^[0-9a-f]{64}$/)

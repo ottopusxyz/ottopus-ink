@@ -34,9 +34,12 @@ export interface McpSession {
 
 export interface McpBridge {
   socketPath: string
-  /** onPlan gets each plan the session's agent proposes. */
-  /** onPlan gets each plan the session's agent makes; typed gives what the person typed in that chat. */
-  addSession(handlers?: { onPlan?: (plan: ChatPlan) => void; typed?: () => readonly string[] }): McpSession
+  /**
+   * onPlan gets each plan the session's agent makes, with the owner the store
+   * keeps it under, so main can put it up for review. Typed gives what the
+   * person typed in that chat.
+   */
+  addSession(handlers?: { onPlan?: (plan: ChatPlan, owner: string) => void; typed?: () => readonly string[] }): McpSession
   close(): void
 }
 
@@ -185,7 +188,8 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, acco
           const token = randomBytes(32).toString('hex')
           const key = hash(token)
           const typed = handlers?.typed ?? (() => [])
-          const session: BridgeSession = { connection: null, everConnected: false, onPlan: handlers?.onPlan, plans: plans?.({ owner: key, typed }) }
+          const onPlan = handlers?.onPlan
+          const session: BridgeSession = { connection: null, everConnected: false, onPlan: onPlan && ((plan) => onPlan(plan, key)), plans: plans?.({ owner: key, typed }) }
           sessions.set(key, session)
           return {
             token,

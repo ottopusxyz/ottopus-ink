@@ -15,6 +15,8 @@ const OWNER = 'chat-1'
 const INTENT: PlanIntent = { outcome: 'send', asset: 'NEAR', amount: '1', chain: 'near', to: 'alice.near', toAsset: null, toChain: null }
 const STEP = nearTransferStep({ signerId: FROM, publicKey: KEY, receiverId: 'alice.near', deposit: '1000000000000000000000000' })
 
+/** Far above any fee these tests reach, so only the tests about it hit the bound. */
+const MAX_FEE = 10n ** 30n
 const NONCE = 41n
 const BLOCK = new Uint8Array(32).fill(9)
 const HEIGHT = 1_000n
@@ -75,7 +77,7 @@ describe('sending an approved plan', () => {
   it('signs it under the approved hash with the next nonce and a recent block, sends it, and records NEAR’s outcome', async () => {
     const { store, id, rpc, vault, sender } = await setup()
     const approved = store.get(id, OWNER)!
-    const result = await sender.send(id, OWNER)
+    const result = await sender.send(id, OWNER, MAX_FEE)
     expect(result).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'confirmed' } })
     expect(vault.sign).toHaveBeenCalledWith(approved.core, approved.hash, [{ nonce: (NONCE + 1n).toString(), blockHash: bytesToHex(BLOCK) }])
     expect(rpc.viewAccessKey).toHaveBeenCalledWith(FROM, KEY)
@@ -85,7 +87,7 @@ describe('sending an approved plan', () => {
   it('signs only what is approved', async () => {
     for (const status of ['draft', 'awaiting_review', 'cancelled', 'expired', 'signing'] as const) {
       const { id, vault, rpc, sender } = await setup({ status })
-      expect(await sender.send(id, OWNER), status).toMatchObject({ ok: false, reason: 'cannot-move', status })
+      expect(await sender.send(id, OWNER, MAX_FEE), status).toMatchObject({ ok: false, reason: 'cannot-move', status })
       expect(vault.sign).not.toHaveBeenCalled()
       expect(rpc.sendTransaction).not.toHaveBeenCalled()
     }
@@ -93,8 +95,8 @@ describe('sending an approved plan', () => {
 
   it('finds only the owner’s own plan', async () => {
     const { id, vault, sender } = await setup()
-    expect(await sender.send(id, 'chat-2')).toEqual({ ok: false, reason: 'not-found' })
-    expect(await sender.send('no-such-plan', OWNER)).toEqual({ ok: false, reason: 'not-found' })
+    expect(await sender.send(id, 'chat-2', MAX_FEE)).toEqual({ ok: false, reason: 'not-found' })
+    expect(await sender.send('no-such-plan', OWNER, MAX_FEE)).toEqual({ ok: false, reason: 'not-found' })
     expect(vault.sign).not.toHaveBeenCalled()
   })
 
@@ -102,7 +104,7 @@ describe('sending an approved plan', () => {
     const other: PlanStep = { chain: 'evm', action: 'transfer', fields: { to: '0x0' } }
     for (const steps of [[], [other], [STEP, STEP], [{ ...STEP, fields: { ...STEP.fields, deposit: '1.5' } }]]) {
       const { id, vault, sender } = await setup({ steps })
-      expect(await sender.send(id, OWNER)).toMatchObject({ ok: false, reason: 'bad-request', status: 'approved' })
+      expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: false, reason: 'bad-request', status: 'approved' })
       expect(vault.sign).not.toHaveBeenCalled()
     }
   })
@@ -117,7 +119,7 @@ describe('sending an approved plan', () => {
     ]
     it.each(cases)('%s', async (_name, change, reason) => {
       const { store, id, vault, rpc, sender } = await setup({ rpc: fakeRpc(change) })
-      expect(await sender.send(id, OWNER)).toEqual({ ok: false, reason, status: 'approved' })
+      expect(await sender.send(id, OWNER, MAX_FEE)).toEqual({ ok: false, reason, status: 'approved' })
       expect(store.get(id, OWNER)?.status).toBe('approved')
       expect(vault.sign).not.toHaveBeenCalled()
       expect(rpc.sendTransaction).not.toHaveBeenCalled()
@@ -127,8 +129,22 @@ describe('sending an approved plan', () => {
   it('checks the fee against today’s gas price, not the one the plan was made at', async () => {
     // At this price the fee ceiling for a named account is about 8.9 NEAR, past the 4 NEAR left after the deposit.
     const { id, vault, sender } = await setup({ rpc: fakeRpc({ gasPrice: async () => 10n ** 16n }) })
-    expect(await sender.send(id, OWNER)).toMatchObject({ ok: false, reason: 'insufficient-funds' })
+    expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: false, reason: 'insufficient-funds' })
     expect(vault.sign).not.toHaveBeenCalled()
+  })
+
+  it('signs nothing, and keeps the plan approved, when the fee could now cost more than the person was shown', async () => {
+    // The named-account ceiling at the 10^8 gas price, as build.test.ts works it out.
+    const shown = 267_819_075_000_000_000_000n
+    const { id, store, vault, sender } = await setup({ rpc: fakeRpc({ gasPrice: async () => 10n ** 10n }) })
+    expect(await sender.send(id, OWNER, shown)).toEqual({ ok: false, reason: 'fee-rose', status: 'approved' })
+    expect(store.get(id, OWNER)?.status).toBe('approved')
+    expect(vault.sign).not.toHaveBeenCalled()
+  })
+
+  it('signs when the fee ceiling is exactly what the person was shown', async () => {
+    const { id, sender } = await setup()
+    expect(await sender.send(id, OWNER, 267_819_075_000_000_000_000n)).toMatchObject({ ok: true })
   })
 
   it('doesn’t sign a plan cancelled while the chain was asked', async () => {
@@ -141,26 +157,26 @@ describe('sending an approved plan', () => {
     })
     const { store, id, vault, sender } = await setup({ rpc })
     cancel = () => void store.move(id, OWNER, 'cancelled')
-    expect(await sender.send(id, OWNER)).toMatchObject({ ok: false, reason: 'cannot-move', status: 'cancelled' })
+    expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: false, reason: 'cannot-move', status: 'cancelled' })
     expect(vault.sign).not.toHaveBeenCalled()
   })
 
   it('fails the plan, and sends nothing, when the signer won’t sign it', async () => {
     for (const reason of ['locked', 'plan-mismatch', 'refused', 'signer-stopped'] as const) {
       const { store, id, rpc, sender } = await setup({ vault: fakeVault(async () => ({ ok: false, reason })) })
-      expect(await sender.send(id, OWNER)).toEqual({ ok: false, reason, status: 'failed' })
+      expect(await sender.send(id, OWNER, MAX_FEE)).toEqual({ ok: false, reason, status: 'failed' })
       expect(store.get(id, OWNER)?.status).toBe('failed')
       expect(rpc.sendTransaction).not.toHaveBeenCalled()
     }
     // Anything else the signer could answer is a refusal too.
     const { sender, id } = await setup({ vault: fakeVault(async () => ({ ok: false, reason: 'bad-input' })) })
-    expect(await sender.send(id, OWNER)).toMatchObject({ ok: false, reason: 'refused' })
+    expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: false, reason: 'refused' })
   })
 
   it('sends nothing if the signer answers with other than one signed transaction', async () => {
     for (const signed of [[], [SIGNED, SIGNED]]) {
       const { id, rpc, sender } = await setup({ vault: fakeVault(async () => ({ ok: true, signed })) })
-      expect(await sender.send(id, OWNER)).toMatchObject({ ok: false, reason: 'refused', status: 'failed' })
+      expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: false, reason: 'refused', status: 'failed' })
       expect(rpc.sendTransaction).not.toHaveBeenCalled()
     }
   })
@@ -168,7 +184,7 @@ describe('sending an approved plan', () => {
   it('records a send that NEAR ran and failed, or turned away, as failed', async () => {
     for (const sendTransaction of [async () => ({ transactionId: SIGNED.transactionId, ok: false, failure: 'NotEnoughBalance' }), async () => Promise.reject(new NearRpcError('rejected', 'InvalidNonce'))]) {
       const { id, sender } = await setup({ rpc: fakeRpc({ sendTransaction }) })
-      expect(await sender.send(id, OWNER)).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'failed' } })
+      expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'failed' } })
     }
   })
 
@@ -181,22 +197,22 @@ describe('sending an approved plan', () => {
     }) as unknown as typeof globalThis.fetch
     const { sendTransaction } = createNearRpc({ urls: ['https://a.example', 'https://b.example'], fetch })
     const { store, id, sender } = await setup({ rpc: fakeRpc({ sendTransaction }) })
-    expect(await sender.send(id, OWNER)).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'submitted' } })
+    expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'submitted' } })
     expect(calls).toBe(2)
     expect(store.get(id, OWNER)?.status).toBe('submitted')
   })
 
   it('leaves a send with no answer submitted, since it may still go through', async () => {
     const { store, id, sender } = await setup({ rpc: fakeRpc({ sendTransaction: async () => Promise.reject(new NearRpcError('unavailable', 'timed out')) }) })
-    expect(await sender.send(id, OWNER)).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'submitted' } })
+    expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: true, transactionId: SIGNED.transactionId, plan: { status: 'submitted' } })
     expect(store.get(id, OWNER)?.status).toBe('submitted')
   })
 
   it('signs the next plan above a nonce the chain doesn’t show yet', async () => {
     // The first send landed, but the RPC still reports the old nonce: NONCE + 1 is taken all the same.
     const { store, id, vault, sender } = await setup()
-    expect((await sender.send(id, OWNER)).ok).toBe(true)
-    expect((await sender.send(await approvedAnother(store), OWNER)).ok).toBe(true)
+    expect((await sender.send(id, OWNER, MAX_FEE)).ok).toBe(true)
+    expect((await sender.send(await approvedAnother(store), OWNER, MAX_FEE)).ok).toBe(true)
     expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
   })
 
@@ -213,16 +229,16 @@ describe('sending an approved plan', () => {
         },
       })
       const setUp = await setup({ rpc })
-      expect(await setUp.sender.send(setUp.id, OWNER)).toMatchObject({ ok: true, plan: { status: 'submitted' } })
+      expect(await setUp.sender.send(setUp.id, OWNER, MAX_FEE)).toMatchObject({ ok: true, plan: { status: 'submitted' } })
       return { ...setUp, key, next: await approvedAnother(setUp.store) }
     }
 
     it('holds the key’s next send while the earlier one could still land, so it can’t be overtaken', async () => {
       const { store, vault, sender, key, next } = await unansweredFirst()
-      expect(await sender.send(next, OWNER)).toEqual({ ok: false, reason: 'earlier-pending', status: 'approved' })
+      expect(await sender.send(next, OWNER, MAX_FEE)).toEqual({ ok: false, reason: 'earlier-pending', status: 'approved' })
       // Still pending a whole validity period later: its block hash is valid up to and including that height.
       key.blockHeight = HEIGHT + TRANSACTION_VALIDITY_BLOCKS
-      expect(await sender.send(next, OWNER)).toMatchObject({ ok: false, reason: 'earlier-pending' })
+      expect(await sender.send(next, OWNER, MAX_FEE)).toMatchObject({ ok: false, reason: 'earlier-pending' })
       expect(store.get(next, OWNER)?.status).toBe('approved')
       expect(vault.sign).toHaveBeenCalledTimes(1)
     })
@@ -230,14 +246,14 @@ describe('sending an approved plan', () => {
     it('sends the next once the key’s nonce shows the earlier one landed or was taken', async () => {
       const { vault, sender, key, next } = await unansweredFirst()
       key.nonce = NONCE + 1n
-      expect(await sender.send(next, OWNER)).toMatchObject({ ok: true, plan: { status: 'confirmed' } })
+      expect(await sender.send(next, OWNER, MAX_FEE)).toMatchObject({ ok: true, plan: { status: 'confirmed' } })
       expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
     })
 
     it('sends the next once the earlier one’s block is too old for it to land', async () => {
       const { vault, sender, key, next } = await unansweredFirst()
       key.blockHeight = HEIGHT + TRANSACTION_VALIDITY_BLOCKS + 1n
-      expect(await sender.send(next, OWNER)).toMatchObject({ ok: true })
+      expect(await sender.send(next, OWNER, MAX_FEE)).toMatchObject({ ok: true })
       // Still above the earlier one's nonce, since nothing has been signed below it.
       expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
     })
@@ -246,18 +262,18 @@ describe('sending an approved plan', () => {
   it('doesn’t hold the next send after one NEAR answered, whatever it said', async () => {
     for (const sendTransaction of [async () => ({ transactionId: SIGNED.transactionId, ok: false, failure: 'x' }), async () => Promise.reject(new NearRpcError('rejected', 'InvalidNonce'))]) {
       const { store, id, sender } = await setup({ rpc: fakeRpc({ sendTransaction }) })
-      expect((await sender.send(id, OWNER)).ok).toBe(true)
-      expect((await sender.send(await approvedAnother(store), OWNER)).ok).toBe(true)
+      expect((await sender.send(id, OWNER, MAX_FEE)).ok).toBe(true)
+      expect((await sender.send(await approvedAnother(store), OWNER, MAX_FEE)).ok).toBe(true)
     }
   })
 
   it('follows the chain’s nonce once it has moved past what Ink signed', async () => {
     let nonce = NONCE
     const { store, id, vault, sender } = await setup({ rpc: fakeRpc({ viewAccessKey: async () => ({ nonce, blockHash: BLOCK, blockHeight: HEIGHT }) }) })
-    expect((await sender.send(id, OWNER)).ok).toBe(true)
+    expect((await sender.send(id, OWNER, MAX_FEE)).ok).toBe(true)
     // Something else, such as another wallet holding this phrase, sent with the key since.
     nonce = NONCE + 10n
-    expect((await sender.send(await approvedAnother(store), OWNER)).ok).toBe(true)
+    expect((await sender.send(await approvedAnother(store), OWNER, MAX_FEE)).ok).toBe(true)
     expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 11n).toString()])
   })
 
@@ -265,9 +281,9 @@ describe('sending an approved plan', () => {
     let refuse = true
     const vault = fakeVault(async () => (refuse ? { ok: false, reason: 'refused' } : { ok: true, signed: [SIGNED] }))
     const { store, id, sender } = await setup({ vault })
-    expect((await sender.send(id, OWNER)).ok).toBe(false)
+    expect((await sender.send(id, OWNER, MAX_FEE)).ok).toBe(false)
     refuse = false
-    expect((await sender.send(await approvedAnother(store), OWNER)).ok).toBe(true)
+    expect((await sender.send(await approvedAnother(store), OWNER, MAX_FEE)).ok).toBe(true)
     expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 1n).toString()])
   })
 
@@ -284,12 +300,12 @@ describe('sending an approved plan', () => {
     store.move(second.plan.id, OWNER, 'awaiting_review')
     store.move(second.plan.id, OWNER, 'approved')
 
-    const first = sender.send(id, OWNER)
+    const first = sender.send(id, OWNER, MAX_FEE)
     await vi.waitFor(() => expect(vault.sign).toHaveBeenCalled())
-    expect(await sender.send(second.plan.id, OWNER)).toEqual({ ok: false, reason: 'busy' })
+    expect(await sender.send(second.plan.id, OWNER, MAX_FEE)).toEqual({ ok: false, reason: 'busy' })
     release()
     expect((await first).ok).toBe(true)
     // Once the first is done, the next may go.
-    expect((await sender.send(second.plan.id, OWNER)).ok).toBe(true)
+    expect((await sender.send(second.plan.id, OWNER, MAX_FEE)).ok).toBe(true)
   })
 })

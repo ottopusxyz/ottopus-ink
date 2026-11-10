@@ -317,7 +317,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         const intent = intentFrom(params.arguments)
         if (!intent) return result(toolAnswer(PLAN_SCHEMA_HELP, true))
         if (!plans) return result(NOT_BUILT.create_plan ?? NOT_SET_UP)
-        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is a draft: ${plan.summary}. Ink can’t review or sign plans yet.`)
+        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is made: ${plan.summary}. If Ink can send it (so far, native NEAR on NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.`)
         if (made.plan) onPlan?.(chatPlanOf(made.plan))
         return result(made.answer)
       }

@@ -42,7 +42,8 @@ export default defineConfig({
   preload: {
     build: {
       rollupOptions: {
-        input: { index: resolve('src/preload/index.ts') },
+        // The review window gets its own preload, with the review channels alone.
+        input: { index: resolve('src/preload/index.ts'), review: resolve('src/preload/review.ts') },
         // Sandboxed preloads cannot be ES modules.
         output: { format: 'cjs', entryFileNames: '[name].cjs' },
       },
@@ -51,7 +52,8 @@ export default defineConfig({
   renderer: {
     root: resolve('src/renderer'),
     build: {
-      rollupOptions: { input: { index: resolve('src/renderer/index.html') } },
+      // Two pages: the app, and the review window, which shares none of the app's state.
+      rollupOptions: { input: { index: resolve('src/renderer/index.html'), review: resolve('src/renderer/review.html') } },
     },
     resolve: { alias: { '@': resolve('src/renderer/src') } },
     plugins: [react(), tailwindcss(), cspPlugin()],

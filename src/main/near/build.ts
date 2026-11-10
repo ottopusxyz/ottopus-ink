@@ -1,9 +1,9 @@
 import { hexToBytes } from '@noble/hashes/utils.js'
 import type { Account } from '../../shared/accounts'
 import { nearAccountKind, type NearAccountKind } from '../../shared/near/account-id'
-import { nearPublicKey, nearTransferStep } from '../../shared/near/transaction'
+import { NearDecodeError, nearPublicKey, nearTransferStep, transferOfStep, type NearTransfer } from '../../shared/near/transaction'
 import { parseNear } from '../../shared/near/units'
-import type { PlanFailure, PlanIntent, PlanStep } from '../../shared/plan'
+import type { PlanCore, PlanFailure, PlanIntent, PlanStep } from '../../shared/plan'
 import { storageHeld } from './balance'
 import { NearRpcError, type NearProtocolFees, type NearRpc } from './rpc'
 
@@ -37,6 +37,29 @@ export function transferFeeCeiling(fees: NearProtocolFees, gasPrice: bigint, rec
   return send * price + exec * receiptPrice
 }
 
+/** Placeholders that only let a step be read: the real nonce and block hash come from the chain when it's signed. */
+const READ_ONLY = { nonce: 1n, blockHash: new Uint8Array(32) }
+
+/** The one kind of plan Ink can send so far: a single NEAR transfer. Null for anything else. */
+export function nearTransferOf(core: PlanCore): NearTransfer | null {
+  const [step, ...rest] = core.steps
+  if (!step || rest.length > 0) return null
+  try {
+    return transferOfStep(step, READ_ONLY)
+  } catch (error) {
+    if (error instanceof NearDecodeError) return null
+    throw error
+  }
+}
+
+/** The most the fees for a transfer to this account could take up front, at today's gas price. Throws `NearRpcError`. */
+export async function nearSendFeeCeiling(rpc: NearRpc, to: string): Promise<bigint> {
+  const kind = nearAccountKind(to)
+  if (kind === null) throw new NearDecodeError('not a NEAR account id')
+  const [gasPrice, fees] = await Promise.all([rpc.gasPrice(), rpc.protocolFees()])
+  return transferFeeCeiling(fees, gasPrice, kind)
+}
+
 export type StepsResult = { ok: true; steps: PlanStep[] } | { ok: false; reason: PlanFailure }
 
 /** Whether the intent is a send of native NEAR on NEAR, the one thing this module builds. */
@@ -48,15 +71,22 @@ export const isNearSend = (intent: PlanIntent): boolean =>
  * implicit accounts are created by a transfer), and the sender's balance covers
  * the deposit and the most the fees could take up front at today's gas price.
  * Checked when a plan is made and again just before it's signed, since the
- * balance and gas price may have moved in between. Throws `NearRpcError`.
+ * balance and gas price may have moved in between. Before signing, `maxFee`
+ * is the fee ceiling the person saw when they approved, and a higher one now
+ * is `fee-rose`. Throws `NearRpcError`.
  */
-export async function nearSendFits(rpc: NearRpc, from: string, to: string, deposit: bigint): Promise<'recipient-unknown' | 'insufficient-funds' | null> {
+export async function nearSendFits(rpc: NearRpc, from: string, to: string, deposit: bigint): Promise<'recipient-unknown' | 'insufficient-funds' | null>
+export async function nearSendFits(rpc: NearRpc, from: string, to: string, deposit: bigint, maxFee: bigint): Promise<'recipient-unknown' | 'insufficient-funds' | 'fee-rose' | null>
+export async function nearSendFits(rpc: NearRpc, from: string, to: string, deposit: bigint, maxFee?: bigint): Promise<'recipient-unknown' | 'insufficient-funds' | 'fee-rose' | null> {
   const kind = nearAccountKind(to)
   if (kind === null) return 'recipient-unknown'
   const [sender, receiver, gasPrice, fees] = await Promise.all([rpc.viewAccount(from), kind === 'named' ? rpc.viewAccount(to) : null, rpc.gasPrice(), rpc.protocolFees()])
   if (kind === 'named' && receiver === null) return 'recipient-unknown'
   const available = sender ? sender.amount - storageHeld(sender) : 0n
-  return available < deposit + transferFeeCeiling(fees, gasPrice, kind) ? 'insufficient-funds' : null
+  const fee = transferFeeCeiling(fees, gasPrice, kind)
+  // The person approved a send that could cost at most maxFee: a fee that has risen past it needs their say again.
+  if (maxFee !== undefined && fee > maxFee) return 'fee-rose'
+  return available < deposit + fee ? 'insufficient-funds' : null
 }
 
 /**

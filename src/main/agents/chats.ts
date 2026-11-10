@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentStatus, ChatEvent } from '../../shared/ipc'
+import type { PlanStatus } from '../../shared/plan'
 import { looksLikeItMovesFunds } from '../external/catalog'
 import { itemsNeedingSignIn, type SessionExternal } from '../external/session'
 import type { McpBridge } from '../mcp/bridge'
@@ -13,6 +14,12 @@ import type { AgentEnv } from './login-env'
 export interface ChatTools {
   bridge: Pick<McpBridge, 'socketPath' | 'addSession'>
   shim: string
+  /**
+   * Puts a plan the chat made up for review. `notify` hears each status it
+   * reaches there. Main passes this in, so nothing here reaches the review
+   * window or anything that signs.
+   */
+  review?: (planId: string, owner: string, notify: (status: PlanStatus) => void) => void
 }
 
 /** Longer than anyone types or pastes into a chat. */
@@ -45,7 +52,7 @@ const TYPED_KEPT = 50
 export function startChat(
   agent: AgentStatus,
   agentEnv: AgentEnv,
-  { bridge, shim }: ChatTools,
+  { bridge, shim, review }: ChatTools,
   external: SessionExternal,
   onEvent: (chatId: string, event: ChatEvent) => void,
 ): string {
@@ -61,8 +68,12 @@ export function startChat(
   const typed: string[] = []
   typedIn.set(chatId, typed)
   const tools = bridge.addSession({
-    onPlan: (plan) => {
-      if (!over && locked) onEvent(chatId, { type: 'plan', plan })
+    onPlan: (plan, owner) => {
+      if (over || !locked) return
+      onEvent(chatId, { type: 'plan', plan })
+      review?.(plan.id, owner, (status) => {
+        if (!over) onEvent(chatId, { type: 'plan-status', id: plan.id, status })
+      })
     },
     typed: () => typed,
   })

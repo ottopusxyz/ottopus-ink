@@ -1,4 +1,5 @@
 import type { Account, AccountChain } from './accounts'
+import type { PlanStatus } from './plan'
 import type { BackupAnswer, NewPhrase, VaultRequest, VaultResult, VaultStatus, VaultWordCount } from './vault'
 
 /**
@@ -77,12 +78,12 @@ export interface AgentStatus {
 export const INK_TOOLS = ['get_accounts', 'get_portfolio', 'get_quote', 'create_plan', 'get_plan', 'cancel_plan'] as const
 
 /**
- * A plan an agent proposed. Until the wallet exists it's a placeholder that can't
- * be reviewed or signed. The agent wrote every value here, so show them as text.
+ * A plan an agent proposed, as its chat's card shows it. The agent wrote every
+ * value here, so show them as text. Only the review window shows what's signed.
  */
 export interface ChatPlan {
   id: string
-  status: 'draft'
+  status: PlanStatus
   outcome: 'send' | 'swap' | 'stake'
   asset: string
   amount: string
@@ -159,6 +160,8 @@ export type ChatEvent =
   | { type: 'tool-result'; id: string; text: string; isError: boolean }
   /** From Ink's own server, not the agent's output, so an agent can't forge one by printing it. */
   | { type: 'plan'; plan: ChatPlan }
+  /** A plan of this chat's moved on, in the review window or on the chain. From main, like `plan`. */
+  | { type: 'plan-status'; id: string; status: PlanStatus }
   | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
   /** The agent's process is gone and the chat can't continue. Error is null when Ink closed it. */
   | { type: 'ended'; error: string | null }

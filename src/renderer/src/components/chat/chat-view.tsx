@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, type ReactNode } from 'react'
 import { Otto } from '@/components/brand/otto'
-import { Callout, ErrorState, Tooltip } from '@/components/ui'
+import { Callout, ErrorState, TokenLogo, Tooltip } from '@/components/ui'
 import { Sea } from '@/components/motion/sea'
 import { ListIcon, PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
@@ -52,6 +52,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
   const chip = toolsChip(chat.external)
   const working = WORKING[chat.phase]
   const running = chat.phase === 'answering' || chat.phase === 'stopping'
+  const toolCount = chat.items.filter((item) => item.kind === 'tool').length
 
   // Opening a chat starts at its end, ready for a reply.
   useEffect(() => {
@@ -68,11 +69,14 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
     <>
       <main className="ink-panel flex flex-col" id="main" aria-label={chat.title}>
         <div className="ink-chat-toolbar">
-          <span className="ink-picker cursor-default">
-            <AgentMark id={chat.agent} small />
-            {agent.name}
-          </span>
-          <span className="flex-1" />
+          {chat.plan ? <TokenLogo symbol={chat.plan.asset} chain={chat.plan.chain} size="md" /> : <AgentMark id={chat.agent} />}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <h1 className="m-0 truncate text-[14.5px] font-extrabold">{chat.title}</h1>
+            <span className="flex items-center gap-1.5 text-[12px] text-[var(--ot-text-3)]">
+              <AgentMark id={chat.agent} small />
+              {agent.name} · {toolCount === 1 ? '1 tool call' : `${toolCount} tool calls`}
+            </span>
+          </div>
           <Tooltip text={chip.hint}>
             <span className={cn('ink-connector', chip.open && 'ink-connector--open')} tabIndex={0}>
               <PlugIcon size={13} />

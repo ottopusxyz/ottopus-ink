@@ -19,7 +19,7 @@ export function LockScreen() {
     >
       <WalletHeading title="Ink is locked">Enter your password to unlock your wallet.</WalletHeading>
       <form
-        className="flex flex-col gap-4"
+        className="ink-form-card flex flex-col gap-4 p-4"
         onSubmit={async (event) => {
           event.preventDefault()
           if (!password) return

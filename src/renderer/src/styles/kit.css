@@ -717,3 +717,41 @@
   .ink-dots i, .ink-hold__ripple { animation: none; }
   .ink-hold__ripple { opacity: 0; }
 }
+
+/* Setup and lock forms sit on a card; the create-wallet card gets the sticker edge. */
+.ink-form-card {
+  border: 1px solid var(--ot-border-strong);
+  border-radius: 16px;
+  background: var(--ot-card);
+}
+.ink-form-card--hero {
+  border: 2px solid var(--ot-navy);
+  box-shadow: 3px 3px 0 var(--ot-navy);
+}
+[data-theme="dark"] .ink-form-card--hero { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-form-card--hero { border-color: var(--ot-border-strong); box-shadow: 3px 3px 0 #05080F; }
+}
+.ink-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--ot-surface-3);
+}
+.ink-seg button {
+  height: 32px;
+  min-width: 84px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ot-text-2);
+  font: 700 13px var(--ot-font-ui);
+  cursor: pointer;
+}
+.ink-seg button.ink-seg--on {
+  background: var(--ot-card);
+  box-shadow: 0 1px 2px rgba(22, 33, 62, 0.12), 0 0 0 1px var(--ot-border-strong);
+  color: var(--ot-text);
+}

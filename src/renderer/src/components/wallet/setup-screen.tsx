@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import type { BackupAnswer, NewPhrase, VaultWordCount } from '../../../../shared/vault'
-import { EyeIcon } from '@/components/shell/icons'
-import { Button, Callout, Input } from '@/components/ui'
+import { Ring } from '@/components/motion/ring'
+import { ChatIcon, EyeIcon, KeyIcon } from '@/components/shell/icons'
+import { Button, Callout, ChainStack, Input } from '@/components/ui'
 import { passwordProblem, PHRASE_DROPPED, phraseLost, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from '@/lib/wallet'
 import { Field, FormError, PhraseInput, WalletHeading, WalletPanel, type Guide } from './wallet-panel'
 
@@ -165,19 +166,50 @@ function Welcome({
       <Callout severity="caution" title="Ink is still being built" compact>
         Don’t use a recovery phrase that holds real funds yet.
       </Callout>
+      <ul className="m-0 grid list-none grid-cols-3 gap-2.5 p-0" aria-label="How Ink works">
+        <li className="ink-form-card flex flex-col gap-2 p-3">
+          <span className="text-[var(--ot-plan)]">
+            <ChatIcon size={20} />
+          </span>
+          <b className="text-[14px]">Your agent drafts</b>
+          <span className="text-[12.5px] text-[var(--ot-text-3)]">You ask in a chat.</span>
+        </li>
+        <li className="ink-form-card flex flex-col gap-2 p-3">
+          <Ring size={20} tone="plan" />
+          <b className="text-[14px]">Ink checks it</b>
+          <span className="text-[12.5px] text-[var(--ot-text-3)]">It builds the transaction.</span>
+        </li>
+        <li className="ink-form-card flex flex-col gap-2 p-3">
+          <span className="text-[var(--ot-coral-text)]">
+            <KeyIcon size={20} />
+          </span>
+          <b className="text-[14px]">You sign</b>
+          <span className="text-[12.5px] text-[var(--ot-text-3)]">Only you can approve.</span>
+        </li>
+      </ul>
       <FormError message={error} />
-      <div className="flex flex-col gap-2.5">
+      <div className="ink-form-card ink-form-card--hero flex flex-col gap-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <b className="text-[15px]">Create a new wallet</b>
+            <span className="text-[12.5px] text-[var(--ot-text-3)]">One recovery phrase covers all seven chains.</span>
+          </div>
+          <div className="ink-seg" role="radiogroup" aria-label="Recovery phrase length">
+            {([12, 24] as const).map((count) => (
+              <button key={count} type="button" role="radio" aria-checked={size === count} className={size === count ? 'ink-seg--on' : undefined} onClick={() => onSize(count)}>
+                {count} words
+              </button>
+            ))}
+          </div>
+        </div>
+        <ChainStack chains={['near', 'ethereum', 'solana', 'bitcoin', 'tron', 'sui', 'aptos']} />
         <Button variant="primary" size="lg" fullWidth disabled={busy} onClick={onCreate}>
-          {busy ? 'Making your phrase…' : 'Create a new wallet'}
-        </Button>
-        <label className="flex items-center gap-2 self-center text-[13px] text-[var(--ot-text-2)]">
-          <input type="checkbox" checked={size === 24} onChange={(event) => onSize(event.target.checked ? 24 : 12)} />
-          Use 24 words instead of 12
-        </label>
-        <Button variant="secondary" size="lg" fullWidth disabled={busy} onClick={onRestore}>
-          I already have a recovery phrase
+          {busy ? 'Making your phrase…' : 'Create my wallet'}
         </Button>
       </div>
+      <Button variant="secondary" disabled={busy} onClick={onRestore} className="self-start">
+        I already have a recovery phrase
+      </Button>
     </>
   )
 }
@@ -208,7 +240,7 @@ function ShowWords({
         <ol
           aria-label="Recovery phrase"
           aria-hidden={!shown}
-          className={`m-0 grid list-none grid-cols-3 gap-2 rounded-[14px] border border-[var(--ot-border)] bg-[var(--ot-card)] p-4 ${shown ? '' : 'select-none blur-[6px]'}`}
+          className={`ink-form-card m-0 grid list-none grid-cols-3 gap-2 p-4 ${shown ? '' : 'select-none blur-[6px]'}`}
         >
           {phrase.words.map((word, index) => (
             <li key={index} className="flex items-baseline gap-2 rounded-[8px] bg-[var(--ot-surface-2)] px-2.5 py-1.5">
@@ -219,7 +251,7 @@ function ShowWords({
         </ol>
         {shown ? null : (
           <div className="absolute inset-0 flex items-center justify-center">
-            <Button variant="secondary" onClick={onShow}>
+            <Button variant="primary" onClick={onShow}>
               <EyeIcon />
               Show the words
             </Button>
@@ -264,19 +296,21 @@ function CheckWords({
     <form className="flex flex-col gap-5" onSubmit={submit}>
       <WalletHeading title="Check your backup">Type these words from what you wrote down, so you know your copy is right.</WalletHeading>
       <FormError message={error} />
-      {phrase.check.map((index, n) => (
-        <Field key={index} label={`Word ${index + 1}`} error={wrong.includes(index) ? 'That’s not this word. Check your copy.' : null}>
-          <Input
-            mono
-            autoFocus={n === 0}
-            autoComplete="off"
-            spellCheck={false}
-            invalid={wrong.includes(index)}
-            value={typed[index] ?? ''}
-            onChange={(event) => setTyped({ ...typed, [index]: event.target.value })}
-          />
-        </Field>
-      ))}
+      <div className="ink-form-card flex flex-col gap-4 p-4">
+        {phrase.check.map((index, n) => (
+          <Field key={index} label={`Word ${index + 1}`} error={wrong.includes(index) ? 'That’s not this word. Check your copy.' : null}>
+            <Input
+              mono
+              autoFocus={n === 0}
+              autoComplete="off"
+              spellCheck={false}
+              invalid={wrong.includes(index)}
+              value={typed[index] ?? ''}
+              onChange={(event) => setTyped({ ...typed, [index]: event.target.value })}
+            />
+          </Field>
+        ))}
+      </div>
       <div className="flex justify-between gap-2">
         <Button variant="ghost" onClick={onBack}>
           See the words again
@@ -337,7 +371,9 @@ function CreatePassword({
         It encrypts the wallet on this computer. Nobody can reset it, but your recovery phrase can always restore the wallet.
       </WalletHeading>
       <FormError message={error} />
-      <PasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} shownError={tried ? problem : null} />
+      <div className="ink-form-card flex flex-col gap-4 p-4">
+        <PasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} shownError={tried ? problem : null} />
+      </div>
       <div className="flex justify-between gap-2">
         <Button variant="ghost" disabled={busy} onClick={onBack}>
           Back
@@ -382,14 +418,16 @@ function Restore({
         wallets that use the same paths, which most do. Some use another path for Solana and show a different address.
       </WalletHeading>
       <FormError message={error} />
-      <Field
-        label="Recovery phrase"
-        error={tried ? wordsProblem : null}
-        hint={`${phraseWords(words).length} words`}
-      >
-        <PhraseInput autoFocus value={words} onChange={(event) => setWords(event.target.value)} aria-invalid={tried && Boolean(wordsProblem)} />
-      </Field>
-      <PasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} shownError={tried ? problem : null} />
+      <div className="ink-form-card flex flex-col gap-4 p-4">
+        <Field
+          label="Recovery phrase"
+          error={tried ? wordsProblem : null}
+          hint={`${phraseWords(words).length} words`}
+        >
+          <PhraseInput autoFocus value={words} onChange={(event) => setWords(event.target.value)} aria-invalid={tried && Boolean(wordsProblem)} />
+        </Field>
+        <PasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} shownError={tried ? problem : null} />
+      </div>
       <div className="flex justify-between gap-2">
         <Button variant="ghost" disabled={busy} onClick={onCancel}>
           Cancel

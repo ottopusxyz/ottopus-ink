@@ -1,17 +1,27 @@
 import { useEffect, useState } from 'react'
 import type { Account, AccountChain } from '../../../../shared/accounts'
+import { Otto } from '@/components/brand/otto'
 import { Sea } from '@/components/motion/sea'
-import { CheckIcon, CopyIcon, QrIcon } from '@/components/shell/icons'
-import { Button, Callout, Card } from '@/components/ui'
+import { CheckIcon, CopyIcon } from '@/components/shell/icons'
+import { Callout, ChainLogo, TokenLogo } from '@/components/ui'
+import { cn } from '@/lib/cn'
+import { ACCOUNT_CHAIN_MARK, type ChainId } from '@/lib/logos'
+import { CHAIN_ASSETS, CHAIN_SUB, EVM_NETWORKS, receiveAsset, receiveNetwork } from '@/lib/receive'
 import { addressParts, CHAIN_INFO, vaultMessage } from '@/lib/wallet'
 import { QrCode } from './qr-code'
 
 type Loaded = { kind: 'loading' } | { kind: 'ready'; accounts: Account[] } | { kind: 'failed'; message: string }
 
-/** Your own address on each chain, to fund the wallet. Only reachable while unlocked. */
+/**
+ * Your own address on a chain, to fund the wallet: pick where the money comes
+ * from, then what it is, and Ink shows the one address to use with its QR code.
+ * Only reachable while unlocked.
+ */
 export function ReceiveView() {
   const [loaded, setLoaded] = useState<Loaded>({ kind: 'loading' })
-  const [open, setOpen] = useState<AccountChain | null>(null)
+  const [chain, setChain] = useState<AccountChain | null>(null)
+  const [asset, setAsset] = useState<string | null>(null)
+  const [network, setNetwork] = useState<ChainId>('ethereum')
 
   useEffect(() => {
     let current = true
@@ -30,23 +40,17 @@ export function ReceiveView() {
     }
   }, [])
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  const accounts = loaded.kind === 'ready' ? loaded.accounts : []
+  const account = accounts.find((item) => item.chain === chain) ?? accounts[0]
 
   return (
     <main className="ink-panel" id="main">
       <Sea shafts={false} />
       <div className="ink-panel__scroll flex flex-col gap-5 px-7 py-6">
         <div className="flex flex-col gap-1.5">
-          <h1 className="m-0 font-display text-[26px] font-bold tracking-[-0.02em]">Receive</h1>
+          <h1 className="m-0 font-display text-[28px] font-bold tracking-[-0.02em]">Receive</h1>
           <p className="m-0 max-w-[62ch] text-[14px] leading-[1.55] text-[var(--ot-text-2)]">
-            Your own address on each chain, all from your one recovery phrase. Send each chain’s coins and tokens only to its
-            own address.
+            Pick where the money’s coming from. Ink shows the one address to use, and its QR code.
           </p>
         </div>
         <Callout severity="info" title="Ink can’t send yet" compact className="max-w-[720px]">
@@ -60,22 +64,87 @@ export function ReceiveView() {
           <Callout severity="block" title="No addresses" compact className="max-w-[720px]">
             {loaded.message}
           </Callout>
-        ) : (
-          <ul className="m-0 flex max-w-[720px] list-none flex-col gap-3 p-0">
-            {loaded.accounts.map((account) => (
-              <li key={account.chain}>
-                <AccountRow account={account} open={open === account.chain} onToggle={() => setOpen(open === account.chain ? null : account.chain)} />
-              </li>
-            ))}
-          </ul>
-        )}
+        ) : account ? (
+          <div className="flex flex-wrap items-start gap-5">
+            <div className="flex min-w-0 flex-[1_1_400px] flex-col gap-5">
+              <section aria-labelledby="receive-chain" className="flex flex-col gap-2.5">
+                <h2 id="receive-chain" className="ink-step">
+                  <span className="ink-step__n">1</span>Which chain?
+                </h2>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-1.5">
+                  {accounts.map((item) => (
+                    <button
+                      key={item.chain}
+                      type="button"
+                      className={cn('ink-choice', item.chain === account.chain && 'ink-choice--on')}
+                      aria-pressed={item.chain === account.chain}
+                      onClick={() => setChain(item.chain)}
+                    >
+                      <ChainLogo chain={ACCOUNT_CHAIN_MARK[item.chain]} size="md" />
+                      <span className="flex min-w-0 flex-col text-left">
+                        <span className="text-[13px] font-bold">{item.chain === 'evm' ? 'EVM' : CHAIN_INFO[item.chain].name}</span>
+                        <span className="text-[11.5px] text-[var(--ot-text-3)]">{CHAIN_SUB[item.chain]}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {account.chain === 'evm' ? (
+                <section aria-labelledby="receive-network" className="flex flex-col gap-2.5">
+                  <h2 id="receive-network" className="ink-step">
+                    <span className="ink-step__n">2</span>Which network is it sent on?
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    {EVM_NETWORKS.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={cn('ink-pill', item.id === network && 'ink-pill--on')}
+                        aria-pressed={item.id === network}
+                        onClick={() => setNetwork(item.id)}
+                      >
+                        <ChainLogo chain={item.id} size="md" />
+                        {item.name}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="m-0 text-[12.5px] text-[var(--ot-text-3)]">
+                    Same address on every EVM network. Picking one labels the QR, so you tell the sender the right network.
+                  </p>
+                </section>
+              ) : null}
+
+              <section aria-labelledby="receive-asset" className="flex flex-col gap-2.5">
+                <h2 id="receive-asset" className="ink-step">
+                  <span className="ink-step__n">{account.chain === 'evm' ? 3 : 2}</span>What are you receiving?
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  {CHAIN_ASSETS[account.chain].map((symbol) => {
+                    const on = symbol === receiveAsset(account.chain, asset)
+                    return (
+                      <button key={symbol} type="button" className={cn('ink-pill', on && 'ink-pill--on')} aria-pressed={on} onClick={() => setAsset(symbol)}>
+                        <TokenLogo symbol={symbol} size="md" />
+                        {symbol}
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+            </div>
+
+            <AddressCard account={account} asset={receiveAsset(account.chain, asset)} network={network} />
+          </div>
+        ) : null}
       </div>
     </main>
   )
 }
 
-function AccountRow({ account, open, onToggle }: { account: Account; open: boolean; onToggle: () => void }) {
+function AddressCard({ account, asset, network }: { account: Account; asset: string; network: ChainId }) {
   const info = CHAIN_INFO[account.chain]
+  const mark: ChainId = account.chain === 'evm' ? network : ACCOUNT_CHAIN_MARK[account.chain]
+  const networkName = receiveNetwork(account.chain, info.name, network)
   const { start, middle, end } = addressParts(account.address)
   const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no')
 
@@ -86,37 +155,49 @@ function AccountRow({ account, open, onToggle }: { account: Account; open: boole
   }
 
   return (
-    <Card className="flex flex-col gap-3 p-4" data-chain={account.chain}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h2 className="m-0 font-display text-[16px] font-semibold tracking-[-0.01em]">{info.name}</h2>
-          <p className="m-0 text-[12.5px] leading-[1.45] text-[var(--ot-text-3)]">{info.note}</p>
-        </div>
-        <div className="flex flex-none gap-1.5">
-          <Button size="sm" variant="secondary" onClick={copy} aria-label={`Copy ${info.name} address`}>
-            {copied === 'yes' ? <CheckIcon /> : <CopyIcon />}
-            {copied === 'yes' ? 'Copied' : copied === 'failed' ? 'Couldn’t copy' : 'Copy'}
-          </Button>
-          <Button size="sm" variant={open ? 'primary' : 'secondary'} onClick={onToggle} aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} ${info.name} QR code`}>
-            <QrIcon />
-            QR
-          </Button>
+    <section aria-label={`Your ${info.name} address`} className="ink-address-card" data-chain={account.chain}>
+      <Otto pose="base" size={70} animated className="ink-address-card__otto" />
+      <div className="flex items-center gap-2.5">
+        <TokenLogo symbol={asset} chain={mark} size="md" />
+        <div className="min-w-0">
+          <div className="text-[15px] font-extrabold">Receive {asset}</div>
+          <div className="text-[12px] text-[var(--ot-text-3)]">on {networkName}</div>
         </div>
       </div>
-      <p className="m-0 font-mono text-[13px] leading-[1.6] break-all text-[var(--ot-text-2)]" data-address>
-        <strong className="font-semibold text-[var(--ot-text)]">{start}</strong>
-        {middle}
-        <strong className="font-semibold text-[var(--ot-text)]">{end}</strong>
-      </p>
-      {open ? (
-        <div className="flex items-center gap-4">
-          <QrCode value={account.address} label={`QR code for your ${info.name} address`} />
-          <p className="m-0 max-w-[32ch] text-[12.5px] leading-[1.5] text-[var(--ot-text-3)]">
-            After scanning or pasting, check that the first and last six characters match the ones in bold.
-          </p>
-        </div>
-      ) : null}
-      <p className="m-0 font-mono text-[11px] text-[var(--ot-text-4)]">{account.path}</p>
-    </Card>
+
+      <div className="ink-qr-frame">
+        <QrCode value={account.address} label={`QR code for your ${info.name} address`} size={216} />
+        <span className="ink-qr-frame__mark">
+          <ChainLogo chain={mark} size="lg" />
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="ink-eyebrow">Your {info.name} address</span>
+        <p className="ink-address selectable m-0" data-address>
+          <strong>{start}</strong>
+          {middle}
+          <strong>{end}</strong>
+        </p>
+        <p className="m-0 text-[12px] leading-[1.45] text-[var(--ot-text-3)]">
+          After scanning or pasting, check that the first and last six characters match the highlighted ones.
+        </p>
+      </div>
+
+      <div className="ink-address-card__warn">
+        <strong>
+          Send only {asset} on {networkName} here
+        </strong>
+        <span>{info.note}</span>
+      </div>
+      <button type="button" className="ink-copy" onClick={copy} aria-label={`Copy ${info.name} address`}>
+        {copied === 'yes' ? <CheckIcon /> : <CopyIcon />}
+        {copied === 'yes' ? 'Copied' : copied === 'failed' ? 'Couldn’t copy' : 'Copy address'}
+      </button>
+      <div className="flex items-center justify-between gap-2 text-[11.5px] text-[var(--ot-text-3)]">
+        <span className="font-mono">{account.path}</span>
+        <span>from your one recovery phrase</span>
+      </div>
+    </section>
   )
 }

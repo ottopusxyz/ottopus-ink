@@ -2,18 +2,19 @@ import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { AgentId, AgentState, AgentStatus, ExternalItem } from '../../../../shared/ipc'
 import { AgentMark } from '@/components/chat/agent-picker'
 import { Badge, Button, Callout, Dialog, Tooltip, type Tone } from '@/components/ui'
-import { CloseIcon } from '@/components/shell/icons'
+import { BotIcon, CloseIcon, PlugIcon, RefreshIcon, ShieldIcon, SlidersIcon, WalletIcon } from '@/components/shell/icons'
 import { agentInfo, describeAgent, LATER_AGENTS } from '@/lib/agents'
 import { stepIndex } from '@/lib/roving'
 import { ToolsTab } from './tools-tab'
 
+/** Each section with its glyph on a pastel tile, the same tints as the tools in a chat. */
 const TABS = [
-  { id: 'general', label: 'General' },
-  { id: 'agent', label: 'Agent' },
-  { id: 'tools', label: 'Tools and skills' },
-  { id: 'wallet', label: 'Wallet and backup' },
-  { id: 'security', label: 'Security' },
-  { id: 'updates', label: 'Updates' },
+  { id: 'general', label: 'General', Icon: SlidersIcon, tint: '#FFF0DC' },
+  { id: 'agent', label: 'Agent', Icon: BotIcon, tint: '#FFD2C2' },
+  { id: 'tools', label: 'Tools and skills', Icon: PlugIcon, tint: '#CFE0FF' },
+  { id: 'wallet', label: 'Wallet and backup', Icon: WalletIcon, tint: '#C9F2DD' },
+  { id: 'security', label: 'Security', Icon: ShieldIcon, tint: '#DDE2F0' },
+  { id: 'updates', label: 'Updates', Icon: RefreshIcon, tint: '#FDD3D4' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -70,6 +71,9 @@ export function SettingsDialog({ open, onClose, agents, selectedAgent, checking,
               aria-current={tab === item.id ? 'page' : undefined}
               onClick={() => setTab(item.id)}
             >
+              <span className="ink-tool__glyph ink-settings-nav__glyph" style={{ background: item.tint }} aria-hidden>
+                <item.Icon size={13} />
+              </span>
               {item.label}
             </button>
           ))}

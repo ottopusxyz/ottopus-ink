@@ -137,3 +137,11 @@ export const CancelIcon = icon(
   </>,
   2,
 )
+export const RefreshIcon = icon(<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />, 2)
+export const BotIcon = icon(
+  <>
+    <rect x="5" y="8" width="14" height="11" rx="3" />
+    <path d="M12 4v4M9 13h.01M15 13h.01M9.5 16h5" />
+  </>,
+  2,
+)

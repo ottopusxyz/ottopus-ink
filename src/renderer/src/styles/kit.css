@@ -588,3 +588,21 @@
   border-radius: 16px;
   background: var(--ot-card);
 }
+
+/* Settings: each section's glyph on a pastel tile; the open one lifts. */
+.ink-settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px 0 6px;
+}
+.ink-settings-nav__glyph {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+.ink-settings-nav button[aria-current="page"] {
+  background: var(--ot-card);
+  box-shadow: 0 1px 2px rgba(22, 33, 62, 0.12), 0 0 0 1px var(--ot-border-strong);
+}

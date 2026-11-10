@@ -1,6 +1,5 @@
 import { Button, EmptyState } from '@/components/ui'
 import { Sea } from '@/components/motion/sea'
-import { SEA_LIFE } from '@/components/motion/sea-life'
 import type { PageId } from '@/components/shell/nav'
 
 /** Receive has a view of its own. */
@@ -24,7 +23,7 @@ export function PageView({ page, onReceive }: { page: PlaceholderPage; onReceive
   const copy = COPY[page]
   return (
     <main className="ink-panel" id="main">
-      <Sea creatures={SEA_LIFE} shafts={false} />
+      <Sea shafts={false} />
       <div className="ink-panel__scroll flex flex-col gap-6 px-7 py-6">
         <h1 className="m-0 font-display text-[26px] font-bold tracking-[-0.02em]">{copy.title}</h1>
         <EmptyState

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import type { Account, AccountChain } from '../../../../shared/accounts'
-import { SEA_LIFE } from '@/components/motion/sea-life'
 import { Sea } from '@/components/motion/sea'
 import { CheckIcon, CopyIcon, QrIcon } from '@/components/shell/icons'
 import { Button, Callout, Card } from '@/components/ui'
@@ -41,7 +40,7 @@ export function ReceiveView() {
 
   return (
     <main className="ink-panel" id="main">
-      <Sea creatures={SEA_LIFE} shafts={false} />
+      <Sea shafts={false} />
       <div className="ink-panel__scroll flex flex-col gap-5 px-7 py-6">
         <div className="flex flex-col gap-1.5">
           <h1 className="m-0 font-display text-[26px] font-bold tracking-[-0.02em]">Receive</h1>

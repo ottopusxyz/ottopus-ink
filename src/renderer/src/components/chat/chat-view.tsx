@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, type ReactNode } from 'react'
 import { Otto } from '@/components/brand/otto'
 import { Callout, ErrorState, Tooltip } from '@/components/ui'
-import { PANE_LIFE, Sea } from '@/components/motion/sea'
+import { Sea } from '@/components/motion/sea'
 import { ChevronDownIcon, ListIcon, PlugIcon } from '@/components/shell/icons'
 import { agentInfo } from '@/lib/agents'
 import type { Chat, ChatItem } from '@/lib/chats'
@@ -130,7 +130,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd }: Chat
       </main>
 
       <aside className="ink-plan-pane" aria-label="Live plan">
-        <Sea creatures={PANE_LIFE} shafts={false} />
+        <Sea shafts={false} />
         <div className="relative flex h-full flex-col gap-3 p-[18px]">
           <span className="ink-eyebrow">Live plan</span>
           {chat.plan ? (

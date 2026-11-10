@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Otto } from '@/components/brand/otto'
 import { Button, Input } from '@/components/ui'
 import { autoLockNote, vaultMessage } from '@/lib/wallet'
 import { Field, FormError, WalletHeading, WalletPanel } from './wallet-panel'
@@ -11,8 +10,13 @@ export function LockScreen() {
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <WalletPanel>
-      <Otto pose="base" size={110} label="Otto" />
+    <WalletPanel
+      guide={{
+        pose: 'base',
+        title: 'I’m keeping watch.',
+        text: 'While Ink is locked, your agent can’t read balances or draft plans. Unlock and we pick up where we were.',
+      }}
+    >
       <WalletHeading title="Ink is locked">Enter your password to unlock your wallet.</WalletHeading>
       <form
         className="flex flex-col gap-4"

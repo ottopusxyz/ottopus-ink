@@ -473,3 +473,100 @@
   box-shadow: 1px 1px 0 var(--ot-navy);
   transform: translate(2px, 2px);
 }
+
+/* Setup and lock: Otto's stage on the left, the step's progress above the form. */
+.ink-stage {
+  flex: 1 1 360px;
+  max-width: 480px;
+  border: 2px solid var(--ot-navy);
+  background: var(--ot-water-1);
+}
+[data-theme="dark"] .ink-stage { border-color: var(--ot-border-strong); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ink-stage { border-color: var(--ot-border-strong); }
+}
+.ink-stage .ink-sea {
+  background: linear-gradient(
+    180deg,
+    var(--ot-water-1) 0%,
+    color-mix(in srgb, var(--ot-plan) 10%, var(--ot-water-1)) 40%,
+    color-mix(in srgb, var(--ot-plan) 24%, var(--ot-water-2)) 80%,
+    color-mix(in srgb, var(--ot-plan) 34%, var(--ot-water-3)) 100%
+  );
+}
+.ink-stage__floor {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 90px;
+  background: radial-gradient(120% 90px at 50% 100%, var(--ot-cream) 0 60%, transparent 61%);
+  opacity: 0.85;
+}
+.ink-stage__bubble {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 340px;
+  padding: 14px 16px;
+  border: 1px solid var(--ot-border-strong);
+  border-radius: 20px 20px 20px 6px;
+  background: var(--ot-card);
+  box-shadow: var(--ot-shadow-card);
+}
+.ink-progress {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ink-progress__step {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+.ink-progress__step:not(:last-child)::after {
+  content: "";
+  flex: 1;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--ot-border);
+}
+.ink-progress__step--done:not(:last-child)::after {
+  background: var(--ot-ok);
+}
+.ink-progress__dot {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--ot-text-2);
+  border-radius: 50%;
+  background: var(--ot-card);
+  font-size: 12px;
+  font-weight: 800;
+}
+.ink-progress__step--done .ink-progress__dot {
+  border-color: var(--ot-ok);
+  background: var(--ot-ok);
+  color: #16213E;
+}
+.ink-progress__step--on .ink-progress__dot {
+  border-color: var(--ot-navy);
+  background: var(--ot-coral);
+  box-shadow: 0 0 0 4px var(--ot-coral-soft);
+  color: #16213E;
+}
+.ink-progress__label {
+  color: var(--ot-text-3);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ink-progress__step--on .ink-progress__label {
+  color: var(--ot-text);
+}

@@ -1,10 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import type { BackupAnswer, NewPhrase, VaultWordCount } from '../../../../shared/vault'
-import { Otto } from '@/components/brand/otto'
 import { EyeIcon } from '@/components/shell/icons'
 import { Button, Callout, Input } from '@/components/ui'
 import { passwordProblem, PHRASE_DROPPED, phraseLost, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from '@/lib/wallet'
-import { Field, FormError, PhraseInput, WalletHeading, WalletPanel } from './wallet-panel'
+import { Field, FormError, PhraseInput, WalletHeading, WalletPanel, type Guide } from './wallet-panel'
 
 type Step =
   | { kind: 'welcome' }
@@ -12,6 +11,42 @@ type Step =
   | { kind: 'check'; phrase: NewPhrase }
   | { kind: 'password'; phrase: NewPhrase; answers: BackupAnswer[] }
   | { kind: 'restore' }
+
+/** What Otto says on each step. Big and moving to say hello; calm while words and passwords are typed. */
+const GUIDE: Record<Step['kind'], Guide> = {
+  welcome: {
+    pose: 'wave',
+    title: 'Hi! I’m Otto.',
+    text: 'I keep your keys on this computer and look over everything your agent asks for. A few quick steps and we’re swimming.',
+  },
+  words: {
+    pose: 'heads-up',
+    title: 'Paper, not pixels.',
+    text: 'Anyone with these words gets everything in this wallet. I can’t reset them for you, so write them down carefully.',
+    calm: true,
+  },
+  check: {
+    pose: 'tapping',
+    title: 'Let’s test your copy.',
+    text: 'Type the words I ask for from your paper. I’ll check each one against the original.',
+    calm: true,
+  },
+  password: {
+    pose: 'planning',
+    title: 'Now a lock for this computer.',
+    text: 'The password opens Ink here. It doesn’t replace your words, so keep the paper safe too.',
+    calm: true,
+  },
+  restore: {
+    pose: 'planning',
+    title: 'Welcome back.',
+    text: 'Type your words in order. They stay on this computer and never reach your agent or the internet.',
+    calm: true,
+  },
+}
+
+/** Where each step sits in the progress above the form. Welcome and restore have none. */
+const PROGRESS: Partial<Record<Step['kind'], number>> = { words: 0, check: 1, password: 2 }
 
 /**
  * First launch: make a recovery phrase or bring one. Nothing is saved until the
@@ -50,7 +85,7 @@ export function SetupScreen({ phraseWaiting }: { phraseWaiting: boolean }) {
   }
 
   return (
-    <WalletPanel>
+    <WalletPanel guide={GUIDE[step.kind]} step={PROGRESS[step.kind]}>
       {step.kind === 'welcome' ? (
         <Welcome size={size} onSize={setSize} busy={busy} error={error} onCreate={startCreate} onRestore={() => go({ kind: 'restore' })} />
       ) : step.kind === 'words' ? (
@@ -123,7 +158,6 @@ function Welcome({
 }) {
   return (
     <>
-      <Otto pose="ink" size={120} animated label="Otto" />
       <WalletHeading title="Set up your wallet">
         One recovery phrase gives you an address on NEAR, Ethereum and other EVM chains, Solana, Bitcoin, Tron, Sui and
         Aptos. It’s encrypted with your password and never leaves this computer.

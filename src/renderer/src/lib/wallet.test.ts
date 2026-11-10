@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ACCOUNT_CHAINS } from '../../../shared/accounts'
 import type { VaultFailure } from '../../../shared/vault'
 import { qrShape } from './qr'
-import { addressParts, autoLockNote, CHAIN_INFO, passwordProblem, phraseLost, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from './wallet'
+import { addressParts, autoLockNote, CHAIN_INFO, passwordProblem, passwordStrength, phraseLost, phraseProblem, phraseWords, typedAnswers, vaultMessage, wrongAnswers } from './wallet'
 
 describe('wallet copy', () => {
   it('names every chain Ink holds a key for, each under its own chain', () => {
@@ -51,6 +51,20 @@ describe('passwordProblem', () => {
 
   it('refuses one longer than the signer takes', () => {
     expect(passwordProblem('x'.repeat(1025), 'x'.repeat(1025))).toMatch(/at most/)
+  })
+})
+
+describe('passwordStrength', () => {
+  it('fills the meter by length, and counts down to the minimum', () => {
+    expect(passwordStrength('')).toMatchObject({ bars: 0, ok: false })
+    expect(passwordStrength('abc')).toMatchObject({ bars: 1, ok: false, text: '9 more characters to go.' })
+    expect(passwordStrength('a'.repeat(11))).toMatchObject({ bars: 2, text: '1 more character to go.' })
+    expect(passwordStrength('a'.repeat(12))).toMatchObject({ bars: 3, ok: true })
+    expect(passwordStrength('a'.repeat(20))).toMatchObject({ bars: 4, ok: true })
+  })
+
+  it('agrees with passwordProblem on the minimum', () => {
+    expect(passwordStrength('🐙'.repeat(12)).ok).toBe(passwordProblem('🐙'.repeat(12), '🐙'.repeat(12)) === null)
   })
 })
 

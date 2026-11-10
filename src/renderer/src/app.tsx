@@ -141,7 +141,7 @@ export function App() {
   // Nothing of the app shows until the wallet is set up and unlocked. Chats and
   // drafts live on above this, so unlocking comes back where it was.
   if (!vault) return <AppShell mac={mac}>{null}</AppShell>
-  if (vault.state === 'none') return <AppShell mac={mac}><SetupScreen phraseWaiting={vault.phraseWaiting} /></AppShell>
+  if (vault.state === 'none') return <AppShell mac={mac}><SetupScreen phraseWaiting={vault.phraseWaiting} keyring={vault.keyring} /></AppShell>
   if (vault.state === 'locked') return <AppShell mac={mac}><LockScreen /></AppShell>
   if (meeting) {
     return (

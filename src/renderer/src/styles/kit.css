@@ -960,6 +960,110 @@
   box-shadow: var(--ot-shadow-card);
 }
 
+/* Setup. How Ink works: the agents' marks overlapping, and the coral sign tile. */
+.ink-mark-stack {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+}
+.ink-mark-stack > .ink-agent-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ot-card);
+}
+.ink-mark-stack > * + * {
+  margin-left: -7px;
+}
+.ink-sign-tile {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 2px solid var(--ot-navy);
+  border-radius: 10px;
+  background: var(--ot-coral);
+  color: #16213E;
+}
+
+/* The recovery phrase: each word on its own tile, covered until shown. */
+.ink-word {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1.5px solid var(--ot-border);
+  border-radius: 11px;
+  background: var(--ot-surface-2);
+}
+.ink-word-cover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--ot-card) 40%, transparent);
+  text-align: center;
+}
+.ink-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.ink-tip > span { margin-top: 1px; }
+
+/* A checked word that matches: a green edge and a tick. */
+.ink-input--right {
+  border-color: var(--ot-ok) !important;
+}
+.ink-input-tick {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ot-ok);
+  color: #16213E;
+  transform: translateY(-50%);
+}
+
+/* The password meter: four bars by length. */
+.ink-meter {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+.ink-meter > span {
+  height: 6px;
+  border-radius: 6px;
+  background: var(--ot-water-3);
+}
+.ink-meter > .ink-meter--ok { background: var(--ot-ok); }
+.ink-meter > .ink-meter--low { background: var(--ot-warn); }
+
+/* A quiet note with a glyph, on a dashed edge. */
+.ink-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--ot-border-strong);
+  border-radius: 12px;
+  background: var(--ot-surface-2);
+  color: var(--ot-text-2);
+  font-size: 12.5px;
+}
+.ink-note > svg { color: var(--ot-text-3); }
+
 /* Meet your agent: one card per agent found, the default on coral with the sticker edge. */
 .ink-meet-agent {
   display: flex;

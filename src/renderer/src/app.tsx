@@ -11,7 +11,7 @@ import { Sidebar } from '@/components/shell/sidebar'
 import { LockScreen } from '@/components/wallet/lock-screen'
 import { ReceiveView } from '@/components/wallet/receive-view'
 import { SetupScreen } from '@/components/wallet/setup-screen'
-import { chooseAgent } from '@/lib/agents'
+import { agentInfo, chooseAgent } from '@/lib/agents'
 import { HOME_DRAFT, isWorking, waitingPlan, withDraft, type Drafts } from '@/lib/chats'
 import { latestOnly } from '@/lib/latest'
 import { useChats } from '@/lib/use-chats'
@@ -180,6 +180,7 @@ export function App() {
           canSend={selectedAgent !== null}
           external={externalItems.filter((item) => item.enabled).map((item) => item.name)}
           waiting={waitingPlan(chats)}
+          readyAgent={selectedAgent ? { id: selectedAgent, name: agentInfo(selectedAgent).name } : null}
         />
       )}
       <SettingsDialog

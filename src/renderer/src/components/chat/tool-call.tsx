@@ -5,7 +5,8 @@ import { CancelIcon, ChevronDownIcon, EyeIcon, KeyIcon, PieIcon, PlugIcon, Recei
 import { inkTool, toolLabel, type ChatItem, type InkTool } from '@/lib/chats'
 import { TOOL_COPY, toolSummary, toolTitle, type ToolState } from '@/lib/tool-copy'
 
-const GLYPHS: Record<InkTool, ComponentType<IconProps>> = {
+/** Each of Ink's tools' glyph, shared with Home's list of what the agent can reach. */
+export const TOOL_GLYPHS: Record<InkTool, ComponentType<IconProps>> = {
   get_accounts: KeyIcon,
   get_portfolio: PieIcon,
   get_quote: RouteIcon,
@@ -28,7 +29,7 @@ export function ToolCall({ name, input, result }: Extract<ChatItem, { kind: 'too
   const label = toolLabel(name)
   const state: ToolState = result === null ? 'running' : result.isError ? 'failed' : 'done'
   const summary = result ? toolSummary(result.text) : null
-  const Glyph = tool ? GLYPHS[tool] : PlugIcon
+  const Glyph = tool ? TOOL_GLYPHS[tool] : PlugIcon
 
   return (
     <details className="ink-tool">

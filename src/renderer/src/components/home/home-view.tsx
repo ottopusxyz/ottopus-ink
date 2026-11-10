@@ -1,13 +1,15 @@
 import type { ReactNode, Ref } from 'react'
 import { Otto } from '@/components/brand/otto'
 import { AgentMark } from '@/components/chat/agent-picker'
+import { TOOL_GLYPHS } from '@/components/chat/tool-call'
 import { Composer } from '@/components/chat/composer'
 import { Sea } from '@/components/motion/sea'
 import { Ring } from '@/components/motion/ring'
 import { ChatIcon } from '@/components/shell/icons'
 import { TokenLogo } from '@/components/ui'
 import { planHeadline, type Chat } from '@/lib/chats'
-import type { ChatPlan } from '../../../../shared/ipc'
+import { TOOL_COPY } from '@/lib/tool-copy'
+import { INK_TOOLS, type AgentId, type ChatPlan } from '../../../../shared/ipc'
 
 /** Starting points, filled into the composer rather than sent, each with the marks of what it moves. */
 const SUGGESTIONS: readonly { text: string; tokens: readonly string[] }[] = [
@@ -32,6 +34,8 @@ export interface HomeViewProps {
   external: readonly string[]
   /** A plan waiting on the person's review, if one is, and the chat it came from. */
   waiting: { chatId: string; plan: ChatPlan } | null
+  /** The agent new chats go to, once one is ready. */
+  readyAgent: { id: AgentId; name: string } | null
 }
 
 /**
@@ -50,6 +54,7 @@ export function HomeView({
   canSend,
   external,
   waiting,
+  readyAgent,
 }: HomeViewProps) {
   const running = live[0]
 
@@ -60,7 +65,15 @@ export function HomeView({
         <div className="mx-auto flex max-w-[880px] flex-col gap-4">
           <div className="flex flex-wrap items-end gap-5">
             <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-2">
-              <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Your agent proposes. You review and sign here.</p>
+              <p className="m-0 flex flex-wrap items-center gap-2 text-[13px] text-[var(--ot-text-2)]">
+                {readyAgent ? (
+                  <span className="ink-ready">
+                    <AgentMark id={readyAgent.id} small />
+                    {readyAgent.name} is ready
+                  </span>
+                ) : null}
+                Your agent proposes. You review and sign here.
+              </p>
               <h1 className="m-0 font-display text-[42px] leading-[1.05] font-bold tracking-[-0.02em]">
                 Ask for it.
                 <br />
@@ -150,6 +163,23 @@ export function HomeView({
                 Ink can’t read balances yet. Your addresses are on Receive.
               </span>
             </button>
+          </div>
+
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="text-[12px] text-[var(--ot-text-3)]">
+              {external.length === 0 ? 'Your agent gets six Ottopus tools, nothing else:' : 'Your agent gets six Ottopus tools, and what you turned on:'}
+            </span>
+            {INK_TOOLS.map((tool) => {
+              const Glyph = TOOL_GLYPHS[tool]
+              return (
+                <span key={tool} className="ink-tool-chip">
+                  <span className="ink-tool__glyph" style={{ background: TOOL_COPY[tool].tint }} aria-hidden>
+                    <Glyph size={11} />
+                  </span>
+                  <span className="font-mono">{tool}</span>
+                </span>
+              )
+            })}
           </div>
         </div>
       </div>

@@ -2,9 +2,10 @@ import { useMemo, useState, type Ref } from 'react'
 import type { SignerStatus } from '../../../../shared/ipc'
 import { AgentMark } from '@/components/chat/agent-picker'
 import { SignInIcon } from '@/components/settings/sign-in-icon'
-import { Badge, Tooltip } from '@/components/ui'
+import { Badge, ChainStack, TokenLogo, Tooltip } from '@/components/ui'
 import { agentInfo } from '@/lib/agents'
 import { filterChats, isWorking, lockStatus, type Chat } from '@/lib/chats'
+import { ACCOUNT_CHAIN_MARK } from '@/lib/logos'
 import {
   ActivityIcon,
   CheckIcon,
@@ -97,7 +98,11 @@ export function Sidebar({
             >
               <ChatMark chat={chat} />
               <span className="ink-side-item__label">{chat.title}</span>
-              {chat.status === 'live' && chat.step ? <Badge tone="plan">{chat.step}</Badge> : null}
+              {chat.status === 'live' && chat.step ? (
+                <Badge tone="plan">{chat.step}</Badge>
+              ) : chat.plan?.status === 'awaiting_review' ? (
+                <Badge tone="plan">To review</Badge>
+              ) : null}
             </button>
           </li>
         ))}
@@ -124,6 +129,7 @@ export function Sidebar({
           >
             <Icon />
             <span className="ink-side-item__label">{page.label}</span>
+            {page.id === 'receive' ? <ChainStack chains={RECEIVE_CHAINS} size="xs" /> : null}
           </button>
         )
       })}
@@ -144,10 +150,14 @@ export function Sidebar({
   )
 }
 
+/** The chains Receive covers, for the marks beside it. */
+const RECEIVE_CHAINS = Object.values(ACCOUNT_CHAIN_MARK)
+
+/** A chat's mark: the token its plan moves once it has one, its agent before that. */
 function ChatMark({ chat }: { chat: Chat }) {
   return (
     <span className="ink-chat-mark">
-      <AgentMark id={chat.agent} small />
+      {chat.plan ? <TokenLogo symbol={chat.plan.asset} chain={chat.plan.chain} size="sm" /> : <AgentMark id={chat.agent} small />}
       <span className="sr-only">{agentInfo(chat.agent).name}</span>
       <ChatStatusMark chat={chat} />
     </span>

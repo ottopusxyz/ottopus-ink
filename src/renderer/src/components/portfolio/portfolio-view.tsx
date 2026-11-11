@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ACCOUNT_CHAINS, type AccountChain } from '../../../../shared/accounts'
-import type { Portfolio } from '../../../../shared/portfolio'
+import type { HoldingGroup, Portfolio, ZerionState } from '../../../../shared/portfolio'
 import { Otto } from '@/components/brand/otto'
 import { Ring } from '@/components/motion/ring'
 import { Sea } from '@/components/motion/sea'
@@ -8,25 +8,39 @@ import { ReceiveIcon, RefreshIcon } from '@/components/shell/icons'
 import { Badge, Button, ChainLogo, ChainStack, Callout, TokenLogo } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { formatMoney, formatMoneyFlat, formatShare } from '@/lib/format'
-import { ACCOUNT_CHAIN_MARK, isTokenSymbol } from '@/lib/logos'
-import { portfolioFailure, portfolioView, readAgo, shareBar, type PortfolioRow } from '@/lib/portfolio'
+import { ACCOUNT_CHAIN_MARK, isChainId, isTokenSymbol, type ChainId } from '@/lib/logos'
+import { portfolioFailure, portfolioView, readAgo, shareBar, spread, type PortfolioRow } from '@/lib/portfolio'
 import { useNow, usePortfolio } from '@/lib/use-portfolio'
 
 /** The chain chips, by short name. */
 const CHAIN_NAMES: Record<AccountChain, string> = { near: 'NEAR', evm: 'EVM', solana: 'Solana', bitcoin: 'Bitcoin', tron: 'Tron', sui: 'Sui', aptos: 'Aptos' }
 
-/** Chains whose balances Ink reads so far. */
-const READ: readonly AccountChain[] = ['near']
+/** Accounts Zerion reads, with the person's own key. */
+const ZERION_GROUPS: readonly AccountChain[] = ['evm', 'solana', 'tron']
 
-const NOT_READ = ACCOUNT_CHAINS.filter((chain) => !READ.includes(chain))
+/** Accounts Ink doesn't read at all yet. */
+const NEVER_READ: readonly AccountChain[] = ['bitcoin', 'sui', 'aptos']
+
+/** Zerion's names for chains that have a mark of their own here. */
+const NETWORK_MARKS: Record<string, ChainId> = { 'binance-smart-chain': 'bsc' }
+
+const markOf = (network: string): ChainId | null => NETWORK_MARKS[network] ?? (isChainId(network) ? network : null)
+
+const ZERION_PROBLEMS: Record<Exclude<ZerionState, 'ok' | 'off'>, string> = {
+  'bad-key': 'Zerion turned down your API key, so EVM, Solana and Tron are missing. Change it in Settings.',
+  'rate-limited': 'Your Zerion key has used up its limit for now, so EVM, Solana and Tron are missing.',
+  unavailable: 'Zerion couldn’t be reached, so EVM, Solana and Tron are missing.',
+}
+
+const GROUP_NAMES: Record<HoldingGroup, string> = { near: 'NEAR', evm: 'EVM', solana: 'Solana', tron: 'Tron' }
 
 const COLUMNS = 'grid-cols-[minmax(170px,2fr)_minmax(104px,1.2fr)_minmax(88px,1fr)_minmax(84px,.8fr)_auto]'
 
 type Filter = 'all' | AccountChain
 
-/** A token's mark: its own for the few Ink has, otherwise its letters. Never NEAR's mark on a token that isn't NEAR. */
+/** A token's mark, with its chain's as a badge: its own for the few Ink has, otherwise its letters. Never a chain's mark standing in for a token. */
 function RowLogo({ row, size = 'md' }: { row: PortfolioRow; size?: 'sm' | 'md' }) {
-  return <TokenLogo symbol={row.symbol} chain={isTokenSymbol(row.symbol) ? 'near' : null} size={size} />
+  return <TokenLogo symbol={row.symbol} chain={isTokenSymbol(row.symbol) ? markOf(row.network) : null} size={size} />
 }
 
 function Money({ value }: { value: number | null }) {
@@ -36,7 +50,7 @@ function Money({ value }: { value: number | null }) {
 }
 
 function Row({ row, onAsk, onReceive, muted = false }: { row: PortfolioRow; onAsk: (text: string) => void; onReceive: () => void; muted?: boolean }) {
-  const name = row.id === 'near-staked' ? 'staked NEAR' : row.symbol
+  const name = row.id === 'near-staked' ? 'staked NEAR' : `${row.symbol} on ${row.networkName}`
   return (
     <div className={cn('grid items-center gap-2.5 border-b border-[var(--ot-border)] px-4 py-[11px] last:border-b-0', COLUMNS)}>
       <span className="flex min-w-0 items-center gap-2.5">
@@ -102,7 +116,7 @@ function Total({ portfolio, rows }: { portfolio: Portfolio; rows: PortfolioRow[]
         ) : (
           <span className="font-mono text-[40px] font-bold tracking-[-0.03em] text-[var(--ot-text-3)]">$—</span>
         )}
-        <span className="text-[12.5px] text-[var(--ot-text-3)]">{money ? 'On NEAR so far · one recovery phrase' : 'Prices couldn’t be read, so there’s no total'}</span>
+        <span className="text-[12.5px] text-[var(--ot-text-3)]">{money ? `${spread(rows)} · one recovery phrase` : 'Prices couldn’t be read, so there’s no total'}</span>
       </div>
       {bar.length > 0 ? (
         <>
@@ -136,6 +150,8 @@ function Gaps({ portfolio, stale }: { portfolio: Portfolio; stale: boolean }) {
     ...(portfolio.gaps.includes('prices') ? ['Prices couldn’t be read, so there are no dollar values.'] : []),
     ...(portfolio.gaps.includes('reviews') ? ['Some tokens couldn’t be checked, so they aren’t counted.'] : []),
     ...(portfolio.near.stakingComplete ? [] : ['Some staking pools couldn’t be read, so staked NEAR may be higher.']),
+    ...(portfolio.zerion !== 'ok' && portfolio.zerion !== 'off' ? [ZERION_PROBLEMS[portfolio.zerion]] : []),
+    ...(portfolio.unread.length > 0 ? [`Zerion couldn’t read your ${portfolio.unread.map((group) => GROUP_NAMES[group]).join(' or ')} address.`] : []),
   ]
   if (lines.length === 0) return null
   return (
@@ -150,6 +166,8 @@ export interface PortfolioViewProps {
   onAsk: (text: string) => void
   /** Opens Receive, on a chain when one is given. */
   onReceive: (chain?: AccountChain) => void
+  /** Opens Settings on Wallet, where the Zerion key goes. */
+  onSettings: () => void
 }
 
 /**
@@ -157,12 +175,18 @@ export interface PortfolioViewProps {
  * far: native, staked and every token with a price. Tokens nobody vouches for are
  * shown apart and never counted; the rest are only counted.
  */
-export function PortfolioView({ onAsk, onReceive }: PortfolioViewProps) {
+export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewProps) {
   const { result, reading, stale, refresh } = usePortfolio()
   const now = useNow()
   const [filter, setFilter] = useState<Filter>('all')
   const view = result?.ok ? portfolioView(result) : null
-  const showRows = filter === 'all' || filter === 'near'
+  const zerion = result?.ok ? result.zerion : 'off'
+  const read = (chain: AccountChain) => chain === 'near' || (ZERION_GROUPS.includes(chain) && zerion === 'ok' && result?.ok === true && !result.unread.includes(chain as HoldingGroup))
+  const inFilter = (row: PortfolioRow) => filter === 'all' || row.group === filter
+  const rows = view?.rows.filter(inFilter) ?? []
+  const unreviewed = view?.unreviewed.filter(inFilter) ?? []
+  const showRows = rows.length > 0 || unreviewed.length > 0
+  const notRead = ACCOUNT_CHAINS.filter((chain) => !read(chain))
 
   return (
     <main className="ink-panel" id="main">
@@ -243,40 +267,78 @@ export function PortfolioView({ onAsk, onReceive }: PortfolioViewProps) {
                       <span className="text-right">Share</span>
                       <span className="w-[150px]" />
                     </div>
-                    {showRows ? view.rows.map((row) => <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive('near')} />) : null}
-                    {showRows && view.unreviewed.length > 0 ? (
+                    {rows.map((row) => (
+                      <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive(row.group)} />
+                    ))}
+                    {unreviewed.length > 0 ? (
                       <details className="border-t border-[var(--ot-border)]">
                         <summary className="flex cursor-pointer items-center gap-2 bg-[var(--ot-surface-2)] px-4 py-2.5 text-[12.5px] text-[var(--ot-text-2)]">
                           <Badge tone="warn">Unverified</Badge>
-                          {view.unreviewed.length === 1 ? '1 token' : `${view.unreviewed.length} tokens`} nobody vouches for. Not counted: anyone can make a token and a price for it.
+                          {unreviewed.length === 1 ? '1 token' : `${unreviewed.length} tokens`} nobody vouches for. Not counted: anyone can make a token and a price for it.
                         </summary>
-                        {view.unreviewed.map((row) => (
-                          <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive('near')} muted />
+                        {unreviewed.map((row) => (
+                          <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive(row.group)} muted />
                         ))}
                       </details>
                     ) : null}
-                    {showRows && view.unpriced > 0 ? (
+                    {filter === 'all' && view.unpriced > 0 ? (
                       <p className="m-0 border-t border-[var(--ot-border)] px-4 py-2.5 text-[12px] text-[var(--ot-text-3)]">
                         {view.unpriced === 1 ? '1 more token has' : `${view.unpriced} more tokens have`} no price or {view.unpriced === 1 ? 'is' : 'are'} marked as spam, so{' '}
                         {view.unpriced === 1 ? 'it isn’t' : 'they aren’t'} shown.
                       </p>
                     ) : null}
-                    {filter === 'all' ? (
+                    {filter === 'all' && notRead.length > 0 ? (
                       <div className="flex items-center gap-3 border-t border-[var(--ot-border)] bg-[var(--ot-surface-2)] px-4 py-3">
-                        <ChainStack chains={NOT_READ.map((chain) => ACCOUNT_CHAIN_MARK[chain])} />
-                        <span className="flex-1 text-[12.5px] text-[var(--ot-text-3)]">Ink reads NEAR so far. EVM, Solana, Bitcoin and the rest come next.</span>
-                        <Button size="sm" variant="secondary" onClick={() => onReceive()}>
-                          Your addresses
-                        </Button>
+                        <ChainStack chains={notRead.map((chain) => ACCOUNT_CHAIN_MARK[chain])} />
+                        <span className="flex-1 text-[12.5px] text-[var(--ot-text-3)]">
+                          {zerion === 'off'
+                            ? 'Add your own Zerion key for EVM, Solana and Tron. Bitcoin, Sui and Aptos come later.'
+                            : `Nothing read on ${notRead.map((chain) => CHAIN_NAMES[chain]).join(', ')}.`}
+                        </span>
+                        {zerion === 'off' ? (
+                          <Button size="sm" variant="secondary" onClick={onSettings}>
+                            Add a key
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="secondary" onClick={() => onReceive()}>
+                            Your addresses
+                          </Button>
+                        )}
                       </div>
                     ) : null}
-                    {filter !== 'all' && !READ.includes(filter) ? (
+                    {filter !== 'all' && !showRows ? (
                       <div className="flex flex-col items-center gap-2.5 px-4 py-7 text-center">
                         <Otto pose="base" size={80} animated label="Otto" />
-                        <b>Ink doesn’t read {CHAIN_NAMES[filter]} balances yet</b>
-                        <Button variant="primary" onClick={() => onReceive(filter)}>
-                          Get your {CHAIN_NAMES[filter]} address
-                        </Button>
+                        {NEVER_READ.includes(filter) ? (
+                          <>
+                            <b>Ink doesn’t read {CHAIN_NAMES[filter]} balances yet</b>
+                            <Button variant="primary" onClick={() => onReceive(filter)}>
+                              Get your {CHAIN_NAMES[filter]} address
+                            </Button>
+                          </>
+                        ) : !read(filter) && zerion === 'off' ? (
+                          <>
+                            <b>{CHAIN_NAMES[filter]} balances need your own Zerion key</b>
+                            <span className="max-w-[46ch] text-[12.5px] text-[var(--ot-text-3)]">It’s free from dashboard.zerion.io. Ink keeps it sealed on this computer.</span>
+                            <Button variant="primary" onClick={onSettings}>
+                              Add a Zerion key
+                            </Button>
+                          </>
+                        ) : !read(filter) ? (
+                          <>
+                            <b>{CHAIN_NAMES[filter]} couldn’t be read this time</b>
+                            <Button variant="secondary" onClick={refresh} disabled={reading}>
+                              Try again
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <b>Nothing on {CHAIN_NAMES[filter]} yet</b>
+                            <Button variant="primary" onClick={() => onReceive(filter)}>
+                              Get your {CHAIN_NAMES[filter]} address
+                            </Button>
+                          </>
+                        )}
                       </div>
                     ) : null}
                   </div>
@@ -285,7 +347,8 @@ export function PortfolioView({ onAsk, onReceive }: PortfolioViewProps) {
 
               <p className="m-0 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ot-text-3)]">
                 {reading ? <Ring size={12} label="Reading balances" /> : null}
-                {reading ? 'Reading again · ' : ''}Balances read {readAgo(result.readAt, now)} from NEAR’s RPC and FastNEAR, prices and reviews from Intear. They see your NEAR address.
+                {reading ? 'Reading again · ' : ''}Balances read {readAgo(result.readAt, now)}: NEAR from NEAR’s RPC and FastNEAR, with prices and reviews from Intear
+                {zerion === 'off' ? '' : '; EVM, Solana and Tron from Zerion'}. They see the addresses they read.
               </p>
             </>
           ) : null}

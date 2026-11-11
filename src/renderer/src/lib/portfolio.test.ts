@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Portfolio, TokenHolding } from '../../../shared/portfolio'
-import { portfolioFailure, portfolioView, readAgo, shareBar, shortAmount } from './portfolio'
+import { portfolioFailure, portfolioView, readAgo, shareBar, shortAmount, spread } from './portfolio'
 
 const token = (symbol: string, amount: string, usdValue: number, trust: TokenHolding['trust'] = 'reviewed', countedUsd = trust === 'reviewed' ? usdValue : 0): TokenHolding => ({
   id: `near:${symbol.toLowerCase()}.near`,
@@ -69,6 +69,16 @@ describe('the Portfolio table', () => {
     const colors = Object.fromEntries(portfolioView(PORTFOLIO).rows.map((row) => [row.id, row.color]))
     expect(colors.near).toBe('#00EC97')
     expect(colors['near:usdc.near']).toBe('#2775CA')
+  })
+})
+
+describe('how far a portfolio spreads', () => {
+  it('names one chain, or counts several', () => {
+    const view = portfolioView(PORTFOLIO)
+    expect(spread(view.rows)).toBe('On NEAR so far')
+    const eth: TokenHolding = { ...token('ETH', '0.5', 1000), id: 'base:native', group: 'evm', network: 'base', networkName: 'Base', contract: null }
+    const wider = portfolioView({ ...PORTFOLIO, tokens: [...PORTFOLIO.tokens, eth] })
+    expect(spread(wider.rows)).toBe('Across 2 chains')
   })
 })
 

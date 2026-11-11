@@ -10,6 +10,8 @@ export interface PortfolioRow {
   group: HoldingGroup
   /** The chain it's on: `near`, `base`. */
   network: string
+  /** As a person reads it: "NEAR", "Base". */
+  networkName: string
   symbol: string
   /** What it is and where: "Native on NEAR". */
   label: string
@@ -68,12 +70,13 @@ export function portfolioView(portfolio: Portfolio): PortfolioView {
 
   const nearRow = (id: string, symbol: string, label: string, amount: string, color: string): PortfolioRow => {
     const usd = nearUsd === null ? null : Number(amount) * nearUsd
-    return { id, group: 'near', network: 'near', symbol, label, amount: shortAmount(amount), exact: amount, usd, counted: usd ?? 0, share: share(usd ?? 0), color, thin: false, contract: null }
+    return { id, group: 'near', network: 'near', networkName: 'NEAR', symbol, label, amount: shortAmount(amount), exact: amount, usd, counted: usd ?? 0, share: share(usd ?? 0), color, thin: false, contract: null }
   }
   const tokenRow = (token: TokenHolding): PortfolioRow => ({
     id: token.id,
     group: token.group,
     network: token.network,
+    networkName: token.networkName,
     symbol: token.symbol,
     label: `${token.contract ? 'Token' : 'Native'} on ${token.networkName}`,
     amount: shortAmount(token.amount),
@@ -102,6 +105,12 @@ export function shareBar(rows: readonly PortfolioRow[], max = 5): { label: strin
   const rest = rows.reduce((total, row) => total + (row.share ?? 0), 0) - shown.reduce((total, row) => total + (row.share ?? 0), 0)
   const bar = shown.map((row) => ({ label: row.id === 'near-staked' ? 'NEAR staked' : row.symbol, share: row.share ?? 0, color: row.color }))
   return rest >= 0.005 ? [...bar, { label: 'Other', share: rest, color: 'var(--ot-text-3)' }] : bar
+}
+
+/** How many chains the counted rows are spread over: "On NEAR so far", "Across 3 chains". */
+export function spread(rows: readonly PortfolioRow[]): string {
+  const chains = new Set(rows.filter((row) => row.counted > 0).map((row) => row.network))
+  return chains.size > 1 ? `Across ${chains.size} chains` : chains.size === 1 && !chains.has('near') ? `On ${rows.find((row) => row.counted > 0)?.networkName}` : 'On NEAR so far'
 }
 
 /** "just now", "40 seconds ago", "3 minutes ago". */

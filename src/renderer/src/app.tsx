@@ -206,7 +206,7 @@ export function App() {
       {page === 'receive' ? (
         <ReceiveView key={receiveChain ?? 'any'} startChain={receiveChain} />
       ) : page === 'portfolio' ? (
-        <PortfolioView onAsk={askOnHome} onReceive={(chain) => openReceive(chain)} />
+        <PortfolioView onAsk={askOnHome} onReceive={(chain) => openReceive(chain)} onSettings={() => openSettings('wallet')} />
       ) : page ? (
         <PageView page={page} />
       ) : current ? (

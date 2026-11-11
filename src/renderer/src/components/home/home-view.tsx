@@ -9,7 +9,7 @@ import { Badge, ChainLogo, TokenLogo } from '@/components/ui'
 import { planHeadline, type Chat } from '@/lib/chats'
 import { formatMoney } from '@/lib/format'
 import { isTokenSymbol } from '@/lib/logos'
-import { portfolioView } from '@/lib/portfolio'
+import { portfolioView, spread } from '@/lib/portfolio'
 import { usePortfolio } from '@/lib/use-portfolio'
 import type { ChainId } from '@/lib/logos'
 import { TOOL_COPY } from '@/lib/tool-copy'
@@ -65,7 +65,9 @@ function PortfolioGlance({ onOpen }: { onOpen: () => void }) {
             )}
           </span>
           <span className="text-[12px] leading-[1.45] text-[var(--ot-text-2)]">
-            {money ? `${view.rows.length === 1 ? '1 asset' : `${view.rows.length} assets`} on NEAR. Other chains come next.` : 'Prices couldn’t be read, so there’s no total.'}
+            {money
+              ? `${view.rows.length === 1 ? '1 asset' : `${view.rows.length} assets`}, ${spread(view.rows).toLowerCase()}.${result?.ok && result.zerion === 'off' ? ' Add a Zerion key in Settings for other chains.' : ''}`
+              : 'Prices couldn’t be read, so there’s no total.'}
           </span>
         </>
       )}

@@ -393,6 +393,12 @@ function registerIpc(): void {
     return getVault().accounts()
   })
 
+  ipcMain.handle(IPC.portfolio, (event, options: unknown) => {
+    assertAppFrame(event)
+    const fresh = typeof options === 'object' && options !== null && (options as { fresh?: unknown }).fresh === true
+    return ownPortfolio({ fresh })
+  })
+
   ipcMain.handle(IPC.copyAddress, (event, chain: unknown) => {
     assertAppFrame(event)
     return copyAddress(chain, {

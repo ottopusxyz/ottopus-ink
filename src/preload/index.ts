@@ -44,6 +44,7 @@ const bridge: InkBridge = {
   lockVault: () => ipcRenderer.invoke(IPC.lockVault),
   vaultAccounts: () => ipcRenderer.invoke(IPC.vaultAccounts),
   copyAddress: (chain) => ipcRenderer.invoke(IPC.copyAddress, chain),
+  portfolio: (options) => ipcRenderer.invoke(IPC.portfolio, { fresh: options?.fresh === true }),
   onVaultStatus: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, status: VaultStatus) => listener(status)
     ipcRenderer.on(IPC.vaultStatusChanged, handler)

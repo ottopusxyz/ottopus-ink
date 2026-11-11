@@ -1,5 +1,6 @@
 import type { Account, AccountChain } from './accounts'
 import type { PlanStatus } from './plan'
+import type { PortfolioResult } from './portfolio'
 import type { BackupAnswer, NewPhrase, VaultRequest, VaultResult, VaultStatus, VaultWordCount } from './vault'
 
 /**
@@ -34,6 +35,7 @@ export const IPC = {
   lockVault: 'vault:lock',
   vaultAccounts: 'vault:accounts',
   copyAddress: 'vault:copy-address',
+  portfolio: 'wallet:portfolio',
   /** Main to renderer: the vault's status, sent on every change. */
   vaultStatusChanged: 'vault:status-changed',
 } as const
@@ -211,6 +213,11 @@ export interface InkBridge {
   vaultAccounts(): Promise<VaultResult<{ accounts: Account[] }>>
   /** Main copies that chain's address as the signer gave it, not text from the page, and only while Ink's window is in front. */
   copyAddress(chain: AccountChain): Promise<VaultResult>
+  /**
+   * What the wallet holds, with prices, while unlocked. A read from the last minute is
+   * reused unless `fresh` asks Ink to read again. Public figures only: no key, no words.
+   */
+  portfolio(options?: { fresh?: boolean }): Promise<PortfolioResult>
   /** Calls listener whenever the vault's status changes; returns an unsubscribe. */
   onVaultStatus(listener: (status: VaultStatus) => void): () => void
 }

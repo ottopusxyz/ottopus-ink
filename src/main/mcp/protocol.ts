@@ -228,7 +228,8 @@ async function portfolioAnswer(read: McpHandlers['portfolio'], args: unknown): P
   const pools = near.pools.map((pool) => `${pool.poolId}: ${pool.staked} NEAR${pool.unstaked !== '0' ? `, plus ${pool.unstaked} NEAR unstaked and waiting to be withdrawn` : ''}`)
   const reviewed = tokens.filter((token) => token.trust === 'reviewed')
   const unreviewed = tokens.filter((token) => token.trust === 'unreviewed')
-  const tokenLine = (token: TokenHolding) => `- ${token.amount} ${token.symbol} (${dollars(token.usdValue)}), contract ${token.contract}`
+  const thin = (token: TokenHolding) => (token.trust === 'reviewed' && token.countedUsd < token.usdValue * 0.95 ? `, counted as ${dollars(token.countedUsd)} since its market is too thin to sell this much near the price` : '')
+  const tokenLine = (token: TokenHolding) => `- ${token.amount} ${token.symbol} (${dollars(token.usdValue)}${thin(token)}), contract ${token.contract}`
   const listed = (list: TokenHolding[]) => [...list.slice(0, MAX_TOKEN_LINES).map(tokenLine), ...(list.length > MAX_TOKEN_LINES ? [`- and ${list.length - MAX_TOKEN_LINES} more`] : [])]
   const lines = [
     `NEAR account ${near.accountId}:`,

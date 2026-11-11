@@ -28,6 +28,20 @@ export interface PortfolioReader {
   near(accountId: string, options?: { fresh?: boolean }): Promise<Portfolio>
 }
 
+/**
+ * What selling `value` dollars of a token into pools holding `liquidity` dollars would
+ * roughly fetch. In a constant-product pool with Q dollars of the other side, selling V
+ * at the price returns V·Q / (Q + V). Under 5% short of the price, it counts at the price,
+ * so an ordinary holding adds up to exactly what its row says. Without a liquidity figure
+ * it counts at the price, as most reviewed tokens are deep.
+ */
+export function saleValue(value: number, liquidity: number | null): number {
+  if (liquidity === null) return value
+  const other = liquidity / 2
+  const fetched = (value * other) / (other + value)
+  return fetched >= value * 0.95 ? value : fetched
+}
+
 const VOUCHED = new Set<NearTokenReview['reputation']>(['reputable', 'not-fake'])
 
 /** Everything the account holds in NEAR, in yoctoNEAR: what it can send, what storage holds, and every stake, waiting withdrawals included. */
@@ -81,6 +95,7 @@ export function createPortfolioReader({ rpc, fetch = globalThis.fetch, now = Dat
         unpriced++
         continue
       }
+      const vouched = review !== null && VOUCHED.has(review.reputation)
       tokens.push({
         chain: 'near',
         contract: token.contract,
@@ -89,12 +104,13 @@ export function createPortfolioReader({ rpc, fetch = globalThis.fetch, now = Dat
         amount: formatUnits(token.raw, price.decimals),
         price: { usd: price.usd, change24h: review?.change24h ?? null },
         usdValue: value,
-        trust: review && VOUCHED.has(review.reputation) ? 'reviewed' : 'unreviewed',
+        countedUsd: vouched ? saleValue(value, review.liquidityUsd) : 0,
+        trust: vouched ? 'reviewed' : 'unreviewed',
       })
     }
 
     const nearPrice: Price | null = nearUsd === null ? null : { usd: nearUsd, change24h: nearReview?.change24h ?? null }
-    const counted = tokens.filter((token) => token.trust === 'reviewed').reduce((sum, token) => sum + token.usdValue, 0)
+    const counted = tokens.reduce((sum, token) => sum + token.countedUsd, 0)
     return {
       near: {
         accountId,

@@ -43,7 +43,13 @@ export interface TokenHolding {
   /** Exact, in whole tokens. */
   amount: string
   price: Price
+  /** At the market price. */
   usdValue: number
+  /**
+   * What it adds to the total. Nothing for an unreviewed token. For a reviewed one, the
+   * market value, or less when its market is too thin to sell this much near the price.
+   */
+  countedUsd: number
   trust: 'reviewed' | 'unreviewed'
 }
 

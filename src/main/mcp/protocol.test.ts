@@ -153,13 +153,13 @@ describe('handleMcpMessage', () => {
     })
 
     it('puts dollars on NEAR, lists each token, and keeps unvouched ones apart from the total', async () => {
-      const token = (symbol: string, amount: string, usdValue: number, trust: 'reviewed' | 'unreviewed') => ({ chain: 'near' as const, contract: `${symbol.toLowerCase()}.near`, symbol, decimals: 6, amount, price: { usd: 1, change24h: null }, usdValue, trust })
+      const token = (symbol: string, amount: string, usdValue: number, trust: 'reviewed' | 'unreviewed', countedUsd = trust === 'reviewed' ? usdValue : 0) => ({ chain: 'near' as const, contract: `${symbol.toLowerCase()}.near`, symbol, decimals: 6, amount, price: { usd: 1, change24h: null }, usdValue, countedUsd, trust })
       const answer = await portfolioOf(async () => ({
         ...read(HOLDING),
         nearPrice: { usd: 4, change24h: 0.0512 },
-        tokens: [token('USDC', '25', 25, 'reviewed'), token('MEME', '4000', 0.004, 'unreviewed')],
+        tokens: [token('JAMBO', '200', 400, 'reviewed', 200), token('USDC', '25', 25, 'reviewed'), token('MEME', '4000', 0.004, 'unreviewed')],
         unpriced: 3,
-        totalUsd: 64.9672,
+        totalUsd: 264.9672,
       }))
       expect(answer.content[0]!.text).toBe(
         [
@@ -169,18 +169,19 @@ describe('handleMcpMessage', () => {
           '- Held for storage: 0.00182 NEAR (under $0.01)',
           'NEAR is $4.00, up 5.1% today.',
           'Tokens on NEAR:',
+          '- 200 JAMBO ($400.00, counted as $200.00 since its market is too thin to sell this much near the price), contract jambo.near',
           '- 25 USDC ($25.00), contract usdc.near',
           'Tokens the price service doesn’t vouch for. They aren’t counted, and may be worth nothing or be fakes of real tokens:',
           '- 4000 MEME (under $0.01), contract meme.near',
           '3 more tokens have no price or are marked as spam, so they aren’t listed.',
-          'Total: $64.97, counting NEAR (staked and storage included) and the tokens on NEAR above. Prices from Intear.',
+          'Total: $264.97, counting NEAR (staked and storage included) and the tokens on NEAR above. Prices from Intear.',
           'Other chains’ balances aren’t read yet.',
         ].join('\n'),
       )
     })
 
     it('says what couldn’t be read, and lists at most twenty tokens', async () => {
-      const tokens = Array.from({ length: 23 }, (_, i) => ({ chain: 'near' as const, contract: `t${i}.near`, symbol: `T${i}`, decimals: 0, amount: '1', price: { usd: 1, change24h: null }, usdValue: 1, trust: 'reviewed' as const }))
+      const tokens = Array.from({ length: 23 }, (_, i) => ({ chain: 'near' as const, contract: `t${i}.near`, symbol: `T${i}`, decimals: 0, amount: '1', price: { usd: 1, change24h: null }, usdValue: 1, countedUsd: 1, trust: 'reviewed' as const }))
       const { content } = await portfolioOf(async () => ({ ...read(HOLDING), tokens, unpriced: 1, gaps: ['tokens', 'prices', 'reviews'] as const }))
       const text = content[0]!.text
       expect(text).toContain('- 1 T19 ')

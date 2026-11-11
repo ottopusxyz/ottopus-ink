@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NearAccountView, NearRpc } from '../near/rpc'
-import { createPortfolioReader, MAX_REVIEWS, PORTFOLIO_TTL_MS } from './reader'
+import { createPortfolioReader, MAX_REVIEWS, PORTFOLIO_TTL_MS, saleValue } from './reader'
 
 const ID = 'alice.near'
 const NEAR = 10n ** 24n
@@ -19,6 +19,7 @@ interface World {
   tokens?: { contract_id: string; balance: string }[] | 'down'
   prices?: Record<string, { price: string; symbol: string; decimal: number }> | 'down'
   reviews?: Record<string, string | 'down'>
+  liquidity?: Record<string, number>
 }
 
 /** The services the reader asks, by address, with a count of what was asked. */
@@ -34,7 +35,7 @@ function fakeFetch(world: World) {
     if (token) {
       const reputation = world.reviews?.[token] ?? 'Unknown'
       if (reputation === 'down') return new Response('', { status: 500 })
-      return json({ account_id: token, reputation, price_usd_raw: '1.1', price_usd_raw_24h_ago: '1' })
+      return json({ account_id: token, reputation, price_usd_raw: '1.1', price_usd_raw_24h_ago: '1', liquidity_usd: world.liquidity?.[token] })
     }
     throw new Error(`unexpected ${url}`)
   }) as unknown as typeof globalThis.fetch
@@ -48,6 +49,18 @@ const PRICES = {
   'meme.near': { price: '0.5', symbol: 'MEME', decimal: 18 },
   'scam.near': { price: '100', symbol: 'SCAM', decimal: 18 },
 }
+
+describe('what a token would fetch', () => {
+  it('is the market value on a deep market, or with no liquidity figure', () => {
+    expect(saleValue(1000, 10_000_000)).toBe(1000)
+    expect(saleValue(1000, null)).toBe(1000)
+  })
+
+  it('falls short on a thin one, and never past the other side of the pool', () => {
+    expect(saleValue(39_000, 81_000)).toBeCloseTo((39_000 * 40_500) / 79_500)
+    expect(saleValue(1e12, 1000)).toBeLessThan(500)
+  })
+})
 
 describe('the portfolio on NEAR', () => {
   it('values NEAR and each held token, and counts only the vouched-for ones in the total', async () => {
@@ -102,6 +115,25 @@ describe('the portfolio on NEAR', () => {
     expect(looked).toHaveLength(MAX_REVIEWS)
     expect(looked).not.toContain('https://prices.intear.tech/token?token_id=t0.near')
     expect(portfolio.tokens).toHaveLength(MAX_REVIEWS + 10)
+  })
+
+  it('counts a reviewed token on a thin market at what selling it would fetch', async () => {
+    const { fetch } = fakeFetch({
+      tokens: [
+        { contract_id: 'usdc.near', balance: '100000000' },
+        { contract_id: 'meme.near', balance: '80000000000000000000' },
+      ],
+      prices: PRICES,
+      reviews: { 'usdc.near': 'Reputable', 'meme.near': 'NotFake' },
+      liquidity: { 'usdc.near': 1_000_000, 'meme.near': 80 },
+    })
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).near(ID)
+    expect(portfolio.tokens.map(({ symbol, usdValue, countedUsd }) => ({ symbol, usdValue, countedUsd }))).toEqual([
+      { symbol: 'USDC', usdValue: 100, countedUsd: 100 },
+      // $40 of MEME into a pool with $40 on the other side fetches $20.
+      { symbol: 'MEME', usdValue: 40, countedUsd: 20 },
+    ])
+    expect(portfolio.totalUsd).toBe(40 + 100 + 20)
   })
 
   it('throws when NEAR itself can’t be read', async () => {

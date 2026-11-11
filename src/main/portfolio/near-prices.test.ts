@@ -51,18 +51,19 @@ describe('NEAR token prices', () => {
 
 describe('a NEAR token’s review', () => {
   it('reads the reputation and the day’s change', async () => {
-    const { fetch, urls } = answer({ account_id: 'wrap.near', reputation: 'Reputable', price_usd_raw: '0.0000000000000000036', price_usd_raw_24h_ago: '0.0000000000000000030' })
+    const { fetch, urls } = answer({ account_id: 'wrap.near', reputation: 'Reputable', price_usd_raw: '0.0000000000000000036', price_usd_raw_24h_ago: '0.0000000000000000030', liquidity_usd: 660721.87 })
     const review = await nearTokenReview('wrap.near', { fetch })
     expect(review?.reputation).toBe('reputable')
     expect(review?.change24h).toBeCloseTo(0.2)
+    expect(review?.liquidityUsd).toBe(660721.87)
     expect(urls).toEqual(['https://prices.intear.tech/token?token_id=wrap.near'])
   })
 
   it('reads anything Ink doesn’t know as unknown, and has no change without both prices', async () => {
-    expect(await nearTokenReview('a.near', answer({ account_id: 'a.near', reputation: 'NotFake' }))).toEqual({ reputation: 'not-fake', change24h: null })
-    expect(await nearTokenReview('a.near', answer({ account_id: 'a.near', reputation: 'Spam' }))).toEqual({ reputation: 'spam', change24h: null })
-    expect(await nearTokenReview('a.near', answer({ account_id: 'a.near', reputation: 'Trusted!' }))).toEqual({ reputation: 'unknown', change24h: null })
-    expect(await nearTokenReview('a.near', answer({ account_id: 'a.near' }))).toEqual({ reputation: 'unknown', change24h: null })
+    expect(await nearTokenReview('a.near', answer({ account_id: 'a.near', reputation: 'NotFake' }))).toEqual({ reputation: 'not-fake', change24h: null, liquidityUsd: null })
+    expect(await nearTokenReview('a.near', answer({ account_id: 'a.near', reputation: 'Spam' }))).toEqual({ reputation: 'spam', change24h: null, liquidityUsd: null })
+    expect(await nearTokenReview('a.near', answer({ account_id: 'a.near', reputation: 'Trusted!' }))).toEqual({ reputation: 'unknown', change24h: null, liquidityUsd: null })
+    expect(await nearTokenReview('a.near', answer({ account_id: 'a.near' }))).toEqual({ reputation: 'unknown', change24h: null, liquidityUsd: null })
   })
 
   it('is null for an answer about another token, a failure, or nothing useful', async () => {

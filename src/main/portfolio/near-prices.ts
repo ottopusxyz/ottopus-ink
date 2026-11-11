@@ -27,6 +27,8 @@ export interface NearTokenReview {
   reputation: TokenReputation
   /** How the price moved over the last day, as a fraction: 0.05 is up 5%. Null when Intear has no price from a day ago. */
   change24h: number | null
+  /** Dollars in the token's pools, both sides together, when Intear has it. */
+  liquidityUsd: number | null
 }
 
 type Fetch = typeof globalThis.fetch
@@ -82,5 +84,5 @@ export async function nearTokenReview(contract: string, { fetch = globalThis.fet
   // Intear gives the day-old price only in its raw unit, so the change is taken between two raw prices.
   const now = positive(body.price_usd_raw)
   const before = positive(body.price_usd_raw_24h_ago)
-  return { reputation, change24h: now !== null && before !== null ? now / before - 1 : null }
+  return { reputation, change24h: now !== null && before !== null ? now / before - 1 : null, liquidityUsd: positive(body.liquidity_usd) }
 }

@@ -172,7 +172,7 @@ describe('the portfolio on NEAR', () => {
         TrOn: 400,
       },
     })
-    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionKey: () => 'zk_dev_test_not_a_real_key_0001' })
+    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionAccess: () => ({ via: 'own-key', key: 'zk_dev_test_not_a_real_key_0001' }) })
     const portfolio = await reader.read({ near: ID, evm: '0xevm', solana: 'SoLaNa', tron: 'TrOn' })
 
     expect(portfolio.tokens.map(({ id, group, networkName, symbol, amount, countedUsd, trust }) => ({ id, group, networkName, symbol, amount, countedUsd, trust }))).toEqual([
@@ -192,18 +192,18 @@ describe('the portfolio on NEAR', () => {
     const noKey = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ prices: PRICES }).fetch })
     expect(await noKey.read(accounts)).toMatchObject({ zerion: 'off', unread: [], totalUsd: 40 })
 
-    const refused = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ prices: PRICES, zerion: { '0xevm': 401 } }).fetch, zerionKey: () => 'zk_dev_test_not_a_real_key_0001' })
+    const refused = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ prices: PRICES, zerion: { '0xevm': 401 } }).fetch, zerionAccess: () => ({ via: 'own-key', key: 'zk_dev_test_not_a_real_key_0001' }) })
     expect(await refused.read(accounts)).toMatchObject({ zerion: 'bad-key', unread: [], totalUsd: 40 })
   })
 
   it('reads again once a key is added, and forgets every read when asked', async () => {
     let key: string | null = null
     const { fetch, asked } = fakeFetch({ prices: PRICES, zerion: { '0xevm': [] } })
-    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionKey: () => key })
+    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionAccess: () => (key ? { via: 'own-key', key } : null) })
     const lists = () => asked.filter((url) => url.endsWith('/list-token-price')).length
     await reader.read({ near: ID, evm: '0xevm' })
     key = 'zk_dev_test_not_a_real_key_0001'
-    expect((await reader.read({ near: ID, evm: '0xevm' })).zerion).toBe('ok')
+    expect(await reader.read({ near: ID, evm: '0xevm' })).toMatchObject({ zerion: 'ok', zerionVia: 'own-key' })
     expect(lists()).toBe(2)
     reader.forget()
     await reader.read({ near: ID, evm: '0xevm' })
@@ -236,6 +236,21 @@ describe('the portfolio on NEAR', () => {
     expect(down).toMatchObject({ totalUsd: 40, gaps: ['intents'] })
     const unnamed = await createPortfolioReader({ rpc: fakeRpc(VIEW, { 'nep141:eth.omft.near': '1' }), fetch: fakeFetch({ prices: PRICES, oneClick: 'down' }).fetch }).read({ near: ID })
     expect(unnamed).toMatchObject({ unpriced: 0, gaps: ['intents'] })
+  })
+
+  it('reads through Ottopus’s service with only the install id, and the same answers', async () => {
+    const asked: { url: string; headers: Record<string, string> }[] = []
+    const base = fakeFetch({ prices: PRICES }).fetch
+    const fetch = (async (url: string, init: RequestInit) => {
+      if (!url.startsWith('https://service.example.test/')) return base(url, init)
+      asked.push({ url, headers: init.headers as Record<string, string> })
+      return new Response(JSON.stringify({ data: [], links: { next: null } }))
+    }) as unknown as typeof globalThis.fetch
+    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionAccess: () => ({ via: 'ottopus', url: 'https://service.example.test/v1/zerion', install: 'install_test_0123456789' }) })
+    expect(await reader.read({ near: ID, evm: '0xevm' })).toMatchObject({ zerion: 'ok', zerionVia: 'ottopus' })
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.url.startsWith('https://service.example.test/v1/zerion/wallets/0xevm/positions/')).toBe(true)
+    expect(asked[0]!.headers).toEqual({ 'x-ink-install': 'install_test_0123456789', accept: 'application/json' })
   })
 
   it('throws when NEAR itself can’t be read', async () => {

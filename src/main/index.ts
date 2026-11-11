@@ -20,7 +20,8 @@ import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { createPlanStore, type PlanView } from './plans/store'
 import { createPortfolioReader } from './portfolio/reader'
-import { checkZerionKey } from './portfolio/zerion'
+import { installId, INK_SERVICE_URL } from './portfolio/service'
+import { checkZerionKey, type ZerionAccess } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
 import { describeForReview } from './review/describe'
@@ -173,8 +174,22 @@ function getZerionKeys(): ZerionKeyStore {
   return zerionKeys
 }
 
+let install: string | null = null
+
+/**
+ * How Ink reaches Zerion: the person's own key when they set one, otherwise Ottopus's
+ * service when this build has one, otherwise not at all.
+ */
+function zerionAccess(): ZerionAccess | null {
+  const key = getZerionKeys().get()
+  if (key) return { via: 'own-key', key }
+  if (!INK_SERVICE_URL) return null
+  install ??= installId(join(app.getPath('userData'), 'install-id'))
+  return { via: 'ottopus', url: `${INK_SERVICE_URL}/v1/zerion`, install }
+}
+
 /** Reads what the wallet holds, and keeps it a minute so the screen and the agent don't each ask again. */
-const portfolioReader = createPortfolioReader({ rpc: nearRpc, zerionKey: () => getZerionKeys().get() })
+const portfolioReader = createPortfolioReader({ rpc: nearRpc, zerionAccess })
 
 /** What the wallet holds, for get_portfolio and the Portfolio screen. Public figures only, and only while unlocked, like the addresses. */
 const ownPortfolio = async ({ fresh = false }: { fresh?: boolean } = {}): Promise<PortfolioResult> => {
@@ -413,7 +428,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.zerionKeyStatus, (event): ZerionKeyStatus => {
     assertAppFrame(event)
     const keys = getZerionKeys()
-    return { set: keys.get() !== null, kept: keys.kept() }
+    return { set: keys.get() !== null, kept: keys.kept(), shared: INK_SERVICE_URL !== null }
   })
 
   ipcMain.handle(IPC.saveZerionKey, async (event, key: unknown) => {

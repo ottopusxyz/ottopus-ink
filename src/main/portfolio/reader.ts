@@ -6,7 +6,7 @@ import type { NearRpc } from '../near/rpc'
 import { nearPriceList, nearTokenReview, WRAPPED_NEAR, type NearTokenPrice, type NearTokenReview } from './near-prices'
 import { intentsBalances, intentsTokenList, type IntentsBalance, type IntentsToken } from './intents'
 import { nearTokenBalances, type NearTokenBalance } from './near-tokens'
-import { ZerionError, zerionHoldings, type ZerionHolding } from './zerion'
+import { ZerionError, zerionHoldings, zerionOptions, type ZerionAccess, type ZerionHolding } from './zerion'
 
 /** How long a read stands. Opening the screen again inside this shows the same figures. */
 export const PORTFOLIO_TTL_MS = 60_000
@@ -21,8 +21,8 @@ type Fetch = typeof globalThis.fetch
 
 export interface PortfolioReaderOptions {
   rpc: NearRpc
-  /** The person's Zerion key, read each time so a new one counts at once. Null without one. */
-  zerionKey?: () => string | null
+  /** How Ink reaches Zerion right now, read each time so a key added or removed counts at once. Null when it can't. */
+  zerionAccess?: () => ZerionAccess | null
   fetch?: Fetch
   now?: () => number
 }
@@ -122,7 +122,7 @@ function nearTotal(balance: NearBalance): bigint {
  * Each source can fail on its own. Without NEAR itself there is nothing to show, so that
  * throws; without the rest the portfolio says what is missing.
  */
-export function createPortfolioReader({ rpc, zerionKey = () => null, fetch = globalThis.fetch, now = Date.now }: PortfolioReaderOptions): PortfolioReader {
+export function createPortfolioReader({ rpc, zerionAccess = () => null, fetch = globalThis.fetch, now = Date.now }: PortfolioReaderOptions): PortfolioReader {
   const reads = new Map<string, { at: number; read: Promise<Portfolio> }>()
   const reviews = new Map<string, { at: number; review: NearTokenReview }>()
 
@@ -135,13 +135,13 @@ export function createPortfolioReader({ rpc, zerionKey = () => null, fetch = glo
   }
 
   /** Each account Zerion reads, side by side. One that fails says why; the rest still count. */
-  async function readZerion(accounts: PortfolioAccounts): Promise<{ state: ZerionState; holdings: ZerionHolding[]; unread: HoldingGroup[] }> {
-    const key = zerionKey()
-    if (!key) return { state: 'off', holdings: [], unread: [] }
+  async function readZerion(accounts: PortfolioAccounts, access: ZerionAccess | null): Promise<{ state: ZerionState; holdings: ZerionHolding[]; unread: HoldingGroup[] }> {
+    if (!access) return { state: 'off', holdings: [], unread: [] }
+    const options = zerionOptions(access, fetch)
     const asked = ZERION_GROUPS.filter((group) => accounts[group])
     const results = await Promise.all(
       asked.map((group) =>
-        zerionHoldings(accounts[group] as string, { key, fetch }).then(
+        zerionHoldings(accounts[group] as string, options).then(
           (holdings) => ({ group, holdings, failure: null }),
           (error: unknown) => ({ group, holdings: [], failure: error instanceof ZerionError ? error.reason : ('unavailable' as const) }),
         ),
@@ -158,13 +158,13 @@ export function createPortfolioReader({ rpc, zerionKey = () => null, fetch = glo
     }
   }
 
-  async function read(accounts: PortfolioAccounts): Promise<Portfolio> {
+  async function read(accounts: PortfolioAccounts, access: ZerionAccess | null): Promise<Portfolio> {
     const accountId = accounts.near
     const [balance, held, prices, zerion, inIntents, listed] = await Promise.all([
       nearBalance(accountId, { rpc, fetch }),
       nearTokenBalances(accountId, { fetch }),
       nearPriceList({ fetch }),
-      readZerion(accounts),
+      readZerion(accounts, access),
       intentsBalances(accountId, { rpc }),
       intentsTokenList({ fetch }),
     ])
@@ -244,6 +244,7 @@ export function createPortfolioReader({ rpc, zerionKey = () => null, fetch = glo
       nearPrice,
       tokens,
       zerion: zerion.state,
+      zerionVia: access?.via ?? null,
       unread: zerion.state === 'ok' ? zerion.unread : [],
       unpriced,
       totalUsd: nearPrice === null ? null : usdValue(nearTotal(balance), YOCTO_DECIMALS, nearPrice.usd) + counted,
@@ -254,12 +255,13 @@ export function createPortfolioReader({ rpc, zerionKey = () => null, fetch = glo
 
   return {
     read(accounts, { fresh = false } = {}) {
-      // Kept by the addresses read and whether a key was there, so adding a key reads again.
-      const key = JSON.stringify([accounts.near, accounts.evm, accounts.solana, accounts.tron, zerionKey() !== null])
+      // Kept by the addresses read and how Zerion is reached, so adding or removing a key reads again.
+      const access = zerionAccess()
+      const key = JSON.stringify([accounts.near, accounts.evm, accounts.solana, accounts.tron, access?.via ?? null])
       const kept = reads.get(key)
       // A read under way has no time yet; a finished one stands for the TTL unless asked fresh.
       if (kept && (kept.at === -1 || (!fresh && now() - kept.at < PORTFOLIO_TTL_MS))) return kept.read
-      const entry = { at: -1, read: read(accounts) }
+      const entry = { at: -1, read: read(accounts, access) }
       reads.set(key, entry)
       entry.read.then(
         () => (entry.at = now()),

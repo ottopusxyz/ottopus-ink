@@ -208,7 +208,7 @@ const UNREAD_CHAINS: Record<string, string> = { bitcoin: 'Bitcoin', btc: 'Bitcoi
 const ZERION_LINES: Record<Exclude<ZerionState, 'ok'>, string> = {
   off: 'EVM, Solana and Tron balances need a Zerion API key. The person can add their own in Ink’s Settings, under Wallet.',
   'bad-key': 'Zerion turned down the person’s API key, so EVM, Solana and Tron balances are missing. They can change it in Ink’s Settings.',
-  'rate-limited': 'The person’s Zerion key has used up its limit for now, so EVM, Solana and Tron balances are missing.',
+  'rate-limited': 'Zerion’s limit is used up for now, so EVM, Solana and Tron balances are missing. Try again in a minute.',
   unavailable: 'Zerion couldn’t be reached, so EVM, Solana and Tron balances are missing. Try again in a moment.',
 }
 

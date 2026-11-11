@@ -30,6 +30,7 @@ const PORTFOLIO: Portfolio = {
   nearPrice: { usd: 2, change24h: 0.01 },
   tokens: [token('USDC', '30', 30), token('MEME', '1000000', 500, 'reviewed', 100), token('FAKE', '5', 5, 'unreviewed')],
   zerion: 'off',
+  zerionVia: null,
   unread: [],
   unpriced: 4,
   totalUsd: 20 + 10 + 30 + 100,

@@ -43,9 +43,24 @@ export interface ZerionHolding {
 type Fetch = typeof globalThis.fetch
 
 export interface ZerionOptions {
-  key: string
+  /** The person's own key, sent to Zerion itself. */
+  key?: string | undefined
+  /** Ink's install id, sent instead of a key to Ottopus's service, which holds a key of its own. */
+  install?: string | undefined
   fetch?: Fetch
+  /** Zerion's API, or Ottopus's service, which answers on the same paths in the same shape. */
   url?: string
+}
+
+/**
+ * How Ink reaches Zerion: with the person's own key straight to Zerion, or through
+ * Ottopus's service, which holds Ottopus's key and answers the same way.
+ */
+export type ZerionAccess = { via: 'own-key'; key: string } | { via: 'ottopus'; url: string; install: string }
+
+/** The options a read takes for this access. */
+export function zerionOptions(access: ZerionAccess, fetch?: Fetch): ZerionOptions {
+  return access.via === 'own-key' ? { key: access.key, fetch } : { install: access.install, url: access.url, fetch }
 }
 
 /** Pages of positions followed, at most. Zerion sends one for nearly every wallet. */
@@ -68,14 +83,17 @@ export function networkName(slug: string): string {
 
 const groupOf = (slug: string): ZerionGroup => (slug === 'solana' ? 'solana' : slug === 'tron' ? 'tron' : 'evm')
 
-async function zerionGet(path: string, { key, fetch = globalThis.fetch, url = ZERION_URL }: ZerionOptions): Promise<unknown> {
+async function zerionGet(path: string, { key, install, fetch = globalThis.fetch, url = ZERION_URL }: ZerionOptions): Promise<unknown> {
   const target = path.startsWith('https://') ? path : `${url}${path}`
   // Basic auth with the key as the user name and no password. The colon is what makes it a credential.
-  const authorization = `Basic ${Buffer.from(`${key}:`).toString('base64')}`
+  // Without a key, the service gets only the install id; nothing that could be spent elsewhere.
+  const headers: Record<string, string> = key
+    ? { authorization: `Basic ${Buffer.from(`${key}:`).toString('base64')}`, accept: 'application/json' }
+    : { ...(install ? { 'x-ink-install': install } : {}), accept: 'application/json' }
   for (let attempt = 1; ; attempt++) {
     let response: Response
     try {
-      response = await fetch(target, { headers: { authorization, accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+      response = await fetch(target, { headers, signal: AbortSignal.timeout(10_000) })
     } catch {
       throw new ZerionError('unavailable')
     }

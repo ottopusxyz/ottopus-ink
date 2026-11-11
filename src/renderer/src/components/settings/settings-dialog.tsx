@@ -367,7 +367,7 @@ function ZerionKeySetting() {
     try {
       const answer = await window.ink.saveZerionKey(draft)
       if (answer.ok) {
-        setStatus((current) => ({ set: true, kept: current?.kept ?? true }))
+        setStatus((current) => ({ set: true, kept: current?.kept ?? true, shared: current?.shared ?? false }))
         setDraft('')
         setNote({ ok: true, text: 'Saved. Portfolio now reads your EVM, Solana and Tron balances.' })
       } else {
@@ -384,8 +384,8 @@ function ZerionKeySetting() {
     setBusy(true)
     try {
       await window.ink.removeZerionKey()
-      setStatus((current) => ({ set: false, kept: current?.kept ?? true }))
-      setNote({ ok: true, text: 'Removed. Ink reads only NEAR balances now.' })
+      setStatus((current) => ({ set: false, kept: current?.kept ?? true, shared: current?.shared ?? false }))
+      setNote({ ok: true, text: status?.shared ? 'Removed. Ink reads them through Ottopus’s Zerion access again.' : 'Removed. Ink reads only NEAR balances now.' })
     } finally {
       setBusy(false)
     }
@@ -397,11 +397,13 @@ function ZerionKeySetting() {
         <div className="min-w-0 flex-1">
           <h3 className="m-0 text-[14px] font-semibold">Balances on other chains</h3>
           <p className="m-0 mt-0.5 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
-            Ink reads EVM, Solana and Tron balances through Zerion, with your own API key. Get a free one from{' '}
+            {status?.shared && !status.set
+              ? 'Ink reads EVM, Solana and Tron balances through Ottopus’s Zerion access, so you need no key. Ottopus’s service and Zerion see those addresses, and keep no record of them. To go straight to Zerion instead, add your own key, free from '
+              : 'Ink reads EVM, Solana and Tron balances through Zerion, with your own API key. Get a free one from '}
             <a className="ink-text-link" href="https://dashboard.zerion.io" target="_blank" rel="noreferrer">
               dashboard.zerion.io
             </a>
-            . Zerion sees those addresses, and the key never leaves this computer except to Zerion.
+            . {status?.set ? 'Zerion sees those addresses, and the key never leaves this computer except to Zerion.' : ''}
           </p>
         </div>
         {status?.set ? (
@@ -421,7 +423,7 @@ function ZerionKeySetting() {
             autoComplete="off"
             spellCheck={false}
             aria-label="Zerion API key"
-            placeholder="Paste your Zerion API key"
+            placeholder={status.shared ? 'Your own Zerion API key, if you’d rather' : 'Paste your Zerion API key'}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             invalid={note !== null && !note.ok}

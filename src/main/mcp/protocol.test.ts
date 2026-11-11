@@ -128,7 +128,7 @@ describe('handleMcpMessage', () => {
     const ID = 'a'.repeat(64)
     const HOLDING = { accountId: ID, onChain: true, available: '4.99', staked: '5', storage: '0.00182', pools: [{ poolId: 'one.poolv1.near', staked: '5', unstaked: '0' }], stakingComplete: true }
     /** A portfolio with only NEAR read: no prices, no tokens, no Zerion key. */
-    const read = (near: typeof HOLDING) => ({ ok: true as const, near, nearPrice: null, tokens: [], zerion: 'off' as const, unread: [], unpriced: 0, totalUsd: null, readAt: 0, gaps: [] })
+    const read = (near: typeof HOLDING) => ({ ok: true as const, near, nearPrice: null, tokens: [], zerion: 'off' as const, zerionVia: null, unread: [], unpriced: 0, totalUsd: null, readAt: 0, gaps: [] })
     const token = (symbol: string, amount: string, usdValue: number, trust: 'reviewed' | 'unreviewed', options: { countedUsd?: number; network?: string; group?: HoldingGroup; native?: boolean } = {}) => {
       const network = options.network ?? 'near'
       const contract = options.native ? null : `${symbol.toLowerCase()}.${network === 'near' ? 'near' : 'example'}`
@@ -232,7 +232,7 @@ describe('handleMcpMessage', () => {
     it('says why Zerion’s chains are missing, and which account it couldn’t read', async () => {
       for (const [zerion, says] of [
         ['bad-key', 'turned down the person’s API key'],
-        ['rate-limited', 'used up its limit'],
+        ['rate-limited', 'limit is used up for now'],
         ['unavailable', 'couldn’t be reached'],
       ] as const)
         expect((await portfolioOf(async () => ({ ...read(HOLDING), zerion }))).content[0]!.text).toContain(says)

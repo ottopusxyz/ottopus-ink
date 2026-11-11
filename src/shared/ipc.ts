@@ -7,6 +7,8 @@ export interface ZerionKeyStatus {
   set: boolean
   /** False where the OS has no keyring: a key then lasts until Ink quits. */
   kept: boolean
+  /** This build reaches Zerion through Ottopus's service when no key is set. */
+  shared: boolean
 }
 
 /**

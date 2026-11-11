@@ -87,6 +87,8 @@ export interface Portfolio {
   /** Most valuable first. Every chain read, NEAR's tokens and Zerion's alike. */
   tokens: TokenHolding[]
   zerion: ZerionState
+  /** Whose Zerion access read the EVM, Solana and Tron accounts: the person's own key, or Ottopus's service. */
+  zerionVia: 'own-key' | 'ottopus' | null
   /** Accounts Zerion was asked about and couldn't read, such as an address kind it doesn't track. */
   unread: HoldingGroup[]
   /** Tokens held with no price, or that the price service marks as spam. Counted only, never named. */

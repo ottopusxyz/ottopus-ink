@@ -28,7 +28,7 @@ const markOf = (network: string): ChainId | null => NETWORK_MARKS[network] ?? (i
 
 const ZERION_PROBLEMS: Record<Exclude<ZerionState, 'ok' | 'off'>, string> = {
   'bad-key': 'Zerion turned down your API key, so EVM, Solana and Tron are missing. Change it in Settings.',
-  'rate-limited': 'Your Zerion key has used up its limit for now, so EVM, Solana and Tron are missing.',
+  'rate-limited': 'Zerion’s limit is used up for now, so EVM, Solana and Tron are missing. Try again in a minute.',
   unavailable: 'Zerion couldn’t be reached, so EVM, Solana and Tron are missing.',
 }
 
@@ -386,7 +386,8 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
               <p className="m-0 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ot-text-3)]">
                 {reading ? <Ring size={12} label="Reading balances" /> : null}
                 {reading ? 'Reading again · ' : ''}Balances read {readAgo(result.readAt, now)}: NEAR from NEAR’s RPC and FastNEAR, with prices and reviews from Intear; the Intents balance from intents.near, priced by 1Click
-                {zerion === 'off' ? '' : '; EVM, Solana and Tron from Zerion'}. They see the addresses they read.
+                {zerion === 'off' ? '' : result.zerionVia === 'ottopus' ? '; EVM, Solana and Tron from Zerion, through Ottopus’s service' : '; EVM, Solana and Tron from Zerion, with your key'}. They see the
+                addresses they read.
               </p>
             </>
           ) : null}

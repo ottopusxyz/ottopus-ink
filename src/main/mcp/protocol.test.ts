@@ -126,13 +126,15 @@ describe('handleMcpMessage', () => {
   describe('get_portfolio', () => {
     const ID = 'a'.repeat(64)
     const HOLDING = { accountId: ID, onChain: true, available: '4.99', staked: '5', storage: '0.00182', pools: [{ poolId: 'one.poolv1.near', staked: '5', unstaked: '0' }], stakingComplete: true }
+    /** A portfolio with only NEAR read: no prices, no tokens. */
+    const read = (near: typeof HOLDING) => ({ ok: true as const, near, nearPrice: null, tokens: [], unpriced: 0, totalUsd: null, readAt: 0, gaps: [] })
     const portfolioOf = async (portfolio: McpHandlers['portfolio'], args: unknown = {}) => {
       const message = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_portfolio', arguments: args } }
       return ((await handleMcpMessage(message, '1', { portfolio })) as { result: { content: { text: string }[]; isError: boolean } }).result
     }
 
     it('gives the NEAR balance: available, staked by pool, and held for storage', async () => {
-      const answer = await portfolioOf(async () => ({ ok: true, near: HOLDING }))
+      const answer = await portfolioOf(async () => read(HOLDING))
       expect(answer).toEqual({
         content: [
           {
@@ -152,13 +154,13 @@ describe('handleMcpMessage', () => {
 
     it('says what is waiting to be withdrawn, and when some pools couldn’t be read', async () => {
       const near = { ...HOLDING, pools: [{ poolId: 'one.poolv1.near', staked: '5', unstaked: '2' }], stakingComplete: false }
-      const { content } = await portfolioOf(async () => ({ ok: true, near }))
+      const { content } = await portfolioOf(async () => read(near))
       expect(content[0]!.text).toContain('one.poolv1.near: 5 NEAR, plus 2 NEAR unstaked and waiting to be withdrawn')
       expect(content[0]!.text).toContain('the staked amount may be higher')
     })
 
     it('explains an implicit account nothing was sent to yet', async () => {
-      const { content } = await portfolioOf(async () => ({ ok: true, near: { ...HOLDING, onChain: false, available: '0', staked: '0', storage: '0', pools: [] } }))
+      const { content } = await portfolioOf(async () => read({ ...HOLDING, onChain: false, available: '0', staked: '0', storage: '0', pools: [] }))
       expect(content[0]!.text).toBe(`NEAR account ${ID} holds no NEAR yet. NEAR creates it with the first transfer into it, from any wallet or exchange. Other chains’ balances aren’t read yet.`)
     })
 
@@ -171,9 +173,9 @@ describe('handleMcpMessage', () => {
 
     it('reads nothing when asked about another chain', async () => {
       let reads = 0
-      const read = async () => (reads++, { ok: true as const, near: HOLDING })
-      for (const chain of ['base', 'solana']) expect((await portfolioOf(read, { chain })).content[0]!.text).toBe('Ink can only read NEAR balances so far.')
-      expect((await portfolioOf(read, { chain: 'NEAR' })).content[0]!.text).toContain('Available to send')
+      const counted = async () => (reads++, read(HOLDING))
+      for (const chain of ['base', 'solana']) expect((await portfolioOf(counted, { chain })).content[0]!.text).toBe('Ink can only read NEAR balances so far.')
+      expect((await portfolioOf(counted, { chain: 'NEAR' })).content[0]!.text).toContain('Available to send')
       expect(reads).toBe(1)
     })
   })

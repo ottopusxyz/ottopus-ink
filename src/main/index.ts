@@ -4,7 +4,6 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
 import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
-import { formatNear } from '../shared/near/units'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
@@ -15,12 +14,12 @@ import { detectEntries } from './external/detect'
 import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
-import { nearBalance } from './near/balance'
 import { buildNearSend, isNearSend, nearSendFeeCeiling, nearTransferOf } from './near/build'
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { createPlanStore, type PlanView } from './plans/store'
+import { createPortfolioReader } from './portfolio/reader'
 import { createReviewBroker } from './review/broker'
 import { describeForReview } from './review/describe'
 import { createReviewWindow } from './review/window'
@@ -164,28 +163,19 @@ const ownAccounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {
   return wallet.status().state === 'none' ? { ok: false, reason: 'no-vault' } : wallet.accounts()
 }
 
-/** What the wallet holds on NEAR, for get_portfolio. Public figures only, and only while unlocked, like the addresses. */
-const ownPortfolio = async (): Promise<PortfolioResult> => {
+/** Reads what the wallet holds, and keeps it a minute so the screen and the agent don't each ask again. */
+const portfolioReader = createPortfolioReader({ rpc: nearRpc })
+
+/** What the wallet holds, for get_portfolio and the Portfolio screen. Public figures only, and only while unlocked, like the addresses. */
+const ownPortfolio = async ({ fresh = false }: { fresh?: boolean } = {}): Promise<PortfolioResult> => {
   const wallet = getVault()
   if (wallet.status().state === 'none') return { ok: false, reason: 'no-vault' }
-  // The vault answers only if it stayed unlocked for the whole read, so a lock while NEAR answers holds the balance back.
+  // The vault answers only if it stayed unlocked for the whole read, so a lock while NEAR answers holds the figures back.
   const read = await wallet.withAccounts(async (accounts): Promise<PortfolioResult> => {
     const accountId = accounts.find((account) => account.chain === 'near')?.address
     if (!accountId) return { ok: false, reason: 'unavailable' }
     try {
-      const balance = await nearBalance(accountId, { rpc: nearRpc })
-      return {
-        ok: true,
-        near: {
-          accountId,
-          onChain: balance.onChain,
-          available: formatNear(balance.available),
-          staked: formatNear(balance.staked),
-          storage: formatNear(balance.storage),
-          pools: balance.pools.map(({ poolId, staked, unstaked }) => ({ poolId, staked: formatNear(staked), unstaked: formatNear(unstaked) })),
-          stakingComplete: balance.stakingComplete,
-        },
-      }
+      return { ok: true, ...(await portfolioReader.near(accountId, { fresh })) }
     } catch {
       return { ok: false, reason: 'unavailable' }
     }
@@ -204,7 +194,7 @@ function getMcpBridge(): Promise<McpBridge> {
     version: app.getVersion(),
     // Public addresses only, and only while unlocked. The agent's tools get this function, never the vault.
     accounts: ownAccounts,
-    portfolio: ownPortfolio,
+    portfolio: () => ownPortfolio(),
     plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts }),
   }).catch((error: unknown) => {
     mcpBridge = null

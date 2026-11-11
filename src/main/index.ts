@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
+import { IPC, type AgentStatus, type AppInfo, type ZerionKeyStatus } from '../shared/ipc'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
@@ -20,7 +20,8 @@ import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { createPlanStore, type PlanView } from './plans/store'
 import { createPortfolioReader } from './portfolio/reader'
-import { createZerionKeyStore, type ZerionKeyStore } from './portfolio/zerion-key'
+import { checkZerionKey } from './portfolio/zerion'
+import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
 import { describeForReview } from './review/describe'
 import { createReviewWindow } from './review/window'
@@ -407,6 +408,30 @@ function registerIpc(): void {
     assertAppFrame(event)
     const fresh = typeof options === 'object' && options !== null && (options as { fresh?: unknown }).fresh === true
     return ownPortfolio({ fresh })
+  })
+
+  ipcMain.handle(IPC.zerionKeyStatus, (event): ZerionKeyStatus => {
+    assertAppFrame(event)
+    const keys = getZerionKeys()
+    return { set: keys.get() !== null, kept: keys.kept() }
+  })
+
+  ipcMain.handle(IPC.saveZerionKey, async (event, key: unknown) => {
+    assertAppFrame(event)
+    const text = typeof key === 'string' ? key.trim() : ''
+    if (!isZerionKey(text)) return { ok: false, reason: 'invalid' } as const
+    // Checked before it's kept, so a mistyped key never sits there failing every read.
+    const checked = await checkZerionKey({ key: text })
+    if (checked !== 'ok') return { ok: false, reason: checked } as const
+    getZerionKeys().save(text)
+    portfolioReader.forget()
+    return { ok: true } as const
+  })
+
+  ipcMain.handle(IPC.removeZerionKey, (event) => {
+    assertAppFrame(event)
+    getZerionKeys().remove()
+    portfolioReader.forget()
   })
 
   ipcMain.handle(IPC.copyAddress, (event, chain: unknown) => {

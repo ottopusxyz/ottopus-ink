@@ -3,6 +3,12 @@ import type { PlanStatus } from './plan'
 import type { PortfolioResult } from './portfolio'
 import type { BackupAnswer, NewPhrase, VaultRequest, VaultResult, VaultStatus, VaultWordCount } from './vault'
 
+export interface ZerionKeyStatus {
+  set: boolean
+  /** False where the OS has no keyring: a key then lasts until Ink quits. */
+  kept: boolean
+}
+
 /**
  * The IPC contract between the renderer (through the preload bridge) and the
  * main process. Every channel the renderer can reach is listed here; the main
@@ -36,6 +42,9 @@ export const IPC = {
   vaultAccounts: 'vault:accounts',
   copyAddress: 'vault:copy-address',
   portfolio: 'wallet:portfolio',
+  zerionKeyStatus: 'wallet:zerion-key-status',
+  saveZerionKey: 'wallet:save-zerion-key',
+  removeZerionKey: 'wallet:remove-zerion-key',
   /** Main to renderer: the vault's status, sent on every change. */
   vaultStatusChanged: 'vault:status-changed',
 } as const
@@ -218,6 +227,11 @@ export interface InkBridge {
    * reused unless `fresh` asks Ink to read again. Public figures only: no key, no words.
    */
   portfolio(options?: { fresh?: boolean }): Promise<PortfolioResult>
+  /** Whether a Zerion key is set, and whether it lasts past this run. Never the key itself. */
+  zerionKeyStatus(): Promise<ZerionKeyStatus>
+  /** Main checks the key with Zerion, then keeps it sealed by the OS keyring. */
+  saveZerionKey(key: string): Promise<{ ok: true } | { ok: false; reason: 'invalid' | 'bad-key' | 'unavailable' }>
+  removeZerionKey(): Promise<void>
   /** Calls listener whenever the vault's status changes; returns an unsubscribe. */
   onVaultStatus(listener: (status: VaultStatus) => void): () => void
 }

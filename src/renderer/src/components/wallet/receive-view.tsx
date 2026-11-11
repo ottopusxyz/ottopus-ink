@@ -17,9 +17,9 @@ type Loaded = { kind: 'loading' } | { kind: 'ready'; accounts: Account[] } | { k
  * from, then what it is, and Ink shows the one address to use with its QR code.
  * Only reachable while unlocked.
  */
-export function ReceiveView() {
+export function ReceiveView({ startChain = null }: { /** The chain to open on, as when Portfolio asks for one chain's address. */ startChain?: AccountChain | null } = {}) {
   const [loaded, setLoaded] = useState<Loaded>({ kind: 'loading' })
-  const [chain, setChain] = useState<AccountChain | null>(null)
+  const [chain, setChain] = useState<AccountChain | null>(startChain)
   const [asset, setAsset] = useState<string | null>(null)
   const [network, setNetwork] = useState<ChainId>('ethereum')
 

@@ -220,6 +220,15 @@ describe('handleMcpMessage', () => {
       expect(text).not.toContain('Total:')
     })
 
+    it('lists the Intents balance with where each token came from, and narrows to it', async () => {
+      const eth = { ...token('ETH', '0.5', 1000, 'reviewed'), id: 'intents:nep141:eth.omft.near', group: 'intents' as const, network: 'intents', networkName: 'NEAR Intents', contract: 'nep141:eth.omft.near', origin: 'Ethereum' }
+      const portfolio = async () => ({ ...read(HOLDING), tokens: [eth] })
+      expect((await portfolioOf(portfolio)).content[0]!.text).toContain('- 0.5 ETH in the NEAR Intents balance, from Ethereum ($1,000.00), token nep141:eth.omft.near')
+      expect((await portfolioOf(portfolio, { chain: 'intents' })).content[0]!.text).toBe(['Tokens:', '- 0.5 ETH in the NEAR Intents balance, from Ethereum ($1,000.00), token nep141:eth.omft.near'].join('\n'))
+      expect((await portfolioOf(async () => read(HOLDING), { chain: 'intents' })).content[0]!.text).toBe('The NEAR Intents balance holds nothing with a price.')
+      expect((await portfolioOf(async () => ({ ...read(HOLDING), gaps: ['intents' as const] }), { chain: 'intents' })).content[0]!.text).toContain('couldn’t be read')
+    })
+
     it('says why Zerion’s chains are missing, and which account it couldn’t read', async () => {
       for (const [zerion, says] of [
         ['bad-key', 'turned down the person’s API key'],

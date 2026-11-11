@@ -42,8 +42,10 @@ export interface TokenHolding {
   network: string
   /** As a person reads it: "NEAR", "Base", "BNB Chain". */
   networkName: string
-  /** The token's contract or address on that chain; null for the chain's own coin. */
+  /** The token's contract or address on that chain, or its Intents token id; null for the chain's own coin. */
   contract: string | null
+  /** For a token in the Intents balance, the chain it came from: "Base", "Bitcoin". */
+  origin?: string
   /** One short word, checked: a token's own symbol can be any text its maker likes. */
   symbol: string
   decimals: number
@@ -60,8 +62,11 @@ export interface TokenHolding {
   trust: 'reviewed' | 'unreviewed'
 }
 
-/** The accounts whose holdings Ink reads: NEAR itself, and through Zerion the EVM, Solana and Tron ones. */
-export type HoldingGroup = 'near' | 'evm' | 'solana' | 'tron'
+/**
+ * The accounts whose holdings Ink reads: NEAR itself, its Intents balance on intents.near,
+ * and through Zerion the EVM, Solana and Tron ones.
+ */
+export type HoldingGroup = 'near' | 'intents' | 'evm' | 'solana' | 'tron'
 
 /**
  * Zerion, which reads the EVM, Solana and Tron accounts with the person's own key:
@@ -69,8 +74,11 @@ export type HoldingGroup = 'near' | 'evm' | 'solana' | 'tron'
  */
 export type ZerionState = 'off' | 'ok' | 'bad-key' | 'rate-limited' | 'unavailable'
 
-/** What couldn't be read this time, so the figures may be short: `tokens` (the token list), `prices`, or `reviews` (which tokens are vouched for). */
-export type PortfolioGap = 'tokens' | 'prices' | 'reviews'
+/**
+ * What couldn't be read this time, so the figures may be short: `tokens` (the NEAR token
+ * list), `prices`, `reviews` (which tokens are vouched for), or `intents` (the Intents balance).
+ */
+export type PortfolioGap = 'tokens' | 'prices' | 'reviews' | 'intents'
 
 export interface Portfolio {
   near: NearHolding

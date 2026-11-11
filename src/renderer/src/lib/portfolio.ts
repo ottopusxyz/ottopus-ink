@@ -78,7 +78,7 @@ export function portfolioView(portfolio: Portfolio): PortfolioView {
     network: token.network,
     networkName: token.networkName,
     symbol: token.symbol,
-    label: `${token.contract ? 'Token' : 'Native'} on ${token.networkName}`,
+    label: token.group === 'intents' ? (token.origin ? `In Intents, from ${token.origin}` : 'In Intents') : `${token.contract ? 'Token' : 'Native'} on ${token.networkName}`,
     amount: shortAmount(token.amount),
     exact: token.amount,
     usd: token.usdValue,

@@ -65,6 +65,12 @@ describe('the Portfolio table', () => {
     expect(row).toMatchObject({ group: 'evm', network: 'base', label: 'Native on Base', contract: null })
   })
 
+  it('says where a token in the Intents balance came from', () => {
+    const eth: TokenHolding = { ...token('ETH', '0.5', 1000), id: 'intents:nep141:eth.omft.near', group: 'intents', network: 'intents', networkName: 'NEAR Intents', contract: 'nep141:eth.omft.near', origin: 'Ethereum' }
+    const row = portfolioView({ ...PORTFOLIO, tokens: [eth] }).rows.find((item) => item.group === 'intents')
+    expect(row).toMatchObject({ label: 'In Intents, from Ethereum', network: 'intents' })
+  })
+
   it('gives known tokens their brand colour', () => {
     const colors = Object.fromEntries(portfolioView(PORTFOLIO).rows.map((row) => [row.id, row.color]))
     expect(colors.near).toBe('#00EC97')

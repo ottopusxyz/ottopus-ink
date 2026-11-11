@@ -32,7 +32,10 @@ const ZERION_PROBLEMS: Record<Exclude<ZerionState, 'ok' | 'off'>, string> = {
   unavailable: 'Zerion couldn’t be reached, so EVM, Solana and Tron are missing.',
 }
 
-const GROUP_NAMES: Record<HoldingGroup, string> = { near: 'NEAR', evm: 'EVM', solana: 'Solana', tron: 'Tron' }
+const GROUP_NAMES: Record<HoldingGroup, string> = { near: 'NEAR', intents: 'NEAR Intents', evm: 'EVM', solana: 'Solana', tron: 'Tron' }
+
+/** Receive's account for a holding: the Intents balance is the NEAR account's. */
+const receiveFor = (group: HoldingGroup): AccountChain => (group === 'intents' ? 'near' : group)
 
 const COLUMNS = 'grid-cols-[minmax(170px,2fr)_minmax(104px,1.2fr)_minmax(88px,1fr)_minmax(84px,.8fr)_auto]'
 
@@ -149,6 +152,7 @@ function Gaps({ portfolio, stale }: { portfolio: Portfolio; stale: boolean }) {
     ...(portfolio.gaps.includes('tokens') ? ['The list of your tokens couldn’t be read, so some may be missing.'] : []),
     ...(portfolio.gaps.includes('prices') ? ['Prices couldn’t be read, so there are no dollar values.'] : []),
     ...(portfolio.gaps.includes('reviews') ? ['Some tokens couldn’t be checked, so they aren’t counted.'] : []),
+    ...(portfolio.gaps.includes('intents') ? ['Your NEAR Intents balance couldn’t be read, so it may be missing.'] : []),
     ...(portfolio.near.stakingComplete ? [] : ['Some staking pools couldn’t be read, so staked NEAR may be higher.']),
     ...(portfolio.zerion !== 'ok' && portfolio.zerion !== 'off' ? [ZERION_PROBLEMS[portfolio.zerion]] : []),
     ...(portfolio.unread.length > 0 ? [`Zerion couldn’t read your ${portfolio.unread.map((group) => GROUP_NAMES[group]).join(' or ')} address.`] : []),
@@ -182,9 +186,14 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
   const view = result?.ok ? portfolioView(result) : null
   const zerion = result?.ok ? result.zerion : 'off'
   const read = (chain: AccountChain) => chain === 'near' || (ZERION_GROUPS.includes(chain) && zerion === 'ok' && result?.ok === true && !result.unread.includes(chain as HoldingGroup))
-  const inFilter = (row: PortfolioRow) => filter === 'all' || row.group === filter
+  // The Intents balance has a section of its own, under NEAR's chip and All chains.
+  const inFilter = (row: PortfolioRow) => row.group !== 'intents' && (filter === 'all' || row.group === filter)
   const rows = view?.rows.filter(inFilter) ?? []
   const unreviewed = view?.unreviewed.filter(inFilter) ?? []
+  const showIntents = filter === 'all' || filter === 'near'
+  const intentsRows = view?.rows.filter((row) => row.group === 'intents') ?? []
+  const intentsUnreviewed = view?.unreviewed.filter((row) => row.group === 'intents') ?? []
+  const intentsTotal = intentsRows.reduce((sum, row) => sum + row.counted, 0)
   const showRows = rows.length > 0 || unreviewed.length > 0
   const notRead = ACCOUNT_CHAINS.filter((chain) => !read(chain))
 
@@ -268,7 +277,7 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
                       <span className="w-[150px]" />
                     </div>
                     {rows.map((row) => (
-                      <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive(row.group)} />
+                      <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive(receiveFor(row.group))} />
                     ))}
                     {unreviewed.length > 0 ? (
                       <details className="border-t border-[var(--ot-border)]">
@@ -277,7 +286,7 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
                           {unreviewed.length === 1 ? '1 token' : `${unreviewed.length} tokens`} nobody vouches for. Not counted: anyone can make a token and a price for it.
                         </summary>
                         {unreviewed.map((row) => (
-                          <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive(row.group)} muted />
+                          <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive(receiveFor(row.group))} muted />
                         ))}
                       </details>
                     ) : null}
@@ -345,9 +354,38 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
                 </div>
               </section>
 
+              {showIntents ? (
+                <section className="ink-review-card overflow-hidden p-0" aria-label="NEAR Intents balance">
+                  <div className="flex items-center gap-3 border-b-[1.5px] border-[var(--ot-border)] px-4 py-3">
+                    <ChainLogo chain="near" size="md" />
+                    <span className="min-w-0 flex-1">
+                      <b className="block text-[14px]">NEAR Intents balance</b>
+                      <span className="block text-[12px] text-[var(--ot-text-3)]">Held for your NEAR account by intents.near. It counts in your total.</span>
+                    </span>
+                    {intentsRows.length > 0 ? <span className="font-mono text-[14px] font-semibold">{formatMoneyFlat(intentsTotal)}</span> : null}
+                  </div>
+                  {intentsRows.length > 0 || intentsUnreviewed.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[640px]">
+                        {intentsRows.map((row) => (
+                          <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive('near')} />
+                        ))}
+                        {intentsUnreviewed.map((row) => (
+                          <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive('near')} muted />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="m-0 px-4 py-3 text-[12.5px] text-[var(--ot-text-3)]">
+                      {result.gaps.includes('intents') ? 'Your Intents balance couldn’t be read this time.' : 'Nothing in your Intents balance yet.'}
+                    </p>
+                  )}
+                </section>
+              ) : null}
+
               <p className="m-0 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ot-text-3)]">
                 {reading ? <Ring size={12} label="Reading balances" /> : null}
-                {reading ? 'Reading again · ' : ''}Balances read {readAgo(result.readAt, now)}: NEAR from NEAR’s RPC and FastNEAR, with prices and reviews from Intear
+                {reading ? 'Reading again · ' : ''}Balances read {readAgo(result.readAt, now)}: NEAR from NEAR’s RPC and FastNEAR, with prices and reviews from Intear; the Intents balance from intents.near, priced by 1Click
                 {zerion === 'off' ? '' : '; EVM, Solana and Tron from Zerion'}. They see the addresses they read.
               </p>
             </>

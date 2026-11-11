@@ -5,13 +5,19 @@ import { createPortfolioReader, MAX_REVIEWS, PORTFOLIO_TTL_MS, saleValue } from 
 const ID = 'alice.near'
 const NEAR = 10n ** 24n
 
-function fakeRpc(view: NearAccountView | null | 'down') {
+/** NEAR's RPC: the account, pools that hold nothing, and intents.near with what the Intents balance holds. */
+function fakeRpc(view: NearAccountView | null | 'down', intents: Record<string, string> | 'down' = {}) {
   return {
     viewAccount: async () => {
       if (view === 'down') throw new Error('no RPC answered')
       return view
     },
-    callView: async () => '0',
+    callView: async (contract: string, method: string, args: { token_ids?: string[] }) => {
+      if (contract !== 'intents.near') return '0'
+      if (intents === 'down') throw new Error('no RPC answered')
+      if (method === 'mt_tokens_for_owner') return Object.keys(intents).map((token_id) => ({ token_id }))
+      return (args.token_ids ?? []).map((id) => intents[id] ?? '0')
+    },
   } as unknown as NearRpc
 }
 
@@ -20,6 +26,8 @@ interface World {
   prices?: Record<string, { price: string; symbol: string; decimal: number }> | 'down'
   reviews?: Record<string, string | 'down'>
   liquidity?: Record<string, number>
+  /** 1Click's token list, or a failure. */
+  oneClick?: unknown[] | 'down'
   /** Zerion's answer for each address: positions, or a status it fails with. */
   zerion?: Record<string, unknown[] | number>
 }
@@ -31,6 +39,7 @@ function fakeFetch(world: World) {
   const fetch = (async (url: string) => {
     asked.push(url)
     if (url.endsWith('/staking')) return json({ pools: [] })
+    if (url.endsWith('/v0/tokens')) return world.oneClick === 'down' ? new Response('', { status: 500 }) : json(world.oneClick ?? [])
     const wallet = /api\.zerion\.io\/v1\/wallets\/([^/]+)\/positions/.exec(url)?.[1]
     if (wallet) {
       const answer = world.zerion?.[decodeURIComponent(wallet)]
@@ -199,6 +208,34 @@ describe('the portfolio on NEAR', () => {
     reader.forget()
     await reader.read({ near: ID, evm: '0xevm' })
     expect(lists()).toBe(3)
+  })
+
+  it('adds the Intents balance, counting what 1Click lists and only showing the rest', async () => {
+    const { fetch } = fakeFetch({
+      prices: { ...PRICES, 'odd.near': { price: '2', symbol: 'ODD', decimal: 0 } },
+      oneClick: [
+        { assetId: 'nep141:eth.omft.near', decimals: 18, blockchain: 'eth', symbol: 'ETH', price: 2000 },
+        { assetId: 'nep141:dead.omft.near', decimals: 6, blockchain: 'base', symbol: 'DEAD', price: 0 },
+      ],
+    })
+    const rpc = fakeRpc(VIEW, { 'nep141:eth.omft.near': '500000000000000000', 'nep141:odd.near': '3', 'nep141:dead.omft.near': '5', 'nep245:mystery.near:1': '9' })
+    const portfolio = await createPortfolioReader({ rpc, fetch }).read({ near: ID })
+    const intents = portfolio.tokens.filter((token) => token.group === 'intents')
+    expect(intents.map(({ id, symbol, amount, origin, usdValue, countedUsd, trust }) => ({ id, symbol, amount, origin, usdValue, countedUsd, trust }))).toEqual([
+      { id: 'intents:nep141:eth.omft.near', symbol: 'ETH', amount: '0.5', origin: 'Ethereum', usdValue: 1000, countedUsd: 1000, trust: 'reviewed' },
+      { id: 'intents:nep141:odd.near', symbol: 'ODD', amount: '3', origin: undefined, usdValue: 6, countedUsd: 0, trust: 'unreviewed' },
+    ])
+    // A token 1Click lists without a price, and one nothing prices, are only counted.
+    expect(portfolio.unpriced).toBe(2)
+    expect(portfolio.totalUsd).toBe(40 + 1000)
+    expect(portfolio.gaps).toEqual([])
+  })
+
+  it('says when the Intents balance can’t be read, and still shows the rest', async () => {
+    const down = await createPortfolioReader({ rpc: fakeRpc(VIEW, 'down'), fetch: fakeFetch({ prices: PRICES }).fetch }).read({ near: ID })
+    expect(down).toMatchObject({ totalUsd: 40, gaps: ['intents'] })
+    const unnamed = await createPortfolioReader({ rpc: fakeRpc(VIEW, { 'nep141:eth.omft.near': '1' }), fetch: fakeFetch({ prices: PRICES, oneClick: 'down' }).fetch }).read({ near: ID })
+    expect(unnamed).toMatchObject({ unpriced: 0, gaps: ['intents'] })
   })
 
   it('throws when NEAR itself can’t be read', async () => {

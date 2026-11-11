@@ -4,6 +4,7 @@ import { formatUnits, usdValue } from '../../shared/token-text'
 import { nearBalance, type NearBalance } from '../near/balance'
 import type { NearRpc } from '../near/rpc'
 import { nearPriceList, nearTokenReview, WRAPPED_NEAR, type NearTokenPrice, type NearTokenReview } from './near-prices'
+import { intentsBalances, intentsTokenList, type IntentsBalance, type IntentsToken } from './intents'
 import { nearTokenBalances, type NearTokenBalance } from './near-tokens'
 import { ZerionError, zerionHoldings, type ZerionHolding } from './zerion'
 
@@ -78,6 +79,38 @@ export function saleValue(value: number, liquidity: number | null): number {
 
 const VOUCHED = new Set<NearTokenReview['reputation']>(['reputable', 'not-fake'])
 
+/**
+ * A token in the Intents balance, priced. 1Click lists the tokens Intents trades, so one
+ * it prices is counted. A NEAR token it doesn't list but Intear prices is shown and not
+ * counted, like any token nobody vouches for. Null when nothing prices it.
+ */
+function fromIntents(balance: IntentsBalance, listed: Map<string, IntentsToken> | null, prices: Map<string, NearTokenPrice> | null): TokenHolding | null {
+  const known = listed?.get(balance.tokenId)
+  const contract = balance.tokenId.startsWith('nep141:') ? balance.tokenId.slice('nep141:'.length) : null
+  const fallback = contract ? prices?.get(contract) : undefined
+  const symbol = known?.symbol ?? fallback?.symbol
+  const decimals = known?.decimals ?? fallback?.decimals
+  const usd = known?.usd ?? (known ? null : (fallback?.usd ?? null))
+  if (!symbol || decimals === undefined || usd === null) return null
+  const value = usdValue(balance.raw, decimals, usd)
+  const vouched = known !== undefined
+  return {
+    id: `intents:${balance.tokenId}`,
+    group: 'intents',
+    network: 'intents',
+    networkName: 'NEAR Intents',
+    contract: balance.tokenId,
+    ...(known ? { origin: known.origin } : {}),
+    symbol,
+    decimals,
+    amount: formatUnits(balance.raw, decimals),
+    price: { usd, change24h: null },
+    usdValue: value,
+    countedUsd: vouched ? value : 0,
+    trust: vouched ? 'reviewed' : 'unreviewed',
+  }
+}
+
 /** Everything the account holds in NEAR, in yoctoNEAR: what it can send, what storage holds, and every stake, waiting withdrawals included. */
 function nearTotal(balance: NearBalance): bigint {
   return balance.available + balance.storage + balance.staked + balance.pools.reduce((sum, pool) => sum + pool.unstaked, 0n)
@@ -127,7 +160,14 @@ export function createPortfolioReader({ rpc, zerionKey = () => null, fetch = glo
 
   async function read(accounts: PortfolioAccounts): Promise<Portfolio> {
     const accountId = accounts.near
-    const [balance, held, prices, zerion] = await Promise.all([nearBalance(accountId, { rpc, fetch }), nearTokenBalances(accountId, { fetch }), nearPriceList({ fetch }), readZerion(accounts)])
+    const [balance, held, prices, zerion, inIntents, listed] = await Promise.all([
+      nearBalance(accountId, { rpc, fetch }),
+      nearTokenBalances(accountId, { fetch }),
+      nearPriceList({ fetch }),
+      readZerion(accounts),
+      intentsBalances(accountId, { rpc }),
+      intentsTokenList({ fetch }),
+    ])
     const gaps: PortfolioGap[] = []
     if (held === null) gaps.push('tokens')
     if (prices === null) gaps.push('prices')
@@ -170,6 +210,16 @@ export function createPortfolioReader({ rpc, zerionKey = () => null, fetch = glo
         countedUsd: vouched ? saleValue(value, review.liquidityUsd) : 0,
         trust: vouched ? 'reviewed' : 'unreviewed',
       })
+    }
+
+    // Without 1Click's list the Intents balance can't be named, so it counts as unread rather than as spam.
+    if (inIntents === null || (listed === null && inIntents.length > 0)) gaps.push('intents')
+    else {
+      for (const held of inIntents) {
+        const token = fromIntents(held, listed, prices)
+        if (token) tokens.push(token)
+        else unpriced++
+      }
     }
 
     for (const holding of zerion.holdings) {

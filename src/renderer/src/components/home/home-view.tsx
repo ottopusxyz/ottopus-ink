@@ -7,6 +7,10 @@ import { Sea } from '@/components/motion/sea'
 import { Ring } from '@/components/motion/ring'
 import { Badge, ChainLogo, TokenLogo } from '@/components/ui'
 import { planHeadline, type Chat } from '@/lib/chats'
+import { formatMoney } from '@/lib/format'
+import { isTokenSymbol } from '@/lib/logos'
+import { portfolioView } from '@/lib/portfolio'
+import { usePortfolio } from '@/lib/use-portfolio'
 import type { ChainId } from '@/lib/logos'
 import { TOOL_COPY } from '@/lib/tool-copy'
 import { INK_TOOLS, type AgentId, type ChatPlan } from '../../../../shared/ipc'
@@ -18,6 +22,56 @@ const SUGGESTIONS: readonly { text: string; tokens?: readonly string[]; chains?:
   { text: 'Stake 10 NEAR', tokens: ['NEAR'] },
   { text: 'What’s my wallet worth?', chains: ['ethereum', 'solana', 'bitcoin'] },
 ]
+
+/** Home's Portfolio card: the total and the biggest few holdings, or why there's no total. */
+function PortfolioGlance({ onOpen }: { onOpen: () => void }) {
+  const { result } = usePortfolio()
+  const view = result?.ok ? portfolioView(result) : null
+  const money = view?.total != null ? formatMoney(view.total) : null
+  // Plain marks of the biggest holdings Ink has a mark for: a stack of badges and letters at this size is noise.
+  const marks = [...new Set((view?.rows ?? []).map((row) => row.symbol.toUpperCase()).filter(isTokenSymbol))].slice(0, 3)
+  return (
+    <button type="button" className="ink-glance cursor-pointer text-left font-[inherit] text-[inherit]" onClick={onOpen}>
+      <span className="flex items-center gap-2">
+        <span className="ink-eyebrow flex-1">Portfolio</span>
+        {marks.length > 0 ? (
+          <span className="ink-logo-stack" aria-hidden>
+            {marks.map((symbol) => (
+              <TokenLogo key={symbol} symbol={symbol} size="sm" />
+            ))}
+          </span>
+        ) : null}
+      </span>
+      {result === null ? (
+        <span className="flex items-center gap-2 text-[13px] text-[var(--ot-text-2)]">
+          <Ring size={12} label="Reading balances" />
+          Reading your balances…
+        </span>
+      ) : !view ? (
+        <>
+          <span className="text-[14px] font-semibold">Balances couldn’t be read</span>
+          <span className="text-[12px] leading-[1.45] text-[var(--ot-text-2)]">Open Portfolio to try again.</span>
+        </>
+      ) : (
+        <>
+          <span className="font-mono text-[22px] font-bold tracking-[-0.02em]">
+            {money ? (
+              <>
+                {money.whole}
+                <span className="text-[var(--ot-text-3)]">.{money.fraction}</span>
+              </>
+            ) : (
+              '$—'
+            )}
+          </span>
+          <span className="text-[12px] leading-[1.45] text-[var(--ot-text-2)]">
+            {money ? `${view.rows.length === 1 ? '1 asset' : `${view.rows.length} assets`} on NEAR. Other chains come next.` : 'Prices couldn’t be read, so there’s no total.'}
+          </span>
+        </>
+      )}
+    </button>
+  )
+}
 
 export interface HomeViewProps {
   draft: string
@@ -149,24 +203,7 @@ export function HomeView({
                 <span className="text-[12px] text-[var(--ot-text-2)]">{running.step ?? 'Your agent is working'}</span>
               </button>
             ) : null}
-            <button
-              type="button"
-              className="ink-glance cursor-pointer text-left font-[inherit] text-[inherit]"
-              onClick={onPortfolio}
-            >
-              <span className="flex items-center gap-2">
-                <span className="ink-eyebrow flex-1">Portfolio</span>
-                <span className="ink-logo-stack" aria-hidden>
-                  <TokenLogo symbol="NEAR" size="sm" />
-                  <TokenLogo symbol="USDC" size="sm" />
-                  <TokenLogo symbol="ETH" size="sm" />
-                </span>
-              </span>
-              <span className="text-[14px] font-semibold">Balances aren’t shown yet</span>
-              <span className="text-[12px] leading-[1.45] text-[var(--ot-text-2)]">
-                Ink can’t read balances yet. Your addresses are on Receive.
-              </span>
-            </button>
+            <PortfolioGlance onOpen={onPortfolio} />
             <button
               type="button"
               className="ink-glance ink-glance--warn cursor-pointer text-left font-[inherit] text-[inherit]"

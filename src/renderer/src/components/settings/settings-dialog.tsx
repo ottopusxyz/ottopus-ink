@@ -266,6 +266,8 @@ function WalletTab({ onSeeAddresses }: { onSeeAddresses: () => void }) {
       <p className="mt-1.5 mb-3.5 text-[13px] text-[var(--ot-text-2)]">
         Your keys live on this device, encrypted with your password.
       </p>
+      {/* Above the preview note: unlike the choices under it, this one is saved. */}
+      <ZerionKeySetting />
       <NotSavedYet />
       <div className="ink-backup-card">
         <Otto pose="heads-up" size={62} />
@@ -286,7 +288,6 @@ function WalletTab({ onSeeAddresses }: { onSeeAddresses: () => void }) {
           See addresses
         </button>
       </div>
-      <ZerionKeySetting />
       <Setting
         title="Restore a different wallet"
         description="Replace this wallet with one from a 12 or 24 word recovery phrase."

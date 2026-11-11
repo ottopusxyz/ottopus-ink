@@ -1,7 +1,7 @@
 import type { Account, AccountChain } from '../../shared/accounts'
 import type { ChatPlan } from '../../shared/ipc'
 import type { PlanIntent, PlanStatus, PlanSummary, PlanToolResult, PlanTools } from '../../shared/plan'
-import type { PortfolioResult } from '../../shared/portfolio'
+import type { PortfolioGap, PortfolioResult, TokenHolding } from '../../shared/portfolio'
 import type { VaultResult } from '../../shared/vault'
 
 /** The server's name in the agent's tool names (`mcp__ottopus-ink__*`). Not `ottopus`: that's another product's connector. */
@@ -179,6 +179,28 @@ async function planAnswer(work: () => Promise<PlanToolResult>, id: string | null
   return result.ok ? { answer: toolAnswer(said(result.plan)), plan: result.plan } : { answer: planRefusal(result, id), plan: null }
 }
 
+/** Token lines in one get_portfolio answer, most valuable first. */
+const MAX_TOKEN_LINES = 20
+
+const GAP_LINES: Record<PortfolioGap, string> = {
+  tokens: 'The list of tokens couldn’t be read, so tokens may be missing.',
+  prices: 'Prices couldn’t be read, so there are no dollar values.',
+  reviews: 'Some tokens couldn’t be checked with the price service, so they aren’t counted.',
+}
+
+const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
+/** Dollars as a person reads them: $1,234.56, or under a cent as such. */
+function dollars(value: number): string {
+  return value > 0 && value < 0.01 ? 'under $0.01' : USD.format(value)
+}
+
+function change(fraction: number | null): string {
+  if (fraction === null || !Number.isFinite(fraction)) return ''
+  const percent = Math.abs(fraction * 100).toFixed(1)
+  return percent === '0.0' ? ', unchanged today' : `, ${fraction > 0 ? 'up' : 'down'} ${percent}% today`
+}
+
 /** get_portfolio's answer: the NEAR balance in words an agent can pass on, or why there isn't one. */
 async function portfolioAnswer(read: McpHandlers['portfolio'], args: unknown): Promise<object> {
   const chain = isRecord(args) && typeof args.chain === 'string' ? args.chain.trim().toLowerCase() : ''
@@ -201,13 +223,25 @@ async function portfolioAnswer(read: McpHandlers['portfolio'], args: unknown): P
       `NEAR account ${near.accountId} holds no NEAR yet. NEAR creates it with the first transfer into it, from any wallet or exchange. Other chains’ balances aren’t read yet.`,
     )
   }
+  const { nearPrice, tokens, unpriced, totalUsd, gaps } = answer
+  const inUsd = (amount: string) => (nearPrice ? ` (${dollars(Number(amount) * nearPrice.usd)})` : '')
   const pools = near.pools.map((pool) => `${pool.poolId}: ${pool.staked} NEAR${pool.unstaked !== '0' ? `, plus ${pool.unstaked} NEAR unstaked and waiting to be withdrawn` : ''}`)
+  const reviewed = tokens.filter((token) => token.trust === 'reviewed')
+  const unreviewed = tokens.filter((token) => token.trust === 'unreviewed')
+  const tokenLine = (token: TokenHolding) => `- ${token.amount} ${token.symbol} (${dollars(token.usdValue)}), contract ${token.contract}`
+  const listed = (list: TokenHolding[]) => [...list.slice(0, MAX_TOKEN_LINES).map(tokenLine), ...(list.length > MAX_TOKEN_LINES ? [`- and ${list.length - MAX_TOKEN_LINES} more`] : [])]
   const lines = [
     `NEAR account ${near.accountId}:`,
-    `- Available to send: ${near.available} NEAR`,
-    `- Staked: ${near.staked} NEAR${pools.length > 0 ? ` (${pools.join('; ')})` : ''}`,
-    `- Held for storage: ${near.storage} NEAR`,
+    `- Available to send: ${near.available} NEAR${inUsd(near.available)}`,
+    `- Staked: ${near.staked} NEAR${inUsd(near.staked)}${pools.length > 0 ? ` (${pools.join('; ')})` : ''}`,
+    `- Held for storage: ${near.storage} NEAR${inUsd(near.storage)}`,
     ...(near.stakingComplete ? [] : ['Some staking pools couldn’t be read, so the staked amount may be higher.']),
+    ...(nearPrice ? [`NEAR is ${dollars(nearPrice.usd)}${change(nearPrice.change24h)}.`] : []),
+    ...(reviewed.length > 0 ? ['Tokens on NEAR:', ...listed(reviewed)] : []),
+    ...(unreviewed.length > 0 ? ['Tokens the price service doesn’t vouch for. They aren’t counted, and may be worth nothing or be fakes of real tokens:', ...listed(unreviewed)] : []),
+    ...(unpriced > 0 ? [`${unpriced === 1 ? '1 more token has' : `${unpriced} more tokens have`} no price or ${unpriced === 1 ? 'is' : 'are'} marked as spam, so ${unpriced === 1 ? 'it isn’t' : 'they aren’t'} listed.`] : []),
+    ...(totalUsd !== null ? [`Total: ${dollars(totalUsd)}, counting NEAR (staked and storage included) and the tokens on NEAR above. Prices from Intear.`] : []),
+    ...gaps.map((gap) => GAP_LINES[gap]),
     'Other chains’ balances aren’t read yet.',
   ]
   return toolAnswer(lines.join('\n'))

@@ -34,9 +34,16 @@ export interface Price {
  * can make a pool and so a price, so it is shown apart and never counted.
  */
 export interface TokenHolding {
-  chain: 'near'
-  /** The token's contract account. */
-  contract: string
+  /** Unique in a portfolio: the chain, then the contract or `native`. */
+  id: string
+  /** Which of the wallet's accounts holds it. One EVM address holds on every EVM chain. */
+  group: HoldingGroup
+  /** The chain it's on: `near`, or Zerion's name for one, such as `base`. */
+  network: string
+  /** As a person reads it: "NEAR", "Base", "BNB Chain". */
+  networkName: string
+  /** The token's contract or address on that chain; null for the chain's own coin. */
+  contract: string | null
   /** One short word, checked: a token's own symbol can be any text its maker likes. */
   symbol: string
   decimals: number
@@ -53,6 +60,15 @@ export interface TokenHolding {
   trust: 'reviewed' | 'unreviewed'
 }
 
+/** The accounts whose holdings Ink reads: NEAR itself, and through Zerion the EVM, Solana and Tron ones. */
+export type HoldingGroup = 'near' | 'evm' | 'solana' | 'tron'
+
+/**
+ * Zerion, which reads the EVM, Solana and Tron accounts with the person's own key:
+ * `off` without a key, `ok`, or why it couldn't read this time.
+ */
+export type ZerionState = 'off' | 'ok' | 'bad-key' | 'rate-limited' | 'unavailable'
+
 /** What couldn't be read this time, so the figures may be short: `tokens` (the token list), `prices`, or `reviews` (which tokens are vouched for). */
 export type PortfolioGap = 'tokens' | 'prices' | 'reviews'
 
@@ -60,11 +76,14 @@ export interface Portfolio {
   near: NearHolding
   /** NEAR's own price, when the price service answered. */
   nearPrice: Price | null
-  /** Most valuable first. */
+  /** Most valuable first. Every chain read, NEAR's tokens and Zerion's alike. */
   tokens: TokenHolding[]
+  zerion: ZerionState
+  /** Accounts Zerion was asked about and couldn't read, such as an address kind it doesn't track. */
+  unread: HoldingGroup[]
   /** Tokens held with no price, or that the price service marks as spam. Counted only, never named. */
   unpriced: number
-  /** NEAR, staked and held for storage included, plus every reviewed token. Null without NEAR's price. */
+  /** NEAR, staked and held for storage included, plus every reviewed token on every chain. Null without NEAR's price. */
   totalUsd: number | null
   /** When the figures were read, ms since the epoch. */
   readAt: number

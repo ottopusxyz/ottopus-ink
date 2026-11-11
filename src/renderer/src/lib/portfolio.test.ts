@@ -3,7 +3,10 @@ import type { Portfolio, TokenHolding } from '../../../shared/portfolio'
 import { portfolioFailure, portfolioView, readAgo, shareBar, shortAmount } from './portfolio'
 
 const token = (symbol: string, amount: string, usdValue: number, trust: TokenHolding['trust'] = 'reviewed', countedUsd = trust === 'reviewed' ? usdValue : 0): TokenHolding => ({
-  chain: 'near',
+  id: `near:${symbol.toLowerCase()}.near`,
+  group: 'near',
+  network: 'near',
+  networkName: 'NEAR',
   contract: `${symbol.toLowerCase()}.near`,
   symbol,
   decimals: 6,
@@ -26,6 +29,8 @@ const PORTFOLIO: Portfolio = {
   },
   nearPrice: { usd: 2, change24h: 0.01 },
   tokens: [token('USDC', '30', 30), token('MEME', '1000000', 500, 'reviewed', 100), token('FAKE', '5', 5, 'unreviewed')],
+  zerion: 'off',
+  unread: [],
   unpriced: 4,
   totalUsd: 20 + 10 + 30 + 100,
   readAt: 0,
@@ -36,8 +41,8 @@ describe('the Portfolio table', () => {
   it('puts NEAR, staked NEAR and each vouched-for token in rows, by what they count for', () => {
     const view = portfolioView(PORTFOLIO)
     expect(view.rows.map(({ id, symbol, label, amount, usd, counted, thin }) => ({ id, symbol, label, amount, usd, counted, thin }))).toEqual([
-      { id: 'meme.near', symbol: 'MEME', label: 'Token on NEAR', amount: '1,000,000', usd: 500, counted: 100, thin: true },
-      { id: 'usdc.near', symbol: 'USDC', label: 'Token on NEAR', amount: '30', usd: 30, counted: 30, thin: false },
+      { id: 'near:meme.near', symbol: 'MEME', label: 'Token on NEAR', amount: '1,000,000', usd: 500, counted: 100, thin: true },
+      { id: 'near:usdc.near', symbol: 'USDC', label: 'Token on NEAR', amount: '30', usd: 30, counted: 30, thin: false },
       { id: 'near', symbol: 'NEAR', label: 'Native on NEAR', amount: '10', usd: 20, counted: 20, thin: false },
       // Staked, and waiting to be withdrawn.
       { id: 'near-staked', symbol: 'NEAR', label: 'Staked on NEAR', amount: '5', usd: 10, counted: 10, thin: false },
@@ -54,10 +59,16 @@ describe('the Portfolio table', () => {
     expect(view.rows[0]).toMatchObject({ id: 'near', usd: null, counted: 0, share: null })
   })
 
+  it('names a Zerion holding by its chain, and a chain’s own coin as native', () => {
+    const eth: TokenHolding = { ...token('ETH', '0.5', 1000), id: 'base:native', group: 'evm', network: 'base', networkName: 'Base', contract: null }
+    const row = portfolioView({ ...PORTFOLIO, tokens: [eth] }).rows.find((item) => item.id === 'base:native')
+    expect(row).toMatchObject({ group: 'evm', network: 'base', label: 'Native on Base', contract: null })
+  })
+
   it('gives known tokens their brand colour', () => {
     const colors = Object.fromEntries(portfolioView(PORTFOLIO).rows.map((row) => [row.id, row.color]))
     expect(colors.near).toBe('#00EC97')
-    expect(colors['usdc.near']).toBe('#2775CA')
+    expect(colors['near:usdc.near']).toBe('#2775CA')
   })
 })
 

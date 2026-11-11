@@ -1,11 +1,15 @@
 import { parseNear, formatNear } from '../../../shared/near/units'
-import type { Portfolio, PortfolioResult, TokenHolding } from '../../../shared/portfolio'
+import type { HoldingGroup, Portfolio, PortfolioResult, TokenHolding } from '../../../shared/portfolio'
 import { formatAmount } from './format'
 
 /** One line of the Portfolio table. */
 export interface PortfolioRow {
-  /** `near`, `near-staked`, or the token's contract. */
+  /** `near`, `near-staked`, or the token's chain and contract. */
   id: string
+  /** The account that holds it, for the chain chips. */
+  group: HoldingGroup
+  /** The chain it's on: `near`, `base`. */
+  network: string
   symbol: string
   /** What it is and where: "Native on NEAR". */
   label: string
@@ -54,7 +58,7 @@ export function shortAmount(decimal: string, places = 4): string {
 
 const sum = (...amounts: string[]) => formatNear(amounts.reduce((total, amount) => total + (parseNear(amount) ?? 0n), 0n))
 
-/** The Portfolio table's rows, from what main read: NEAR, staked NEAR, then each token. */
+/** The Portfolio table's rows, from what main read: NEAR, staked NEAR, then each token on every chain read. */
 export function portfolioView(portfolio: Portfolio): PortfolioView {
   const { near, nearPrice, tokens, unpriced, totalUsd } = portfolio
   const nearUsd = nearPrice?.usd ?? null
@@ -64,12 +68,14 @@ export function portfolioView(portfolio: Portfolio): PortfolioView {
 
   const nearRow = (id: string, symbol: string, label: string, amount: string, color: string): PortfolioRow => {
     const usd = nearUsd === null ? null : Number(amount) * nearUsd
-    return { id, symbol, label, amount: shortAmount(amount), exact: amount, usd, counted: usd ?? 0, share: share(usd ?? 0), color, thin: false, contract: null }
+    return { id, group: 'near', network: 'near', symbol, label, amount: shortAmount(amount), exact: amount, usd, counted: usd ?? 0, share: share(usd ?? 0), color, thin: false, contract: null }
   }
   const tokenRow = (token: TokenHolding): PortfolioRow => ({
-    id: token.contract,
+    id: token.id,
+    group: token.group,
+    network: token.network,
     symbol: token.symbol,
-    label: 'Token on NEAR',
+    label: `${token.contract ? 'Token' : 'Native'} on ${token.networkName}`,
     amount: shortAmount(token.amount),
     exact: token.amount,
     usd: token.usdValue,

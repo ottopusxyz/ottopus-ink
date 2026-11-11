@@ -20,6 +20,8 @@ interface World {
   prices?: Record<string, { price: string; symbol: string; decimal: number }> | 'down'
   reviews?: Record<string, string | 'down'>
   liquidity?: Record<string, number>
+  /** Zerion's answer for each address: positions, or a status it fails with. */
+  zerion?: Record<string, unknown[] | number>
 }
 
 /** The services the reader asks, by address, with a count of what was asked. */
@@ -29,6 +31,11 @@ function fakeFetch(world: World) {
   const fetch = (async (url: string) => {
     asked.push(url)
     if (url.endsWith('/staking')) return json({ pools: [] })
+    const wallet = /api\.zerion\.io\/v1\/wallets\/([^/]+)\/positions/.exec(url)?.[1]
+    if (wallet) {
+      const answer = world.zerion?.[decodeURIComponent(wallet)]
+      return typeof answer === 'number' || answer === undefined ? new Response('', { status: answer ?? 404 }) : json({ data: answer, links: {} })
+    }
     if (url.endsWith('/ft')) return world.tokens === 'down' ? new Response('', { status: 500 }) : json({ tokens: world.tokens ?? [] })
     if (url.endsWith('/list-token-price')) return world.prices === 'down' ? new Response('', { status: 500 }) : json(world.prices ?? {})
     const token = new URL(url).searchParams.get('token_id')
@@ -74,7 +81,7 @@ describe('the portfolio on NEAR', () => {
       prices: PRICES,
       reviews: { 'wrap.near': 'Reputable', 'usdc.near': 'Reputable', 'meme.near': 'Unknown', 'scam.near': 'Spam' },
     })
-    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, now: () => 1000 }).near(ID)
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, now: () => 1000 }).read({ near: ID })
 
     expect(portfolio.near).toMatchObject({ accountId: ID, onChain: true, available: '10', staked: '0', storage: '0' })
     expect(portfolio.nearPrice?.usd).toBe(4)
@@ -91,16 +98,16 @@ describe('the portfolio on NEAR', () => {
   })
 
   it('still shows NEAR when the token list or the prices can’t be read, and says which', async () => {
-    const noTokens = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ tokens: 'down', prices: PRICES }).fetch }).near(ID)
+    const noTokens = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ tokens: 'down', prices: PRICES }).fetch }).read({ near: ID })
     expect(noTokens).toMatchObject({ tokens: [], unpriced: 0, totalUsd: 40, gaps: ['tokens'] })
 
-    const noPrices = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ tokens: [{ contract_id: 'usdc.near', balance: '1' }], prices: 'down' }).fetch }).near(ID)
+    const noPrices = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ tokens: [{ contract_id: 'usdc.near', balance: '1' }], prices: 'down' }).fetch }).read({ near: ID })
     expect(noPrices).toMatchObject({ nearPrice: null, tokens: [], unpriced: 1, totalUsd: null, gaps: ['prices'] })
   })
 
   it('leaves a token unreviewed, and says so, when its review can’t be read', async () => {
     const { fetch } = fakeFetch({ tokens: [{ contract_id: 'usdc.near', balance: '1000000' }], prices: PRICES, reviews: { 'usdc.near': 'down' } })
-    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).near(ID)
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).read({ near: ID })
     expect(portfolio.tokens[0]?.trust).toBe('unreviewed')
     expect(portfolio.totalUsd).toBe(40)
     expect(portfolio.gaps).toEqual(['reviews'])
@@ -110,7 +117,7 @@ describe('the portfolio on NEAR', () => {
     const many = Array.from({ length: MAX_REVIEWS + 10 }, (_, i) => `t${i}.near`)
     const prices = Object.fromEntries(many.map((contract, i) => [contract, { price: String(i + 1), symbol: `T${i}`, decimal: 0 }]))
     const { fetch, asked } = fakeFetch({ tokens: many.map((contract_id) => ({ contract_id, balance: '1' })), prices: { ...prices, ...PRICES } })
-    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).near(ID)
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).read({ near: ID })
     const looked = asked.filter((url) => url.includes('token_id=') && !url.includes('wrap.near'))
     expect(looked).toHaveLength(MAX_REVIEWS)
     expect(looked).not.toContain('https://prices.intear.tech/token?token_id=t0.near')
@@ -127,7 +134,7 @@ describe('the portfolio on NEAR', () => {
       reviews: { 'usdc.near': 'Reputable', 'meme.near': 'NotFake' },
       liquidity: { 'usdc.near': 1_000_000, 'meme.near': 80 },
     })
-    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).near(ID)
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).read({ near: ID })
     expect(portfolio.tokens.map(({ symbol, usdValue, countedUsd }) => ({ symbol, usdValue, countedUsd }))).toEqual([
       { symbol: 'USDC', usdValue: 100, countedUsd: 100 },
       // $40 of MEME into a pool with $40 on the other side fetches $20.
@@ -136,8 +143,66 @@ describe('the portfolio on NEAR', () => {
     expect(portfolio.totalUsd).toBe(40 + 100 + 20)
   })
 
+  it('adds what Zerion reads for each account, counting only the tokens it knows', async () => {
+    const position = (symbol: string, chain: string, value: number, verified = true, address: string | null = '0xtoken') => ({
+      attributes: {
+        quantity: { int: '2000000', decimals: 6 },
+        value,
+        price: value / 2,
+        changes: { percent_1d: 1 },
+        fungible_info: { symbol, flags: { verified }, implementations: [{ chain_id: chain, address }] },
+      },
+      relationships: { chain: { data: { id: chain } } },
+    })
+    const { fetch, asked } = fakeFetch({
+      prices: PRICES,
+      zerion: {
+        '0xevm': [position('ETH', 'base', 3000, true, null), position('USDC', 'arbitrum', 2), position('RUG', 'base', 50, false)],
+        // A Solana address answers only for Solana, so a stray EVM row in it is dropped.
+        SoLaNa: [position('SOL', 'solana', 160, true, null), position('ETH', 'base', 999)],
+        TrOn: 400,
+      },
+    })
+    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionKey: () => 'zk_dev_test_not_a_real_key_0001' })
+    const portfolio = await reader.read({ near: ID, evm: '0xevm', solana: 'SoLaNa', tron: 'TrOn' })
+
+    expect(portfolio.tokens.map(({ id, group, networkName, symbol, amount, countedUsd, trust }) => ({ id, group, networkName, symbol, amount, countedUsd, trust }))).toEqual([
+      { id: 'base:native', group: 'evm', networkName: 'Base', symbol: 'ETH', amount: '2', countedUsd: 3000, trust: 'reviewed' },
+      { id: 'solana:native', group: 'solana', networkName: 'Solana', symbol: 'SOL', amount: '2', countedUsd: 160, trust: 'reviewed' },
+      { id: 'base:0xtoken', group: 'evm', networkName: 'Base', symbol: 'RUG', amount: '2', countedUsd: 0, trust: 'unreviewed' },
+      { id: 'arbitrum:0xtoken', group: 'evm', networkName: 'Arbitrum', symbol: 'USDC', amount: '2', countedUsd: 2, trust: 'reviewed' },
+    ])
+    expect(portfolio.zerion).toBe('ok')
+    expect(portfolio.unread).toEqual(['tron'])
+    expect(portfolio.totalUsd).toBe(40 + 3000 + 160 + 2)
+    expect(asked.filter((url) => url.includes('api.zerion.io'))).toHaveLength(3)
+  })
+
+  it('reads no other chain without a key, and says when Zerion turns the key down', async () => {
+    const accounts = { near: ID, evm: '0xevm' }
+    const noKey = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ prices: PRICES }).fetch })
+    expect(await noKey.read(accounts)).toMatchObject({ zerion: 'off', unread: [], totalUsd: 40 })
+
+    const refused = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ prices: PRICES, zerion: { '0xevm': 401 } }).fetch, zerionKey: () => 'zk_dev_test_not_a_real_key_0001' })
+    expect(await refused.read(accounts)).toMatchObject({ zerion: 'bad-key', unread: [], totalUsd: 40 })
+  })
+
+  it('reads again once a key is added, and forgets every read when asked', async () => {
+    let key: string | null = null
+    const { fetch, asked } = fakeFetch({ prices: PRICES, zerion: { '0xevm': [] } })
+    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionKey: () => key })
+    const lists = () => asked.filter((url) => url.endsWith('/list-token-price')).length
+    await reader.read({ near: ID, evm: '0xevm' })
+    key = 'zk_dev_test_not_a_real_key_0001'
+    expect((await reader.read({ near: ID, evm: '0xevm' })).zerion).toBe('ok')
+    expect(lists()).toBe(2)
+    reader.forget()
+    await reader.read({ near: ID, evm: '0xevm' })
+    expect(lists()).toBe(3)
+  })
+
   it('throws when NEAR itself can’t be read', async () => {
-    await expect(createPortfolioReader({ rpc: fakeRpc('down'), fetch: fakeFetch({}).fetch }).near(ID)).rejects.toThrow()
+    await expect(createPortfolioReader({ rpc: fakeRpc('down'), fetch: fakeFetch({}).fetch }).read({ near: ID })).rejects.toThrow()
   })
 
   it('keeps a read for a minute, reads again when asked fresh, and shares one under way', async () => {
@@ -146,15 +211,15 @@ describe('the portfolio on NEAR', () => {
     const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, now: () => time })
     const lists = () => asked.filter((url) => url.endsWith('/list-token-price')).length
 
-    await Promise.all([reader.near(ID), reader.near(ID, { fresh: true })])
+    await Promise.all([reader.read({ near: ID }), reader.read({ near: ID }, { fresh: true })])
     expect(lists()).toBe(1)
     time = PORTFOLIO_TTL_MS - 1
-    await reader.near(ID)
+    await reader.read({ near: ID })
     expect(lists()).toBe(1)
-    await reader.near(ID, { fresh: true })
+    await reader.read({ near: ID }, { fresh: true })
     expect(lists()).toBe(2)
     time += PORTFOLIO_TTL_MS
-    await reader.near(ID)
+    await reader.read({ near: ID })
     expect(lists()).toBe(3)
     // NEAR's own review is kept for an hour, so it was asked once.
     expect(asked.filter((url) => url.includes('token_id=wrap.near'))).toHaveLength(1)
@@ -164,8 +229,8 @@ describe('the portfolio on NEAR', () => {
     let down = true
     const rpc = { viewAccount: async () => (down ? Promise.reject(new Error('down')) : VIEW), callView: async () => '0' } as unknown as NearRpc
     const reader = createPortfolioReader({ rpc, fetch: fakeFetch({ prices: PRICES }).fetch })
-    await expect(reader.near(ID)).rejects.toThrow()
+    await expect(reader.read({ near: ID })).rejects.toThrow()
     down = false
-    expect((await reader.near(ID)).totalUsd).toBe(40)
+    expect((await reader.read({ near: ID })).totalUsd).toBe(40)
   })
 })

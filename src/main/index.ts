@@ -20,6 +20,7 @@ import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { createPlanStore, type PlanView } from './plans/store'
 import { createPortfolioReader } from './portfolio/reader'
+import { createZerionKeyStore, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
 import { describeForReview } from './review/describe'
 import { createReviewWindow } from './review/window'
@@ -163,8 +164,16 @@ const ownAccounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {
   return wallet.status().state === 'none' ? { ok: false, reason: 'no-vault' } : wallet.accounts()
 }
 
+let zerionKeys: ZerionKeyStore | null = null
+
+/** The person's own Zerion key, sealed by the OS keyring. Main alone reads it, to send to Zerion. */
+function getZerionKeys(): ZerionKeyStore {
+  zerionKeys ??= createZerionKeyStore({ file: join(app.getPath('userData'), 'zerion.bin'), box: osSecretBox })
+  return zerionKeys
+}
+
 /** Reads what the wallet holds, and keeps it a minute so the screen and the agent don't each ask again. */
-const portfolioReader = createPortfolioReader({ rpc: nearRpc })
+const portfolioReader = createPortfolioReader({ rpc: nearRpc, zerionKey: () => getZerionKeys().get() })
 
 /** What the wallet holds, for get_portfolio and the Portfolio screen. Public figures only, and only while unlocked, like the addresses. */
 const ownPortfolio = async ({ fresh = false }: { fresh?: boolean } = {}): Promise<PortfolioResult> => {
@@ -172,10 +181,11 @@ const ownPortfolio = async ({ fresh = false }: { fresh?: boolean } = {}): Promis
   if (wallet.status().state === 'none') return { ok: false, reason: 'no-vault' }
   // The vault answers only if it stayed unlocked for the whole read, so a lock while NEAR answers holds the figures back.
   const read = await wallet.withAccounts(async (accounts): Promise<PortfolioResult> => {
-    const accountId = accounts.find((account) => account.chain === 'near')?.address
-    if (!accountId) return { ok: false, reason: 'unavailable' }
+    const address = (chain: Account['chain']) => accounts.find((account) => account.chain === chain)?.address
+    const near = address('near')
+    if (!near) return { ok: false, reason: 'unavailable' }
     try {
-      return { ok: true, ...(await portfolioReader.near(accountId, { fresh })) }
+      return { ok: true, ...(await portfolioReader.read({ near, evm: address('evm'), solana: address('solana'), tron: address('tron') }, { fresh })) }
     } catch {
       return { ok: false, reason: 'unavailable' }
     }

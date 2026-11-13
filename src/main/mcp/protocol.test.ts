@@ -428,7 +428,7 @@ describe('handleMcpMessage', () => {
       expect(asked).toEqual([intent])
       expect(plans).toEqual([{ id: 'plan-1', status: 'draft', ...intent }])
       expect(result).toEqual({
-        content: [{ type: 'text', text: 'Plan plan-1 is made: Swap 0.1 ETH to USDC on base. If Ink can send it (so far, NEAR sent on NEAR, and NEAR swapped through NEAR Intents to the person’s own address), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.' }],
+        content: [{ type: 'text', text: 'Plan plan-1 is made: Swap 0.1 ETH to USDC on base. If Ink can send it (so far, NEAR sent on NEAR, and NEAR swapped through NEAR Intents to the person’s own address, or to one they typed on an EVM chain, Solana or NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.' }],
         isError: false,
       })
     })

@@ -58,13 +58,14 @@ function tokenAmount(raw: string, decimals: string, symbol: string): string | nu
 /**
  * A swap's review, from its one step of calls and the terms 1Click fixed. It's shown only
  * when the two agree: the step wraps exactly the NEAR swapped and sends it all to the
- * deposit address, and 1Click pays the plan's own recipient and refunds its own account.
+ * deposit address, and 1Click pays the plan's own recipient (the person's, or one they
+ * typed) and refunds the person's own account.
  */
 function describeSwap(plan: PlanView, network: string, maxFee: bigint | null): ReviewPlan | null {
   const swap = plan.core.swap as PlanSwap
   const [step, ...rest] = plan.core.steps
   const recipient = plan.core.recipient
-  if (!step || rest.length > 0 || !recipient || recipient.why !== 'own' || recipient.address !== swap.recipient) return null
+  if (!step || rest.length > 0 || !recipient || recipient.address !== swap.recipient) return null
   let read: ReturnType<typeof callsOfStep>
   try {
     read = callsOfStep(step)
@@ -107,7 +108,7 @@ function describeSwap(plan: PlanView, network: string, maxFee: bigint | null): R
     publicKey: nearPublicKey(read.publicKey),
     to: swap.recipient,
     toKind,
-    toWhy: 'own',
+    toWhy: recipient.why,
     amount,
     amountYocto: amountIn.toString(),
     asset: 'NEAR',

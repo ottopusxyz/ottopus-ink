@@ -89,7 +89,7 @@ export interface PlanSwap {
   getDecimals: string
   /** 1Click's name for the chain it pays out on: `base`, `sol`, or `intents` for the Intents balance. */
   getChain: string
-  /** Who 1Click pays: the person's own address there. */
+  /** Who 1Click pays: the person's own address there, or one they typed. */
   recipient: string
   /** Where a refund goes: the person's own NEAR account. */
   refundTo: string
@@ -140,6 +140,8 @@ export type PlanFailure =
   | 'chain-unavailable'
   /** NEAR Intents wouldn't quote the swap: under its minimum, or no market maker answered. */
   | 'no-route'
+  /** The payout address isn't a valid address on the chain it lands on, or one Ink can check yet. */
+  | 'bad-address'
 
 /** What an agent's chat learns about one of its plans. */
 export interface PlanSummary {

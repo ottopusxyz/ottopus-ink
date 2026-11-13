@@ -378,9 +378,18 @@ function SwapTerms({ plan, swap }: { plan: ReviewPlan; swap: ReviewSwap }) {
         <div className="flex flex-wrap gap-1.5">
           <Badge tone="ok">
             <CheckIcon size={12} />
-            {plan.toKind === 'other-chain' ? `Your own address on ${swap.getChain}` : 'Your own NEAR Intents balance'}
+            {plan.toWhy === 'typed'
+              ? 'You typed this address in the chat'
+              : plan.toKind === 'other-chain'
+                ? `Your own address on ${swap.getChain}`
+                : 'Your own NEAR Intents balance'}
           </Badge>
         </div>
+        {plan.toWhy === 'typed' ? (
+          <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
+            Not your own address. Check every character against the address you meant, and that it’s on {swap.getChain}. A payout to the wrong address can’t be taken back.
+          </p>
+        ) : null}
       </div>
       <div className="flex flex-col gap-1">
         <span className="ink-eyebrow">Refunds go to</span>

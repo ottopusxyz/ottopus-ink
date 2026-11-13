@@ -126,6 +126,22 @@ describe('building a swap from NEAR through 1Click', () => {
     expect(built).toMatchObject({ ok: true, swap: { getChain: 'intents', recipient: NEAR_ID }, payout: { address: NEAR_ID, chain: 'near' } })
   })
 
+  it('pays an address the person typed, when it’s a valid address on that chain', async () => {
+    const friend = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
+    const { options, asked } = deps()
+    const built = await buildOneClickSwap({ ...SWAP, to: friend }, OWN, options)
+    expect(asked[0]).toMatchObject({ recipient: friend, recipientType: 'DESTINATION_CHAIN', refundTo: NEAR_ID })
+    expect(built).toMatchObject({ ok: true, swap: { recipient: friend, refundTo: NEAR_ID }, payout: { address: friend, chain: 'evm' } })
+  })
+
+  it('refuses a typed address that isn’t one on that chain, or on a chain it can’t check yet, without asking 1Click', async () => {
+    const { options, asked } = deps()
+    expect(await buildOneClickSwap({ ...SWAP, to: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD' }, OWN, options)).toEqual({ ok: false, reason: 'bad-address' })
+    expect(await buildOneClickSwap({ ...SWAP, to: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM' }, OWN, options)).toEqual({ ok: false, reason: 'bad-address' })
+    expect(await buildOneClickSwap({ ...SWAP, toAsset: 'XRP', toChain: 'xrp', to: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe' }, OWN, options)).toEqual({ ok: false, reason: 'bad-address' })
+    expect(asked).toEqual([])
+  })
+
   it('refuses a chain where the person has no address of their own', async () => {
     const { options, asked } = deps()
     expect(await buildOneClickSwap({ ...SWAP, toAsset: 'XRP', toChain: 'xrp' }, OWN, options)).toEqual({ ok: false, reason: 'recipient-not-allowed' })
@@ -139,7 +155,6 @@ describe('building a swap from NEAR through 1Click', () => {
       { ...SWAP, asset: 'USDC', toAsset: 'NEAR', toChain: 'near' },
       { ...SWAP, chain: 'base', asset: 'USDC', toAsset: 'NEAR', toChain: 'near' },
       { ...SWAP, toAsset: 'NEAR', toChain: 'near' },
-      { ...SWAP, to: EVM },
     ]) {
       expect(await buildOneClickSwap(intent, OWN, options)).toEqual({ ok: true, steps: [] })
     }

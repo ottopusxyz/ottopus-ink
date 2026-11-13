@@ -64,8 +64,8 @@ interface Entry {
 export type BuildSteps = (intent: PlanIntent, own: readonly Account[]) => Promise<{ ok: true; steps: PlanStep[] } & BuiltSwap | { ok: false; reason: PlanFailure }>
 
 /**
- * What a swap's builder adds: the terms 1Click fixed, and who it pays, which must be
- * the person's own address on the chain it pays out on. The store checks that again.
+ * What a swap's builder adds: the terms 1Click fixed, and who it pays, which must be the
+ * address the person typed, or else their own on the chain it pays out on. The store checks that again.
  */
 export interface BuiltSwap {
   swap?: PlanSwap
@@ -179,11 +179,12 @@ export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(),
       if (!makeRoom()) return { ok: false, reason: 'too-many' }
 
       const at = now()
-      // A swap pays the person's own address and nothing else, outliving the plan.
+      // A swap pays the address the person typed, or else their own there, and nothing else; and outlives the plan.
       let payee = recipient
       if (built.swap || built.payout) {
-        const paid = built.payout ? allowedRecipient(built.payout.address, built.payout.chain, own, []) : null
-        if (intent.outcome !== 'swap' || intent.to || !built.swap || !paid || paid.why !== 'own' || built.swap.recipient !== paid.address) return { ok: false, reason: 'recipient-not-allowed' }
+        const payout = built.payout
+        const paid = !payout ? null : intent.to ? (payout.address === intent.to ? recipient : null) : allowedRecipient(payout.address, payout.chain, own, [])
+        if (intent.outcome !== 'swap' || !built.swap || !payout || !paid || (!intent.to && paid.why !== 'own') || built.swap.recipient !== paid.address) return { ok: false, reason: 'recipient-not-allowed' }
         if (!(Date.parse(built.swap.deadline) >= at.getTime() + PLAN_TTL_MS + SWAP_DEADLINE_MARGIN_MS)) return { ok: false, reason: 'chain-unavailable' }
         payee = paid
       }

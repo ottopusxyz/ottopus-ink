@@ -130,6 +130,14 @@ describe('what the review window shows for a swap', () => {
     })
   })
 
+  it('shows a payout to an address the person typed as theirs to check', async () => {
+    const friend = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
+    const store = createPlanStore({ buildSteps: async () => ({ ok: true, steps: [nearCallStep({ signerId: FROM, publicKey: KEY, receiverId: 'wrap.near', calls: calls() })], swap: { ...TERMS, recipient: friend }, payout: { address: friend, chain: 'evm' } }) })
+    const made = await store.create({ intent: { outcome: 'swap', asset: 'NEAR', amount: '5', chain: 'near', to: friend, toAsset: 'USDC', toChain: 'base' }, createdBy: 'agent', owner: 'chat', own: [{ chain: 'near', path: '', address: FROM }], typed: [`send it to ${friend}`] })
+    if (!made.ok) throw new Error(made.reason)
+    expect(describeForReview(made.plan, 'NEAR mainnet', FEE)).toMatchObject({ kind: 'swap', to: friend, toKind: 'other-chain', toWhy: 'typed', swap: { refundTo: FROM } })
+  })
+
   it('shows a swap into the Intents balance as such', async () => {
     const plan = await swapPlan(undefined, { getChain: 'intents', recipient: FROM })
     expect(describeForReview(plan, 'NEAR mainnet', FEE)).toMatchObject({ swap: { getChain: 'your NEAR Intents balance' }, to: FROM, toKind: 'implicit' })

@@ -150,6 +150,8 @@ function planRefusal(result: Extract<PlanToolResult, { ok: false }>, id: string 
       return toolAnswer('That account doesn’t exist on the chain, so nothing sent to it would arrive. Check the name with the person.', true)
     case 'chain-unavailable':
       return toolAnswer('Ink couldn’t reach the chain to build the plan. Try again in a moment.', true)
+    case 'bad-address':
+      return toolAnswer('That isn’t a valid address on the chain the swap pays out on, or Ink can’t check addresses there yet (so far: EVM chains, Solana and NEAR). Ask the person to check the address and the chain.', true)
     case 'no-route':
       return toolAnswer('NEAR Intents wouldn’t quote this swap right now: the amount may be under its minimum, or no market maker answered. Check with get_quote, then try again.', true)
     case 'locked':
@@ -522,7 +524,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         const intent = intentFrom(params.arguments)
         if (!intent) return result(toolAnswer(PLAN_SCHEMA_HELP, true))
         if (!plans) return result(NOT_BUILT.create_plan ?? NOT_SET_UP)
-        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is made: ${plan.summary}. If Ink can send it (so far, NEAR sent on NEAR, and NEAR swapped through NEAR Intents to the person’s own address), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.`)
+        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is made: ${plan.summary}. If Ink can send it (so far, NEAR sent on NEAR, and NEAR swapped through NEAR Intents to the person’s own address, or to one they typed on an EVM chain, Solana or NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.`)
         if (made.plan) onPlan?.(chatPlanOf(made.plan))
         return result(made.answer)
       }

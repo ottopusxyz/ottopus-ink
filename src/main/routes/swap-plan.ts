@@ -1,5 +1,6 @@
 import { hexToBytes } from '@noble/hashes/utils.js'
 import type { Account } from '../../shared/accounts'
+import { isAddressOn } from '../../shared/addresses'
 import { isNearAccountId, nearAccountKind } from '../../shared/near/account-id'
 import { callsDeposit, callsGas, nearCallStep, WRAP_NEAR, type NearCall } from '../../shared/near/calls'
 import { nearPublicKey } from '../../shared/near/transaction'
@@ -36,7 +37,8 @@ const QUOTE_FAILURES: Record<OneClickFailure, PlanFailure> = {
 /**
  * A swap of NEAR from the wallet through NEAR Intents, as a plan's steps. Main picks the
  * route and every address: 1Click pays the person's own address on the chain it pays out
- * on, or their Intents balance, and refunds their NEAR account. The binding quote's deposit
+ * on, their Intents balance, or an address they typed in the chat that's valid there (on
+ * an EVM chain, Solana or NEAR so far), and refunds their NEAR account. The binding quote's deposit
  * address goes into one transaction to wrap.near: register the person and the deposit
  * address (refunded when either already is), wrap the NEAR, and send that wNEAR to it.
  *
@@ -45,7 +47,7 @@ const QUOTE_FAILURES: Record<OneClickFailure, PlanFailure> = {
  */
 export async function buildOneClickSwap(intent: PlanIntent, own: readonly Account[], { tokens, quote, fits, now = Date.now }: SwapPlanDeps): Promise<SwapPlanResult> {
   const NOT_YET: SwapPlanResult = { ok: true, steps: [] }
-  if (intent.outcome !== 'swap' || !intent.toAsset || intent.to) return NOT_YET
+  if (intent.outcome !== 'swap' || !intent.toAsset) return NOT_YET
   const near = own.find((account) => account.chain === 'near')?.address
   if (!near || nearAccountKind(near) !== 'implicit') return { ok: false, reason: 'chain-unavailable' }
   const listed = await tokens().catch(() => null)
@@ -62,8 +64,16 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
   const leg = route.legs.find((candidate) => candidate.source === 'wallet')
   if (!leg || leg.from.assetId !== `nep141:${WRAP_NEAR}`) return NOT_YET
 
+  // Who it pays: an address the person typed (the store checks they did), or their own there.
   const payoutChain = route.toIntents ? 'near' : accountChainFor(route.to.blockchain)
-  const payout = payoutChain ? own.find((account) => account.chain === payoutChain)?.address : undefined
+  let payout: string | undefined
+  if (intent.to) {
+    // Only where Ink can tell a real address from a mistyped one, since a payout can't be undone.
+    if (!payoutChain || !isAddressOn(payoutChain, intent.to)) return { ok: false, reason: 'bad-address' }
+    payout = intent.to
+  } else {
+    payout = payoutChain ? own.find((account) => account.chain === payoutChain)?.address : undefined
+  }
   if (!payoutChain || !payout) return { ok: false, reason: 'recipient-not-allowed' }
 
   const quoted = await quote({

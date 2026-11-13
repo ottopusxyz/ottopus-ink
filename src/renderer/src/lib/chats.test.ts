@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatEvent, ChatPlan } from '../../../shared/ipc'
+import type { ChatDeposit, ChatEvent, ChatPlan } from '../../../shared/ipc'
 import { NOTHING_SIGNED } from '@/components/ui/copy'
 import {
   chatContinued,
   restoredChat,
   applyChatEvent,
+  applyDepositEvent,
   chatFailedToStart,
   chatStarted,
   chatTurns,
@@ -498,5 +499,42 @@ describe('a chat kept from before a restart', () => {
     expect(chat).toMatchObject({ sessionId: 'session-2', phase: 'answering', restored: false, lock: 'unchecked' })
     expect(chat.items.at(-1)).toMatchObject({ kind: 'notice', title: 'Continued after a restart' })
     expect(applyChatEvent(chat, { type: 'turn-end', outcome: 'done', error: null }).phase).toBe('ready')
+  })
+})
+
+describe('a deposit card in a chat', () => {
+  const DEPOSIT: ChatDeposit = {
+    id: 'd1',
+    kind: 'intents',
+    chain: 'base',
+    chainName: 'Base',
+    mark: 'base',
+    asset: 'USDC',
+    icon: null,
+    amount: '25',
+    address: '0x8f436D184823B77188DE973322278686c3780C2c',
+    memo: null,
+    min: '1',
+    account: 'a'.repeat(64),
+    why: null,
+    progress: { stage: 'watching', got: null, tx: null, link: null, until: 1 },
+  }
+  const live = () => ({ ...newChat('c1', 'claude-code', 'Where do I send 25 USDC?'), phase: 'ready' as const })
+
+  it('shows the card, follows it, and adds Ink’s note when it lands', () => {
+    let chat = applyChatEvent(live(), { type: 'deposit', deposit: DEPOSIT })
+    chat = applyChatEvent(chat, { type: 'deposit-progress', id: 'd1', progress: { ...DEPOSIT.progress, stage: 'credited', got: '25 USDC' } })
+    chat = applyChatEvent(chat, { type: 'deposit-note', id: 'd1', note: { tone: 'ok', title: '25 USDC arrived', lines: [], links: [] } })
+    expect(chat.items.map((item) => item.kind)).toEqual(['user', 'deposit', 'ink-note'])
+    expect(chat.items[1]).toMatchObject({ kind: 'deposit', deposit: { id: 'd1', progress: { stage: 'credited', got: '25 USDC' } } })
+  })
+
+  it('moves a card shown again down to where it was asked, and goes on after the chat ends', () => {
+    let chat = applyChatEvent(live(), { type: 'deposit', deposit: DEPOSIT })
+    chat = applyChatEvent(chat, { type: 'text', text: 'Anything else?' })
+    chat = applyChatEvent(chat, { type: 'deposit', deposit: DEPOSIT })
+    expect(chat.items.map((item) => item.kind)).toEqual(['user', 'agent', 'deposit'])
+    const ended = { ...chat, phase: 'ended' as const }
+    expect(applyDepositEvent(ended, { type: 'deposit-progress', id: 'd1', progress: { ...DEPOSIT.progress, stage: 'stopped' } }).items.at(-1)).toMatchObject({ deposit: { progress: { stage: 'stopped' } } })
   })
 })

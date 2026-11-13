@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentId, AgentStatus, AppInfo, ExternalItem, SignerStatus } from '../../shared/ipc'
-import type { AccountChain } from '../../shared/accounts'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { ChatView } from '@/components/chat/chat-view'
 import { HomeView } from '@/components/home/home-view'
@@ -56,7 +55,8 @@ export function App() {
   // agent, before Home. Seen as the vault going from none to unlocked.
   const [meeting, setMeeting] = useState(false)
   /** The chain Receive opens on, when a page asked for one. */
-  const [receiveChain, setReceiveChain] = useState<AccountChain | null>(null)
+  /** The chain Receive opens on: a wallet account's, or Ink's name for any chain it receives on. */
+  const [receiveChain, setReceiveChain] = useState<string | null>(null)
   const [seenState, setSeenState] = useState(vault?.state)
   if (vault?.state !== seenState) {
     setSeenState(vault?.state)
@@ -147,7 +147,7 @@ export function App() {
 
   const openChat = (chatId: string) => setView({ kind: 'chat', chatId })
 
-  const openReceive = (chain: AccountChain | null = null) => {
+  const openReceive = (chain: string | null = null) => {
     setReceiveChain(chain)
     setView({ kind: 'page', page: 'receive' })
   }
@@ -220,6 +220,7 @@ export function App() {
           onContinue={() => chatActions.continue(current)}
           onForget={() => chatActions.forget(current)}
           onToolsSettings={() => openSettings('tools')}
+          onOpenReceive={(chain) => openReceive(chain)}
         />
       ) : (
         <HomeView

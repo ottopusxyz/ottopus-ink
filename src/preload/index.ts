@@ -16,6 +16,7 @@ const bridge: InkBridge = {
   searchReceiveTokens: (chain, query) => ipcRenderer.invoke(IPC.searchReceiveTokens, chain, query),
   receiveAddress: (ask) => ipcRenderer.invoke(IPC.receiveAddress, ask),
   copyReceive: (ask, part) => ipcRenderer.invoke(IPC.copyReceive, ask, part),
+  watchDepositAgain: (id) => ipcRenderer.invoke(IPC.watchDepositAgain, id),
   deleteSavedChat: (id) => ipcRenderer.invoke(IPC.deleteSavedChat, id),
   clearChatHistory: () => ipcRenderer.invoke(IPC.clearChatHistory),
   sendToChat: (chatId, text) => ipcRenderer.invoke(IPC.sendToChat, chatId, text),
@@ -59,6 +60,13 @@ const bridge: InkBridge = {
     ipcRenderer.on(IPC.swapsChanged, handler)
     return () => {
       ipcRenderer.removeListener(IPC.swapsChanged, handler)
+    }
+  },
+  onDepositEvent: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, chatId: string, event: Parameters<Parameters<InkBridge['onDepositEvent']>[0]>[1]) => listener(chatId, event)
+    ipcRenderer.on(IPC.depositEvent, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC.depositEvent, handler)
     }
   },
   zerionKeyStatus: () => ipcRenderer.invoke(IPC.zerionKeyStatus),

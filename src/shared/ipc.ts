@@ -55,10 +55,13 @@ export const IPC = {
   searchReceiveTokens: 'wallet:search-receive-tokens',
   receiveAddress: 'wallet:receive-address',
   copyReceive: 'wallet:copy-receive',
+  watchDepositAgain: 'wallet:watch-deposit-again',
   deleteSavedChat: 'chat:delete-saved',
   clearChatHistory: 'chat:clear-history',
   /** Main to renderer: a followed swap moved on. It carries nothing: the page asks for them, which needs Ink unlocked. */
   swapsChanged: 'wallet:swaps-changed',
+  /** Main to renderer: a deposit of a kept chat whose session is gone moved on, with the chat's id. Only while unlocked. */
+  depositEvent: 'wallet:deposit-event',
   /** Main to renderer: the vault's status, sent on every change. */
   vaultStatusChanged: 'vault:status-changed',
 } as const
@@ -331,6 +334,12 @@ export type ChatEvent =
   | { type: 'plan-swap'; id: string; swap: ChatSwap }
   /** How a plan of this chat ended, from main. */
   | { type: 'plan-note'; id: string; note: InkNote }
+  /** Where to send a deposit, from main when the agent asked; again when it's watched anew. */
+  | { type: 'deposit'; deposit: ChatDeposit }
+  /** A deposit of this chat's moved on. From main. */
+  | { type: 'deposit-progress'; id: string; progress: DepositProgress }
+  /** A deposit of this chat landed or wasn't credited, in Ink's words. */
+  | { type: 'deposit-note'; id: string; note: InkNote }
   /** Ink passed a plan's ending to the agent, which is now answering it. */
   | { type: 'ink-told' }
   | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
@@ -359,6 +368,8 @@ export interface InkBridge {
   receiveAddress(ask: { chain: string; asset: string; amount: string | null }): Promise<ReceiveAnswer>
   /** Copies that address or its memo, as main worked it out, never text from the page. */
   copyReceive(ask: { chain: string; asset: string; amount: string | null }, part: 'address' | 'memo'): Promise<{ ok: boolean }>
+  /** Watches a deposit card's address for another day, once Ink stopped. */
+  watchDepositAgain(id: string): Promise<{ ok: boolean }>
   /** Chats Ink kept from before, newest first. Empty while Ink is locked. */
   savedChats(): Promise<SavedChat[]>
   deleteSavedChat(id: string): Promise<void>
@@ -415,6 +426,8 @@ export interface InkBridge {
   /** The swaps Ink followed lately, newest first. Empty while Ink is locked. */
   recentSwaps(): Promise<RecentSwap[]>
   onSwapsChanged(listener: () => void): () => void
+  /** A deposit of a kept chat, with no session now, moved on. `chatId` is the page's id for the chat. */
+  onDepositEvent(listener: (chatId: string, event: Extract<ChatEvent, { type: 'deposit-progress' | 'deposit-note' }>) => void): () => void
 }
 
 /** Messages between main and the signer utility process. */

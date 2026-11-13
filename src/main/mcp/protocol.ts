@@ -114,6 +114,8 @@ export interface McpHandlers {
   quote?: (ask: RouteAsk) => Promise<QuoteOutcome>
   /** Where the wallet receives a token, NEAR Intents first. */
   receive?: (ask: { chain: string; asset: string; amount: string | null }) => Promise<ReceiveAnswer>
+  /** Gets each address get_deposit_address gave this session's agent, so Ink can show it and watch it. */
+  onReceive?: (ask: { chain: string; asset: string; amount: string | null }, answer: Extract<ReceiveAnswer, { ok: true }>) => void
 }
 
 /** How each status reads to an agent. */
@@ -430,7 +432,7 @@ async function quoteAnswer(quote: McpHandlers['quote'], args: unknown): Promise<
 }
 
 /** get_deposit_address's answer: the address, whose it is, the memo and minimum, and where the money lands. */
-async function receiveAnswer(receive: McpHandlers['receive'], args: unknown): Promise<object> {
+async function receiveAnswer(receive: McpHandlers['receive'], args: unknown, onReceive?: McpHandlers['onReceive']): Promise<object> {
   if (!receive) return NOT_BUILT.get_deposit_address ?? NOT_SET_UP
   const fields = isRecord(args) ? args : {}
   const word = (value: unknown) => (typeof value === 'string' && value.length <= 40 && PLAN_FIELD.test(value) ? value : null)
@@ -461,6 +463,8 @@ async function receiveAnswer(receive: McpHandlers['receive'], args: unknown): Pr
         return toolAnswer('Ink couldn’t work out where to receive right now. Try again.', true)
     }
   }
+  onReceive?.({ chain, asset, amount }, answer)
+  const shown = 'Ink shows the person this address and its QR code in the chat, watches for the deposit, and tells you when it lands.'
   if (answer.kind === 'intents') {
     return toolAnswer(
       [
@@ -468,6 +472,7 @@ async function receiveAnswer(receive: McpHandlers['receive'], args: unknown): Pr
         ...(answer.memo ? [`Memo, required: ${answer.memo}. Without it the deposit isn’t credited.`] : []),
         `This is the NEAR Intents bridge’s deposit address for this wallet, not one of the wallet’s own addresses. What arrives lands in the wallet’s NEAR Intents balance (account ${answer.account}).`,
         `Send at least ${answer.min} ${answer.asset}: less isn’t credited. Only ${answer.asset} on ${answer.chainName}.`,
+        shown,
       ].join('\n'),
     )
   }
@@ -477,7 +482,7 @@ async function receiveAnswer(receive: McpHandlers['receive'], args: unknown): Pr
       : answer.why === 'intents-unavailable'
         ? 'NEAR Intents couldn’t be reached for its deposit address, so this is the wallet’s own address.'
         : `NEAR Intents doesn’t take ${answer.asset} on ${answer.chainName}, so this is the wallet’s own address.`
-  return toolAnswer([`Send ${answer.asset} on ${answer.chainName} to: ${answer.address}`, why, `Only ${answer.asset} on ${answer.chainName}.`].join('\n'))
+  return toolAnswer([`Send ${answer.asset} on ${answer.chainName} to: ${answer.address}`, why, `Only ${answer.asset} on ${answer.chainName}.`, shown].join('\n'))
 }
 
 async function accountsAnswer(read: McpHandlers['accounts']): Promise<object> {
@@ -549,7 +554,7 @@ export function parseErrorResponse(): object {
  * server doesn't have gets a proper error rather than silence: Claude Code opens
  * with `server/discover` and falls back to `initialize` only when told no.
  */
-export async function handleMcpMessage(message: unknown, version: string, { onPlan, accounts, plans, portfolio, quote, receive }: McpHandlers = {}): Promise<object | null> {
+export async function handleMcpMessage(message: unknown, version: string, { onPlan, accounts, plans, portfolio, quote, receive, onReceive }: McpHandlers = {}): Promise<object | null> {
   if (!isRecord(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     const id = isRecord(message) && (typeof message.id === 'string' || typeof message.id === 'number') ? message.id : null
     return rpcError(id, INVALID_REQUEST, 'Not a JSON-RPC 2.0 request')
@@ -600,7 +605,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
       if (params.name === 'get_accounts') return result(await accountsAnswer(accounts))
       if (params.name === 'get_portfolio') return result(await portfolioAnswer(portfolio, params.arguments))
       if (params.name === 'get_quote') return result(await quoteAnswer(quote, params.arguments))
-      if (params.name === 'get_deposit_address') return result(await receiveAnswer(receive, params.arguments))
+      if (params.name === 'get_deposit_address') return result(await receiveAnswer(receive, params.arguments, onReceive))
       return result(NOT_BUILT[params.name as string] ?? NOT_SET_UP)
     }
     default:

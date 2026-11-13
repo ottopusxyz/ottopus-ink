@@ -272,7 +272,17 @@ describe('handleMcpMessage', () => {
         'Memo, required: 177237517. Without it the deposit isn’t credited.',
         `This is the NEAR Intents bridge’s deposit address for this wallet, not one of the wallet’s own addresses. What arrives lands in the wallet’s NEAR Intents balance (account ${'a'.repeat(64)}).`,
         'Send at least 0.1 XLM: less isn’t credited. Only XLM on Stellar.',
+        'Ink shows the person this address and its QR code in the chat, watches for the deposit, and tells you when it lands.',
       ])
+    })
+
+    it('hands each address it gave to the chat, so Ink can show it and watch it, and nothing it refused', async () => {
+      const shown: unknown[] = []
+      const ask = (receive: McpHandlers['receive'], args: unknown) =>
+        handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_deposit_address', arguments: args } }, '1', { receive, onReceive: (asked, answer) => shown.push([asked, answer.address]) })
+      await ask(async () => ({ ok: true, kind: 'intents', chain: 'base', chainName: 'Base', asset: 'USDC', address: '0xbridge', memo: null, min: '1', account: 'a'.repeat(64) }), { chain: 'base', asset: 'USDC', amount: '25' })
+      await ask(async () => ({ ok: false, reason: 'locked' }), { chain: 'base', asset: 'USDC' })
+      expect(shown).toEqual([[{ chain: 'base', asset: 'USDC', amount: '25' }, '0xbridge']])
     })
 
     it('gives the wallet’s own address and says why', async () => {

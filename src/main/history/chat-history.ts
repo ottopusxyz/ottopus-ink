@@ -4,6 +4,7 @@ import { AGENT_IDS, type AgentId, type ChatEvent, type ChatPlan, type ChatSwap, 
 import { CHAT_ID, SAVED_EVENT_TYPES, type SavedChat, type SavedEvent } from '../../shared/history'
 import { PLAN_STATUSES } from '../../shared/plan'
 import type { SecretBox } from '../external/sign-ins'
+import { isDeposit, isProgress } from '../intents/deposit-journal'
 
 /** Chats kept, newest first. */
 export const HISTORY_KEEP = 30
@@ -70,6 +71,12 @@ function eventOf(value: unknown): SavedEvent | null {
       return isText(event.id, 64) && isSwap(event.swap) ? { type: 'plan-swap', id: event.id, swap: event.swap } : null
     case 'plan-note':
       return isText(event.id, 64) && isNote(event.note) ? { type: 'plan-note', id: event.id, note: event.note } : null
+    case 'deposit':
+      return isDeposit(event.deposit) ? { type: 'deposit', deposit: event.deposit } : null
+    case 'deposit-progress':
+      return isText(event.id, 64) && isProgress(event.progress) ? { type: 'deposit-progress', id: event.id, progress: event.progress } : null
+    case 'deposit-note':
+      return isText(event.id, 64) && isNote(event.note) ? { type: 'deposit-note', id: event.id, note: event.note } : null
     default:
       return null
   }

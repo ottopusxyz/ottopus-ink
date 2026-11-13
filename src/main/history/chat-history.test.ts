@@ -54,6 +54,20 @@ describe('the chat history', () => {
     })
   })
 
+  it('keeps a deposit card, where it got to and Ink’s note, and drops one in any other shape', () => {
+    const { kept, file, write } = history()
+    const deposit = { id: 'd1', kind: 'intents' as const, chain: 'base', chainName: 'Base', mark: 'base', asset: 'USDC', icon: null, amount: '25', address: '0x8f436D184823B77188DE973322278686c3780C2c', memo: null, min: '1', account: 'a'.repeat(64), why: null, progress: { stage: 'watching' as const, got: null, tx: null, link: null, until: 5 } }
+    kept.begin(ID, 'claude-code', 'Where do I send USDC?')
+    kept.record(ID, { type: 'deposit', deposit })
+    kept.record(ID, { type: 'deposit-progress', id: 'd1', progress: { ...deposit.progress, stage: 'credited', got: '25 USDC', link: 'https://basescan.org/tx/0xabc12345' } })
+    kept.record(ID, { type: 'deposit-note', id: 'd1', note: { tone: 'ok', title: '25 USDC arrived', lines: ['In your Intents balance.'], links: [] } })
+    kept.record(ID, { type: 'deposit-progress', id: 'd1', progress: { ...deposit.progress, link: 'javascript:alert(1)' } })
+    kept.record(ID, { type: 'deposit', deposit: { ...deposit, icon: 'https://tracker.example.test/i.png' } })
+    kept.flush()
+    write()
+    expect(history(file).kept.get(ID)?.events.map((event) => event.type)).toEqual(['deposit', 'deposit-progress', 'deposit-note'])
+  })
+
   it('waits to write while a reply streams in, and writes at once when told to', () => {
     const { kept, file, write } = history()
     kept.begin(ID, 'claude-code', 'hi')

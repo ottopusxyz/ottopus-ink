@@ -5,11 +5,12 @@ import { Otto } from '@/components/brand/otto'
 import { Ring } from '@/components/motion/ring'
 import { Sea } from '@/components/motion/sea'
 import { CheckIcon, CloseIcon, CopyIcon, SearchIcon } from '@/components/shell/icons'
-import { Callout, ChainLogo, Input, IntentsLogo, TokenLogo } from '@/components/ui'
+import { Callout, Input, TokenLogo } from '@/components/ui'
 import { cn } from '@/lib/cn'
-import { isChainId, isTokenSymbol } from '@/lib/logos'
+import { isTokenSymbol } from '@/lib/logos'
 import { receiveCacheOfApp } from '@/lib/receive-cache'
 import { addressParts } from '@/lib/wallet'
+import { ChainMark } from './chain-mark'
 import { QrCode } from './qr-code'
 
 /** Chains shown before any search. */
@@ -19,17 +20,6 @@ const SHOWN_CHAINS = 5
 const START: Record<AccountChain, string> = { near: 'near', evm: 'ethereum', solana: 'solana', bitcoin: 'bitcoin', tron: 'tron', sui: 'sui', aptos: 'aptos' }
 
 type Chains = { kind: 'loading' } | { kind: 'ready'; chains: ReceiveChain[] } | { kind: 'failed' }
-
-/** A chain's mark: Ink's own where it has one, else its initial. */
-function ChainMark({ chain, size = 'md' }: { chain: Pick<ReceiveChain, 'mark' | 'name'>; size?: 'sm' | 'md' | 'lg' }) {
-  if (chain.mark && isChainId(chain.mark)) return <ChainLogo chain={chain.mark} size={size} />
-  if (chain.mark === 'ton' || chain.mark === 'xrp') return <IntentsLogo chain={chain.mark} size={size} />
-  return (
-    <span className={cn('ink-logo ink-logo--text', `ink-logo--${size}`)} aria-hidden>
-      {chain.name.slice(0, 1)}
-    </span>
-  )
-}
 
 /** A minimum worth showing: one too small to matter, such as wNEAR's one yoctoNEAR, reads as none. */
 function minOf(min: string | null): string | null {
@@ -199,13 +189,13 @@ function SearchBox<T>({
  * lands in the Intents balance, else the wallet's own address on that chain. The card
  * says which it is. Only reachable while unlocked.
  */
-export function ReceiveView({ startChain = null }: { /** The chain to open on, as when Portfolio asks for one chain's address. */ startChain?: AccountChain | null } = {}) {
+export function ReceiveView({ startChain = null }: { /** The chain to open on: a wallet account's, as when Portfolio asks, or Ink's name for one, as a deposit card does. */ startChain?: string | null } = {}) {
   const cache = receiveCacheOfApp()
   const [chains, setChains] = useState<Chains>(() => {
     const kept = cache.chains()
     return kept ? { kind: 'ready', chains: kept } : { kind: 'loading' }
   })
-  const [chainId, setChainId] = useState<string>(startChain ? START[startChain] : 'near')
+  const [chainId, setChainId] = useState<string>(startChain ? (START[startChain as AccountChain] ?? startChain) : 'near')
   const [picked, setPicked] = useState<ReceiveToken | null>(null)
   const [amount, setAmount] = useState('')
 

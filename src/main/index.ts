@@ -1,17 +1,21 @@
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatSwap, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
-import { depositAddress, depositChains } from './intents/deposits'
+import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { createDepositJournal } from './intents/deposit-journal'
+import { depositEnding } from './intents/deposit-note'
+import { createDepositWatcher, type DepositJournal } from './intents/deposit-watch'
+import { depositAddress, depositChains, recentDeposits } from './intents/deposits'
 import { pickReceive, receiveChainOf, receiveChains, searchTokens, type ReceiveAsk } from './intents/receive'
 import { formatUnits } from '../shared/token-text'
 import { CHAT_ID, type SavedChat } from '../shared/history'
 import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
-import { closeChat, killChats, sendFromInk, sendToChat, startChat, stopChatTurn, type PlanEnding } from './agents/chats'
+import { closeChat, killChats, sendFromInk, sendToChat, startChat, stopChatTurn, type DepositListen, type PlanEnding } from './agents/chats'
 import { createChatHistory, savedEventOf, type ChatHistory } from './history/chat-history'
 import { recapOf } from './history/recap'
 import { detectAgents } from './agents/detect'
@@ -31,7 +35,7 @@ import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reade
 import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
 import { installId, INK_SERVICE_URL } from './portfolio/service'
 import { tokenIcons } from './portfolio/token-icons'
-import { checkZerionKey, zerionOptions, zerionTokenSearch, type ZerionAccess } from './portfolio/zerion'
+import { checkZerionKey, zerionHoldings, zerionOptions, zerionTokenSearch, type ZerionAccess } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
@@ -259,6 +263,92 @@ async function ownReceive(value: unknown): Promise<ReceiveAnswer> {
 
 /** Which kept chat each running session belongs to, and with which agent. A continued chat runs in a new session. */
 const historyOf = new Map<string, { id: string; agent: AgentId }>()
+
+let depositJournal: DepositJournal | null = null
+
+/** The deposits Ink watches, sealed by the OS keyring, made on first use once the keyring can be asked. */
+function getDepositJournal(): DepositJournal {
+  depositJournal ??= createDepositJournal({ file: join(app.getPath('userData'), 'deposits.bin'), box: osSecretBox })
+  return depositJournal
+}
+
+/** The chat each watched deposit is shown in, while it's open. */
+const depositListeners = new Map<string, DepositListen>()
+
+/**
+ * Watches the addresses deposit cards show, across restarts, and tells the card's chat
+ * as each deposit moves on, and its agent once it lands. Once that chat's session is
+ * gone, what happens is kept in its history and sent to the page for the kept chat.
+ */
+const depositWatcher = createDepositWatcher({
+  recent: (account, bridge) => recentDeposits(account, bridge),
+  balance: async (address, zerion, symbol) => {
+    const access = zerionAccess()
+    if (!access) return null
+    const held = (await zerionHoldings(address, zerionOptions(access))).filter((holding) => holding.network === zerion && holding.symbol.toLowerCase() === symbol.toLowerCase())
+    return { raw: held.reduce((sum, holding) => sum + holding.raw, 0n), decimals: held[0]?.decimals ?? 18 }
+  },
+  onUpdate: (entry) => {
+    const { id, progress } = entry.deposit
+    const ending = depositEnding(entry.deposit)
+    const listen = depositListeners.get(id)
+    if (listen?.progress(id, progress)) {
+      if (ending) listen.ending(id, ending)
+      return
+    }
+    depositListeners.delete(id)
+    if (!entry.historyId) return
+    const events: Extract<ChatEvent, { type: 'deposit-progress' | 'deposit-note' }>[] = [{ type: 'deposit-progress', id, progress }, ...(ending ? [{ type: 'deposit-note' as const, id, note: ending.note }] : [])]
+    for (const event of events) {
+      getChatHistory().record(entry.historyId, event)
+      if (vault?.isUnlocked() === true) sendToWindows(IPC.depositEvent, entry.historyId, event)
+    }
+  },
+  journal: { list: () => getDepositJournal().list(), put: (entry) => getDepositJournal().put(entry) },
+})
+
+/** A token's icon for a deposit card, from Zerion's search, when it answers in a moment. */
+async function depositIcon(zerion: string | null, symbol: string): Promise<string | null> {
+  const access = zerionAccess()
+  if (!zerion || !access) return null
+  const look = (async () => {
+    const found = (await zerionTokenSearch(symbol, zerion, zerionOptions(access))).find((token) => token.symbol.toLowerCase() === symbol.toLowerCase())
+    return found?.icon ? icons.icon(found.icon) : null
+  })().catch(() => null)
+  return Promise.race([look, new Promise<null>((resolve) => setTimeout(() => resolve(null), 2_500))])
+}
+
+/** Shows an address get_deposit_address gave a chat's agent as a card there, and watches it. */
+async function showDeposit(chatId: string, owner: string, ask: ReceiveAsk, answer: Extract<ReceiveAnswer, { ok: true }>, listen: DepositListen): Promise<void> {
+  const chain = receiveChainOf(answer.chain)
+  const intents = answer.kind === 'intents'
+  const token = intents ? (await listedDepositChains())?.find((each) => each.key === chain?.bridge)?.tokens.find((each) => each.symbol === answer.asset) : undefined
+  const icon = await depositIcon(chain?.zerion ?? null, answer.asset)
+  const entry = depositWatcher.watch({
+    owner,
+    historyId: historyOf.get(chatId)?.id ?? null,
+    bridge: intents ? (chain?.bridge ?? null) : null,
+    assetIds: token?.ids ?? [],
+    zerion: intents ? null : (chain?.zerion ?? null),
+    deposit: {
+      id: randomUUID(),
+      kind: answer.kind,
+      chain: answer.chain,
+      chainName: answer.chainName,
+      mark: chain?.mark ?? null,
+      asset: answer.asset,
+      icon,
+      amount: ask.amount,
+      address: answer.address,
+      memo: intents ? answer.memo : null,
+      min: answer.min,
+      account: intents ? answer.account : null,
+      why: intents ? null : answer.why,
+    },
+  })
+  depositListeners.set(entry.deposit.id, listen)
+  listen.show(entry.deposit)
+}
 
 /** The swaps followed lately, for Home, only while unlocked: they hold addresses and amounts. */
 function recentSwaps(): RecentSwap[] {
@@ -569,6 +659,7 @@ function registerIpc(): void {
         followed.set(planId, { owner, ...listen, transactionId: null, ended: false })
         if (followed.size > MAX_FOLLOWED) followed.delete(followed.keys().next().value as string)
       },
+      deposits: (chatId: string, owner: string, ask: ReceiveAsk, answer: Extract<ReceiveAnswer, { ok: true }>, listen: DepositListen) => void showDeposit(chatId, owner, ask, answer, listen),
     }
     const env = await agentEnv()
     const external = await getExternalTools().forNewChat()
@@ -625,6 +716,12 @@ function registerIpc(): void {
     if (!text || !focused()) return { ok: false }
     clipboard.writeText(text)
     return { ok: true }
+  })
+
+  ipcMain.handle(IPC.watchDepositAgain, (event, id: unknown) => {
+    assertAppFrame(event)
+    if (typeof id !== 'string' || id.length > 64) return { ok: false }
+    return { ok: depositWatcher.again(id) !== null }
   })
 
   ipcMain.handle(IPC.savedChats, (event) => {
@@ -824,6 +921,8 @@ void app.whenReady().then(() => {
   reviewWindow.attach(reviews)
   // Swaps a quit cut off are followed again: NEAR Intents pays them out or refunds them whatever Ink does.
   swapTracker.resume()
+  // Deposits too: what's sent to an address lands whether or not Ink is running.
+  depositWatcher.resume()
   signer.start()
   autoLock.start()
   powerMonitor.on('suspend', () => void vault?.lock())

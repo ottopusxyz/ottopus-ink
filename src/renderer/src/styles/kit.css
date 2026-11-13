@@ -269,6 +269,30 @@
   gap: 8px;
   padding: 12px 16px 14px;
 }
+/* A deposit card's QR code: on white whatever the theme, so any phone scans it, with the chain's mark at its heart. */
+.ink-deposit-qr {
+  position: relative;
+  flex: none;
+  padding: 8px;
+  border: 2px solid #16213E;
+  border-radius: 16px;
+  background: #fff;
+}
+.ink-deposit-qr svg { display: block; }
+.ink-ticket .ink-copy {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 13.5px;
+}
+.ink-deposit-qr__mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px #16213E;
+  transform: translate(-50%, -50%);
+}
 
 /* Home: a calm highlight under the second line, Otto's speech bubble, and the
    banner for a plan waiting on the person. */

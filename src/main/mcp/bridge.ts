@@ -43,7 +43,7 @@ export interface McpBridge {
    * keeps it under, so main can put it up for review. Typed gives what the
    * person typed in that chat.
    */
-  addSession(handlers?: { onPlan?: (plan: ChatPlan, owner: string) => void; typed?: () => readonly string[] }): McpSession
+  addSession(handlers?: { onPlan?: (plan: ChatPlan, owner: string) => void; onReceive?: (...args: [...Parameters<NonNullable<McpHandlers['onReceive']>>, owner: string]) => void; typed?: () => readonly string[] }): McpSession
   close(): void
 }
 
@@ -83,6 +83,7 @@ interface BridgeSession {
   connection: Socket | null
   everConnected: boolean
   onPlan: ((plan: ChatPlan) => void) | undefined
+  onReceive: McpHandlers['onReceive']
   plans: PlanTools | undefined
 }
 
@@ -150,7 +151,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, acco
       inFlight++
       let response: object | null
       try {
-        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, accounts, plans: session.plans, portfolio, quote, receive })
+        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, onReceive: session.onReceive, accounts, plans: session.plans, portfolio, quote, receive })
       } catch {
         response = parseErrorResponse()
       } finally {
@@ -193,7 +194,14 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, acco
           const key = hash(token)
           const typed = handlers?.typed ?? (() => [])
           const onPlan = handlers?.onPlan
-          const session: BridgeSession = { connection: null, everConnected: false, onPlan: onPlan && ((plan) => onPlan(plan, key)), plans: plans?.({ owner: key, typed }) }
+          const onReceive = handlers?.onReceive
+          const session: BridgeSession = {
+            connection: null,
+            everConnected: false,
+            onPlan: onPlan && ((plan) => onPlan(plan, key)),
+            onReceive: onReceive && ((ask, answer) => onReceive(ask, answer, key)),
+            plans: plans?.({ owner: key, typed }),
+          }
           sessions.set(key, session)
           return {
             token,

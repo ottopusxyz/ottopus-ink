@@ -3,6 +3,8 @@ import type { ChatPlan } from '../../shared/ipc'
 import type { PlanIntent, PlanStatus, PlanSummary, PlanToolResult, PlanTools } from '../../shared/plan'
 import type { HoldingGroup, PortfolioGap, PortfolioResult, TokenHolding, ZerionState } from '../../shared/portfolio'
 import type { VaultResult } from '../../shared/vault'
+import type { QuoteAmount, QuoteOutcome } from '../routes/quoter'
+import { chainName, type RouteAsk } from '../routes/route'
 
 /** The server's name in the agent's tool names (`mcp__ottopus-ink__*`). Not `ottopus`: that's another product's connector. */
 export const MCP_SERVER_NAME = 'ottopus-ink'
@@ -36,7 +38,8 @@ const TOOLS = [
   },
   {
     name: 'get_quote',
-    description: 'What a swap or bridge would give right now. Moves nothing.',
+    description:
+      'What a send, swap or bridge would give right now, by the route Ink would take: a direct transfer, or through NEAR Intents. Moves nothing. from_chain intents pays from the NEAR Intents balance; to_chain intents keeps the result there. The amount is in whole tokens.',
     inputSchema: objectSchema(
       { from_asset: text, from_chain: text, to_asset: text, to_chain: text, amount: text },
       ['from_asset', 'to_asset', 'amount'],
@@ -100,6 +103,8 @@ export interface McpHandlers {
   plans?: PlanTools
   /** What the wallet holds, read from each chain by main. */
   portfolio?: () => Promise<PortfolioResult>
+  /** What a payment would give by the route main picks. */
+  quote?: (ask: RouteAsk) => Promise<QuoteOutcome>
 }
 
 /** How each status reads to an agent. */
@@ -285,6 +290,120 @@ async function portfolioAnswer(read: McpHandlers['portfolio'], args: unknown): P
   return toolAnswer(lines.join('\n'))
 }
 
+const QUOTE_FIELDS = ['from_asset', 'from_chain', 'to_asset', 'to_chain', 'amount']
+
+/** What get_quote's arguments ask for, or null if they break its schema. Each is one word, as create_plan's are. */
+function quoteAskFrom(args: unknown): RouteAsk | null {
+  if (!isRecord(args)) return null
+  const fits = ([key, value]: [string, unknown]) => QUOTE_FIELDS.includes(key) && typeof value === 'string' && value.length <= MAX_PLAN_FIELD_CHARS && PLAN_FIELD.test(value)
+  if (!Object.entries(args).every(fits)) return null
+  const { from_asset: fromAsset, from_chain: fromChain, to_asset: toAsset, to_chain: toChain, amount } = args as Record<string, string | undefined>
+  if (!fromAsset || !toAsset || !amount) return null
+  return { fromAsset, toAsset, amount, ...(fromChain ? { fromChain } : {}), ...(toChain ? { toChain } : {}) }
+}
+
+const QUOTE_HELP = 'get_quote needs from_asset, to_asset and amount, each one word: an amount such as 5 or 0.25 in whole tokens, and chains such as near, base, ethereum, solana, bitcoin or intents.'
+
+const UNCHECKED = 'Ink couldn’t read the balances just now, so it hasn’t checked the wallet can cover this.'
+const amountText = ({ amount, symbol }: QuoteAmount) => `${amount} ${symbol}`
+const onChain = ({ chain }: QuoteAmount) => (chain === 'near' ? 'on NEAR' : `on ${chainName(chain)}`)
+const inUsd = (usd: number | null) => (usd === null ? '' : ` (${dollars(usd)})`)
+
+/** get_quote's answer: the route, why, what goes in and comes out, the fees and the wait, in words an agent can pass on. */
+async function quoteAnswer(quote: McpHandlers['quote'], args: unknown): Promise<object> {
+  if (!quote) return NOT_BUILT.get_quote ?? NOT_SET_UP
+  const ask = quoteAskFrom(args)
+  if (!ask) return toolAnswer(QUOTE_HELP, true)
+  let outcome: QuoteOutcome
+  try {
+    outcome = await quote(ask)
+  } catch {
+    return toolAnswer('Ink couldn’t get a quote right now. Try again.', true)
+  }
+  if (!outcome.ok) {
+    switch (outcome.reason) {
+      case 'no-vault':
+        return NOT_SET_UP
+      case 'locked':
+        return toolAnswer('Ink is locked. Ask the person to unlock Ink, then try again.', true)
+      case 'tokens-unavailable':
+        return toolAnswer('Ink couldn’t reach NEAR Intents for its list of tokens. Try again in a moment.', true)
+      case 'unknown-chain':
+        return toolAnswer(`NEAR Intents doesn’t reach a chain called ${outcome.name}. Use a name such as near, base, ethereum, arbitrum, solana, bitcoin or intents.`, true)
+      case 'unknown-asset':
+        return toolAnswer(`NEAR Intents doesn’t list ${outcome.name}${outcome.chain ? ` ${outcome.chain === 'intents' ? 'in the Intents balance' : `on ${chainName(outcome.chain)}`}` : ''}. Check the symbol, or name the chain it’s on.`, true)
+      case 'ambiguous-asset':
+        return toolAnswer(`More than one token called ${outcome.name} is listed on ${chainName(outcome.chain)}, so Ink won’t guess. Ask the person for the token’s contract address.`, true)
+      case 'bad-amount':
+        return toolAnswer('The amount must be a plain decimal above zero in whole tokens, with no more decimal places than the token has.', true)
+      case 'cannot-sign':
+        return toolAnswer(`Ink can’t sign on ${chainName(outcome.chain)} yet, so it can’t pay from the wallet there. If the funds are moved into the NEAR Intents balance, Ink can pay from that.`, true)
+      case 'direct-not-built':
+        return toolAnswer(`Sending a token as it is on ${chainName(outcome.chain)} isn’t built yet. Ink can send native NEAR, and swap or bridge through NEAR Intents.`, true)
+      case 'too-small':
+        return toolAnswer('NEAR Intents says the amount is under its minimum for this swap. Try a larger amount.', true)
+      case 'bad-recipient':
+        return toolAnswer(`NEAR Intents won’t pay the wallet’s address on ${chainName(outcome.chain)}.`, true)
+      case 'no-route':
+        return toolAnswer('No market maker on NEAR Intents would quote this right now. Try another amount or token, or try again soon.', true)
+      case 'mismatch':
+        return toolAnswer('NEAR Intents answered for a different swap, so Ink didn’t use it. Try again.', true)
+      default:
+        return toolAnswer('Ink couldn’t reach NEAR Intents for a quote. Try again in a moment.', true)
+    }
+  }
+
+  const moves = 'This quote moves nothing, and prices change; the plan gets a fresh one.'
+  if (outcome.kind === 'direct') {
+    return toolAnswer(
+      [
+        'Route: a direct transfer on NEAR. Nothing is swapped.',
+        `- Sends: ${amountText(outcome.send)}`,
+        `- Network fee: ${outcome.fee === null ? 'NEAR couldn’t say right now, usually well under 0.01 NEAR' : `at most ${outcome.fee} NEAR`}`,
+        outcome.enough === null
+          ? UNCHECKED
+          : outcome.enough
+            ? `The wallet has ${amountText(outcome.held)} available.`
+            : `The wallet has only ${amountText(outcome.held)} available, so it can’t send this and pay the fee.`,
+        moves,
+      ].join('\n'),
+    )
+  }
+
+  const from = outcome.source === 'wallet' ? `the wallet’s NEAR account${outcome.send.symbol === 'NEAR' ? ', wrapped to wNEAR first' : ''}` : 'the NEAR Intents balance'
+  const changes = outcome.send.chain !== outcome.get.chain ? 'It changes chain' : 'It changes token'
+  const why =
+    outcome.source === 'intents'
+      ? `The NEAR Intents balance holds it, so the NEAR key pays from there${outcome.signsOrigin ? '' : `, though Ink can’t sign on ${chainName(outcome.send.chain)} itself`}.`
+      : `${changes}, which NEAR Intents does in one step from the NEAR account.`
+  const paidTo =
+    outcome.paidTo === 'own-address'
+      ? `the wallet’s own address ${onChain(outcome.get)}`
+      : outcome.paidTo === 'intents'
+        ? 'the NEAR Intents balance, as asked'
+        : `the NEAR Intents balance: Ink has no address of its own ${onChain(outcome.get)}, so a payout there needs an address the person types, and costs a little more`
+  const fees = [
+    ...(outcome.feeBps > 0 ? [`NEAR Intents’ ${(outcome.feeBps / 100).toFixed(2).replace(/\.?0+$/, '')}% fee`] : []),
+    ...(outcome.withdrawFee ? [`${amountText(outcome.withdrawFee)} for sending it ${onChain(outcome.withdrawFee)}`] : []),
+  ]
+  return toolAnswer(
+    [
+      `Route: through NEAR Intents, paid from ${from}.`,
+      `Why: ${why}`,
+      `- Sends: ${amountText(outcome.send)} ${onChain(outcome.send)}${inUsd(outcome.send.usd)}`,
+      `- Gets about: ${amountText(outcome.get)} ${onChain(outcome.get)}${inUsd(outcome.get.usd)}`,
+      `- At least: ${amountText(outcome.least)}, or it’s refunded to the wallet’s NEAR account`,
+      ...(fees.length > 0 ? [`- Fees already taken out: ${fees.join(' and ')}`] : []),
+      `- Time: about ${outcome.seconds < 90 ? `${Math.max(1, Math.round(outcome.seconds))} seconds` : `${Math.round(outcome.seconds / 60)} minutes`} once the deposit lands`,
+      `- Paid to: ${paidTo}`,
+      ...(outcome.compared ? ['Ink quoted paying from the wallet and from the Intents balance, and this one gives more.'] : []),
+      ...(outcome.enough === null ? [UNCHECKED] : outcome.enough ? [] : [`${outcome.source === 'wallet' ? 'The wallet' : 'The Intents balance'} holds only ${amountText(outcome.held)}, so it can’t pay this yet.`]),
+      moves,
+      'Ink can’t send swaps yet, so a plan for one stays a draft.',
+    ].join('\n'),
+  )
+}
+
 async function accountsAnswer(read: McpHandlers['accounts']): Promise<object> {
   if (!read) return NOT_SET_UP
   let answer: VaultResult<{ accounts: Account[] }>
@@ -354,7 +473,7 @@ export function parseErrorResponse(): object {
  * server doesn't have gets a proper error rather than silence: Claude Code opens
  * with `server/discover` and falls back to `initialize` only when told no.
  */
-export async function handleMcpMessage(message: unknown, version: string, { onPlan, accounts, plans, portfolio }: McpHandlers = {}): Promise<object | null> {
+export async function handleMcpMessage(message: unknown, version: string, { onPlan, accounts, plans, portfolio, quote }: McpHandlers = {}): Promise<object | null> {
   if (!isRecord(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     const id = isRecord(message) && (typeof message.id === 'string' || typeof message.id === 'number') ? message.id : null
     return rpcError(id, INVALID_REQUEST, 'Not a JSON-RPC 2.0 request')
@@ -404,6 +523,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
       }
       if (params.name === 'get_accounts') return result(await accountsAnswer(accounts))
       if (params.name === 'get_portfolio') return result(await portfolioAnswer(portfolio, params.arguments))
+      if (params.name === 'get_quote') return result(await quoteAnswer(quote, params.arguments))
       return result(NOT_BUILT[params.name as string] ?? NOT_SET_UP)
     }
     default:

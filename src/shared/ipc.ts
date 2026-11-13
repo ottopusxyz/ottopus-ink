@@ -115,6 +115,8 @@ export interface ChatPlan {
   status: PlanStatus
   /** Where its swap stands, once a swap's deposit landed. */
   swap?: ChatSwap
+  /** The NEAR transaction that sent it, once signed and sent. */
+  transactionId?: string
   outcome: 'send' | 'swap' | 'stake'
   asset: string
   amount: string
@@ -192,7 +194,7 @@ export type ChatEvent =
   /** From Ink's own server, not the agent's output, so an agent can't forge one by printing it. */
   | { type: 'plan'; plan: ChatPlan }
   /** A plan of this chat's moved on, in the review window or on the chain. From main, like `plan`. */
-  | { type: 'plan-status'; id: string; status: PlanStatus }
+  | { type: 'plan-status'; id: string; status: PlanStatus; transactionId?: string }
   | { type: 'plan-swap'; id: string; swap: ChatSwap }
   | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
   /** The agent's process is gone and the chat can't continue. Error is null when Ink closed it. */

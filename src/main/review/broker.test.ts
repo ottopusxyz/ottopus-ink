@@ -75,7 +75,7 @@ async function draft(store: PlanStore, owner = OWNER): Promise<{ id: string; has
 /** Offers a plan and waits out the arm delay, so the next click can approve it. */
 async function shownAndArmed(env: ReturnType<typeof setup>) {
   const plan = await draft(env.store)
-  const notify = vi.fn<(status: PlanStatus) => void>()
+  const notify = vi.fn<(status: PlanStatus, transactionId: string | null) => void>()
   await env.broker.offer(plan.id, OWNER, notify)
   env.tick(ARM_DELAY_MS)
   return { ...plan, notify }
@@ -94,7 +94,7 @@ describe('putting a plan up for review', () => {
     const notify = vi.fn()
     await env.broker.offer(id, OWNER, notify)
     expect(env.store.get(id, OWNER)?.status).toBe('awaiting_review')
-    expect(notify).toHaveBeenCalledWith('awaiting_review')
+    expect(notify).toHaveBeenCalledWith('awaiting_review', null)
     expect(env.broker.state()).toMatchObject({ plan: { id, hash, to: 'alice.near', amount: '1' }, status: 'awaiting_review', armed: false, sending: false, waiting: 0 })
   })
 
@@ -151,7 +151,11 @@ describe('approving', () => {
     expect(await click(env, id, hash)).toEqual({ ok: true })
     expect(env.sender.send).toHaveBeenCalledWith(id, OWNER, FEE)
     expect(env.broker.state()).toMatchObject({ status: 'confirmed', transactionId: TX, sending: false, failure: null })
-    expect(notify.mock.calls.map(([status]) => status)).toEqual(['awaiting_review', 'approved', 'confirmed'])
+    expect(notify.mock.calls).toEqual([
+      ['awaiting_review', null],
+      ['approved', null],
+      ['confirmed', TX],
+    ])
   })
 
   it('refuses before the window has been up for the arm delay, even with a real click', async () => {
@@ -344,7 +348,7 @@ describe('rejecting, expiry and moving on', () => {
     await env.broker.offer(second.id, OWNER)
     env.broker.reject(first.id)
     expect(env.store.get(first.id, OWNER)?.status).toBe('cancelled')
-    expect(notify).toHaveBeenLastCalledWith('cancelled')
+    expect(notify).toHaveBeenLastCalledWith('cancelled', null)
     expect(env.sender.send).not.toHaveBeenCalled()
     expect(env.broker.state()).toMatchObject({ plan: { id: second.id }, armed: false, waiting: 0 })
   })
@@ -379,7 +383,7 @@ describe('rejecting, expiry and moving on', () => {
     env.tick(PLAN_TTL_MS)
     env.broker.refresh()
     expect(env.states.at(-1)).toMatchObject({ plan: { id }, status: 'expired' })
-    expect(notify).toHaveBeenLastCalledWith('expired')
+    expect(notify).toHaveBeenLastCalledWith('expired', null)
   })
 
   it('keeps a finished plan on show until dismissed, then shows the next or nothing', async () => {
@@ -413,7 +417,7 @@ describe('rejecting, expiry and moving on', () => {
     env.store.move(second.id, OWNER, 'cancelled')
     env.broker.refresh()
     expect(env.broker.state()?.waiting).toBe(0)
-    expect(notify).toHaveBeenLastCalledWith('cancelled')
+    expect(notify).toHaveBeenLastCalledWith('cancelled', null)
   })
 
   it('sends the state only when it changes, including when the window arms and Ink locks', async () => {

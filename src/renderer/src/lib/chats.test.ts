@@ -105,6 +105,7 @@ describe('applyChatEvent', () => {
     const swap = { stage: 'done' as const, got: '17.4 USDC', refunded: null, link: 'https://basescan.org/tx/0xabc' }
     const chat = after([{ type: 'plan', plan }, { type: 'plan-status', id: plan.id, status: 'confirmed' }, { type: 'plan-swap', id: plan.id, swap }])
     expect(chat.plan).toEqual({ ...plan, status: 'confirmed', swap })
+    expect(after([{ type: 'plan', plan }, { type: 'plan-status', id: plan.id, status: 'confirmed', transactionId: 'Tx1' }]).plan).toEqual({ ...plan, status: 'confirmed', transactionId: 'Tx1' })
     expect(after([{ type: 'plan', plan }, { type: 'plan-swap', id: 'unknown', swap }]).plan).toBe(plan)
   })
 

@@ -31,8 +31,8 @@ interface Offer {
   id: string
   owner: string
   plan: ReviewPlan
-  /** Told each new status the plan reaches while the broker holds it, for the chat's plan card. */
-  notify: (status: PlanStatus) => void
+  /** Told each new status the plan reaches while the broker holds it, for the chat's plan card, with its transaction once sent. */
+  notify: (status: PlanStatus, transactionId: string | null) => void
   status: PlanStatus
   failure: ReviewFailure | null
   transactionId: string | null
@@ -90,7 +90,7 @@ export function createReviewBroker({ store, sender, describe, unlocked, onState,
     const status = store.get(offer.id, offer.owner)?.status ?? offer.status
     if (status !== offer.status) {
       offer.status = status
-      offer.notify(status)
+      offer.notify(status, offer.transactionId)
     }
     return status
   }
@@ -170,7 +170,7 @@ export function createReviewBroker({ store, sender, describe, unlocked, onState,
      * awaiting review only once it's described, so a plan that can't be shown
      * stays a draft. `notify` hears each status it reaches from then on.
      */
-    async offer(id: string, owner: string, notify: (status: PlanStatus) => void = () => {}): Promise<void> {
+    async offer(id: string, owner: string, notify: (status: PlanStatus, transactionId: string | null) => void = () => {}): Promise<void> {
       const plan = store.get(id, owner)
       // Only a draft can move to awaiting review, so a plan already up can't be put up twice.
       if (!plan || plan.status !== 'draft') return
@@ -179,7 +179,7 @@ export function createReviewBroker({ store, sender, describe, unlocked, onState,
       const moved = store.move(id, owner, 'awaiting_review')
       if (!moved.ok) return
       queue.push({ id, owner, plan: described, notify, status: 'awaiting_review', failure: null, transactionId: null })
-      notify('awaiting_review')
+      notify('awaiting_review', null)
       if (queue.length === 1) shown()
       refresh()
     },

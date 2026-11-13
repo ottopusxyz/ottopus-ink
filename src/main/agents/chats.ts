@@ -19,7 +19,7 @@ export interface ChatTools {
    * reaches there. Main passes this in, so nothing here reaches the review
    * window or anything that signs.
    */
-  review?: (planId: string, owner: string, notify: (status: PlanStatus) => void) => void
+  review?: (planId: string, owner: string, notify: (status: PlanStatus, transactionId: string | null) => void) => void
   /** Tells the chat where a swap plan stands once its deposit landed. Main passes this in too. */
   swaps?: (planId: string, notify: (swap: ChatSwap) => void) => void
 }
@@ -73,8 +73,8 @@ export function startChat(
     onPlan: (plan, owner) => {
       if (over || !locked) return
       onEvent(chatId, { type: 'plan', plan })
-      review?.(plan.id, owner, (status) => {
-        if (!over) onEvent(chatId, { type: 'plan-status', id: plan.id, status })
+      review?.(plan.id, owner, (status, transactionId) => {
+        if (!over) onEvent(chatId, { type: 'plan-status', id: plan.id, status, ...(transactionId ? { transactionId } : {}) })
       })
       swaps?.(plan.id, (swap) => {
         if (!over) onEvent(chatId, { type: 'plan-swap', id: plan.id, swap })

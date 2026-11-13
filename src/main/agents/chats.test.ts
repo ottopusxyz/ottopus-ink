@@ -259,7 +259,7 @@ describe('a running chat', () => {
   })
 
   it('puts a plan up for review only once the lock is checked, and passes on each status it reaches until the chat ends', () => {
-    const review = vi.fn<(planId: string, owner: string, notify: (status: PlanStatus) => void) => void>()
+    const review = vi.fn<(planId: string, owner: string, notify: (status: PlanStatus, transactionId: string | null) => void) => void>()
     const seen: ChatEvent[] = []
     startChat(ready, env, { ...tools, review }, NO_EXTERNAL, (_id, event) => seen.push(event))
     proposePlan?.(PLAN, 'owner-key')
@@ -269,12 +269,14 @@ describe('a running chat', () => {
     proposePlan?.(PLAN, 'owner-key')
     expect(review).toHaveBeenCalledExactlyOnceWith('p', 'owner-key', expect.any(Function))
     const notify = review.mock.calls[0]![2]
-    notify('awaiting_review')
+    notify('awaiting_review', null)
     expect(seen.at(-1)).toEqual({ type: 'plan-status', id: 'p', status: 'awaiting_review' })
+    notify('submitted', 'Tx1')
+    expect(seen.at(-1)).toEqual({ type: 'plan-status', id: 'p', status: 'submitted', transactionId: 'Tx1' })
 
     const before = seen.length
     launched?.onEvent({ type: 'ended', error: null })
-    notify('confirmed')
+    notify('confirmed', 'Tx1')
     expect(seen).toHaveLength(before + 1)
   })
 

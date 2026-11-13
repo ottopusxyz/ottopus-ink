@@ -93,6 +93,7 @@ export const ACCOUNT_KIND: Record<ReviewState['plan']['toKind'], string> = {
   named: 'A named NEAR account',
   implicit: 'An implicit NEAR account',
   'eth-implicit': 'An Ethereum-style NEAR account',
+  'other-chain': 'Your own address on that chain',
 }
 
 /**

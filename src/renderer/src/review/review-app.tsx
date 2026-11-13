@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import type { ReviewFailure, ReviewState } from '../../../shared/review'
+import type { ReviewFailure, ReviewPlan, ReviewState, ReviewSwap } from '../../../shared/review'
 import { Otto, type PoseName } from '@/components/brand/otto'
 import { InkHold, StepList } from '@/components/motion/loaders'
 import { ArrowRightIcon, CheckIcon, ClockIcon, ExternalIcon } from '@/components/shell/icons'
@@ -100,7 +100,7 @@ export function ReviewApp() {
           <Otto pose={otto.pose} size={64} animated={otto.moving} />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="ink-eyebrow">Your agent asks to</span>
-            <h1 className="m-0 font-display text-[24px] font-bold tracking-[-0.02em]">Send {plan.amount} NEAR</h1>
+            <h1 className="m-0 font-display text-[24px] font-bold tracking-[-0.02em]">{plan.swap ? `Swap ${plan.swap.send}` : `Send ${plan.amount} NEAR`}</h1>
           </div>
           {outcome ? null : (
             <div className="flex flex-none flex-col items-end gap-1.5">
@@ -118,7 +118,11 @@ export function ReviewApp() {
       )}
 
       {state.sending ? (
-        <InkHold className="min-h-[420px] flex-1" title="Signing and sending…" detail={`${plan.amount} NEAR → ${plan.to} · ${plan.network}`}>
+        <InkHold
+          className="min-h-[420px] flex-1"
+          title="Signing and sending…"
+          detail={plan.swap ? `${plan.swap.send} → about ${plan.swap.get} · ${plan.network}` : `${plan.amount} NEAR → ${plan.to} · ${plan.network}`}
+        >
           <div className="flex flex-col items-center gap-3">
             <div className="w-[230px] text-left">
               <StepList steps={sendSteps(state)} tone="dark" />
@@ -133,10 +137,17 @@ export function ReviewApp() {
             <span className="ink-status-dot" aria-hidden />
             Confirmed
           </Badge>
-          <h1 className="m-0 font-display text-[34px] font-bold">Sent!</h1>
-          <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
-            NEAR ran the transaction. {plan.amount} NEAR is on its way to <span className="selectable font-mono">{plan.to}</span>.
-          </p>
+          <h1 className="m-0 font-display text-[34px] font-bold">{plan.swap ? 'Deposit sent!' : 'Sent!'}</h1>
+          {plan.swap ? (
+            <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
+              NEAR ran the deposit. NEAR Intents swaps it for about <span className="selectable font-mono">{plan.swap.get}</span> in {plan.swap.getChain}, usually within{' '}
+              {plan.swap.seconds} seconds. Your chat shows when it lands.
+            </p>
+          ) : (
+            <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
+              NEAR ran the transaction. {plan.amount} NEAR is on its way to <span className="selectable font-mono">{plan.to}</span>.
+            </p>
+          )}
           {state.transactionId ? (
             <div className="ink-review-card ink-review-card--stk flex w-full items-center gap-2.5 text-left">
               <ChainLogo chain="near" size="md" />
@@ -167,6 +178,9 @@ export function ReviewApp() {
           <span className="text-[11.5px] text-[var(--ot-text-3)]">not simulated</span>
         </div>
 
+        {plan.swap ? (
+          <SwapTerms plan={plan} swap={plan.swap} />
+        ) : (
         <Section label="To" card>
           <div className="flex items-center gap-3">
             <span className="ink-avatar" aria-hidden>
@@ -188,6 +202,7 @@ export function ReviewApp() {
             <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">Check every character against the address you meant. Funds sent to the wrong account can’t be taken back.</p>
           ) : null}
         </Section>
+        )}
 
         <Section label="Amount" card>
           <p className="selectable m-0 flex items-center gap-2.5">
@@ -212,7 +227,10 @@ export function ReviewApp() {
                 {feeRose ? <s className="mr-1 font-medium text-[var(--ot-text-3)]">{feeRose}</s> : null}
                 {plan.maxFee} NEAR
               </dd>
-              <dd className="col-span-2 m-0 text-[var(--ot-text-3)]">Most of the fee comes back.</dd>
+              <dd className="col-span-2 m-0 text-[var(--ot-text-3)]">
+                Most of the fee comes back.
+                {plan.kind === 'swap' ? ' It also counts registering with wNEAR, refunded where you or the deposit address already are.' : ''}
+              </dd>
             </dl>
           ) : null}
         </Section>
@@ -225,12 +243,12 @@ export function ReviewApp() {
                   <ArrowRightIcon size={14} />
                 </span>
                 <span className="flex min-w-0 flex-col">
-                  <span className="text-[13.5px] font-bold">
+                  <span className="selectable text-[13.5px] font-bold [overflow-wrap:anywhere]">
                     {plan.actions.length === 1 ? '1 action · ' : `${index + 1} of ${plan.actions.length} · `}
-                    {action.kind} <span className="selectable font-mono">{action.amount} NEAR</span>
+                    {action.summary}
                   </span>
                   <span className="text-[12px] text-[var(--ot-text-3)]">
-                    {action.method ? `Calls ${action.method}.` : 'Calls no contract.'}
+                    {action.method ? `Calls ${action.method}, attaching ${action.amount} NEAR.` : `${action.kind} of ${action.amount} NEAR. Calls no contract.`}
                     {plan.actions.length === 1 ? ' Nothing else in this transaction.' : ''}
                   </span>
                 </span>
@@ -328,6 +346,53 @@ export function ReviewApp() {
         )}
       </footer>
     </Shell>
+  )
+}
+
+/**
+ * A swap's terms, as NEAR Intents' quote fixed them: what goes in and comes out, who it
+ * pays and refunds, and where the deposit goes.
+ */
+function SwapTerms({ plan, swap }: { plan: ReviewPlan; swap: ReviewSwap }) {
+  const closes = new Date(swap.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return (
+    <Section label="Swap through NEAR Intents" card>
+      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13.5px]">
+        <dt className="text-[var(--ot-text-3)]">You send</dt>
+        <dd className="selectable m-0 font-mono font-bold">{swap.send}</dd>
+        <dt className="text-[var(--ot-text-3)]">You get about</dt>
+        <dd className="selectable m-0 font-mono font-bold">
+          {swap.get} <span className="font-sans font-normal text-[var(--ot-text-2)]">in {swap.getChain}</span>
+        </dd>
+        <dt className="text-[var(--ot-text-3)]">At least</dt>
+        <dd className="selectable m-0 font-mono">
+          {swap.least} <span className="font-sans text-[var(--ot-text-2)]">or it’s refunded</span>
+        </dd>
+      </dl>
+      <div className="flex flex-col gap-1 border-t border-dashed border-[var(--ot-border)] pt-2">
+        <span className="ink-eyebrow">Paid to</span>
+        <Address value={plan.to} />
+        <div className="flex flex-wrap gap-1.5">
+          <Badge tone="ok">
+            <CheckIcon size={12} />
+            {plan.toKind === 'other-chain' ? `Your own address in ${swap.getChain}` : 'Your own NEAR Intents balance'}
+          </Badge>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="ink-eyebrow">Refunds go to</span>
+        <Address value={swap.refundTo} small />
+        <span className="text-[12px] text-[var(--ot-text-3)]">Your own NEAR account, if the swap can’t pay at least the amount above.</span>
+      </div>
+      <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
+        NEAR Intents’ {swap.fee} fee is already taken out. It should take about {swap.seconds} seconds once the deposit lands.
+      </p>
+      <details className="ink-review-details">
+        <summary>The deposit address</summary>
+        <Address value={swap.depositAddress} small />
+        <p className="m-0 pt-1 text-[12px] text-[var(--ot-text-3)]">NEAR Intents’ address for this swap only. It closes at {closes}; Ink won’t send to it after that.</p>
+      </details>
+    </Section>
   )
 }
 

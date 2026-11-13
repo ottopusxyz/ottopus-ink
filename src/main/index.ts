@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
 import { IPC, type AgentStatus, type AppInfo, type ZerionKeyStatus } from '../shared/ipc'
+import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
@@ -14,7 +15,7 @@ import { detectEntries } from './external/detect'
 import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
-import { buildNearSend, isNearSend, nearSendFeeCeiling, nearTransferOf } from './near/build'
+import { buildNearSend, callsFeeCeiling, isNearSend, nearSendFeeCeiling, nearTransferOf } from './near/build'
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
@@ -146,6 +147,22 @@ async function describePlan(plan: PlanView) {
   const transfer = nearTransferOf(plan.core)
   let fee: bigint | null = null
   if (transfer) fee = await nearSendFeeCeiling(nearRpc, transfer.receiverId).catch(() => null)
+  const [step] = plan.core.steps
+  if (!transfer && step?.action === 'call') {
+    let calls: ReturnType<typeof callsOfStep>['calls'] | null = null
+    try {
+      calls = callsOfStep(step).calls
+    } catch {
+      // A step that doesn't read as Ink's own calls isn't shown at all.
+    }
+    if (calls) {
+      const read = calls
+      fee = await nearRpc
+        .gasPrice()
+        .then((price) => callsFeeCeiling(price, callsGas(read), read.length))
+        .catch(() => null)
+    }
+  }
   return describeForReview(plan, `NEAR ${NEAR_NETWORK}`, fee)
 }
 

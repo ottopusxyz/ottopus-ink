@@ -7,6 +7,8 @@ const STATE: ReviewState = {
     id: 'p',
     hash: 'a'.repeat(64),
     network: 'NEAR mainnet',
+    kind: 'send',
+    swap: null,
     from: 'b'.repeat(64),
     publicKey: 'ed25519:x',
     to: 'alice.near',
@@ -18,7 +20,7 @@ const STATE: ReviewState = {
     maxFee: '0.0003',
     maxFeeYocto: '300000000000000000000',
     maxTotal: '1.0003',
-    actions: [{ kind: 'Transfer', amount: '1', method: null }],
+    actions: [{ kind: 'Transfer', amount: '1', method: null, summary: 'Send 1 NEAR to alice.near' }],
     expiresAt: '2026-11-09T12:30:00.000Z',
   },
   status: 'awaiting_review',
@@ -121,6 +123,6 @@ describe('while it sends', () => {
 
   it('names every kind of recipient account', () => {
     expect(ACCOUNT_KIND.named).toMatch(/named/)
-    expect(Object.keys(ACCOUNT_KIND)).toHaveLength(3)
+    expect(Object.keys(ACCOUNT_KIND)).toHaveLength(4)
   })
 })

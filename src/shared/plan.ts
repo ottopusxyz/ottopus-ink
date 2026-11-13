@@ -28,7 +28,11 @@ export const PLAN_STATUSES = [
 
 export type PlanStatus = (typeof PLAN_STATUSES)[number]
 
-export type PlanOutcome = 'send' | 'swap' | 'stake'
+/**
+ * `pay` delivers exactly `amount` of `asset` on `toChain` to `to` (or the person's own
+ * address there), from whatever the wallet holds that can pay for it, in one or more legs.
+ */
+export type PlanOutcome = 'send' | 'swap' | 'stake' | 'pay'
 
 /** Who asked for the plan. Main sets this, never the caller. */
 export type PlanCreator = 'agent' | 'ui'
@@ -131,6 +135,11 @@ export interface PlanCore {
   steps: PlanStep[]
   /** A swap's terms, when the plan is one. Absent from every other plan. */
   swap?: PlanSwap
+  /**
+   * A payment's legs, when the plan is one: each a swap paying part of it to the same
+   * recipient, paid by one of the steps. Absent from every other plan.
+   */
+  swaps?: PlanSwap[]
 }
 
 export type PlanFailure =

@@ -26,7 +26,7 @@ const nullableText = (value: unknown) => value === null || isText(value)
 function isPlan(value: unknown): value is ChatPlan {
   const plan = record(value)
   if (!plan || !isText(plan.id, 64) || !(PLAN_STATUSES as readonly string[]).includes(plan.status as string)) return false
-  if (!['send', 'swap', 'stake'].includes(plan.outcome as string) || !isText(plan.asset, 300) || !isText(plan.amount, 300)) return false
+  if (!['send', 'swap', 'stake', 'pay'].includes(plan.outcome as string) || !isText(plan.asset, 300) || !isText(plan.amount, 300)) return false
   return ['chain', 'to', 'toAsset', 'toChain'].every((field) => nullableText(plan[field]))
 }
 

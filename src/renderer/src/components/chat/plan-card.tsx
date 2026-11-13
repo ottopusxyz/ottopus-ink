@@ -21,7 +21,7 @@ const POSE: Record<PlanStatus, PoseName> = {
 /** Otto only moves while the plan does: waiting on the person, or on its way. */
 const MOVING = new Set<PlanStatus>(['awaiting_review', 'signing', 'submitted'])
 
-const KIND: Record<ChatPlan['outcome'], string> = { send: 'Send', swap: 'Swap', stake: 'Stake' }
+const KIND: Record<ChatPlan['outcome'], string> = { send: 'Send', swap: 'Swap', stake: 'Stake', pay: 'Payment' }
 
 /** Otto for where a swap stands once its deposit landed. */
 const SWAP_POSE: Record<ChatSwap['stage'], { pose: PoseName; moving: boolean }> = {

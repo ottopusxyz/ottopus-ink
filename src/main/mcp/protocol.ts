@@ -54,10 +54,10 @@ const TOOLS = [
   {
     name: 'create_plan',
     description:
-      'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself. A send works on NEAR and on EVM chains such as base, ethereum, arbitrum, optimism, polygon, bsc and avalanche, for the chain’s own coin or a token by symbol or contract. A swap can pay from the wallet on those EVM chains too. A swap with chain intents pays from the NEAR Intents balance; to take a token out of that balance to a chain, swap it to the same token with to_chain set, such as USDC from intents to USDC on base.',
+      'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself. A send works on NEAR and on EVM chains such as base, ethereum, arbitrum, optimism, polygon, bsc and avalanche, for the chain’s own coin or a token by symbol or contract. A swap can pay from the wallet on those EVM chains too. A swap with chain intents pays from the NEAR Intents balance; to take a token out of that balance to a chain, swap it to the same token with to_chain set, such as USDC from intents to USDC on base. A pay delivers exactly amount of asset on to_chain to the address in to (or the person’s own there): Ink pays it from what the wallet holds of that token, or of any dollar stablecoin for one, at its EVM addresses and in the NEAR Intents balance, in up to three parts, for one approval. Use pay when no one balance covers a payment.',
     inputSchema: objectSchema(
       {
-        outcome: { type: 'string', enum: ['send', 'swap', 'stake'] },
+        outcome: { type: 'string', enum: ['send', 'swap', 'stake', 'pay'] },
         asset: text,
         chain: text,
         amount: text,
@@ -515,7 +515,7 @@ const MAX_PLAN_FIELD_CHARS = 256
 const PLAN_FIELD = /^[!-~]+$/
 
 const PLAN_FIELDS = ['outcome', 'asset', 'chain', 'amount', 'to', 'to_asset', 'to_chain']
-const PLAN_OUTCOMES = ['send', 'swap', 'stake'] as const
+const PLAN_OUTCOMES = ['send', 'swap', 'stake', 'pay'] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

@@ -69,6 +69,8 @@ export type BuildSteps = (intent: PlanIntent, own: readonly Account[]) => Promis
  */
 export interface BuiltSwap {
   swap?: PlanSwap
+  /** A payment's legs, each paying part of it to the same address. */
+  swaps?: PlanSwap[]
   payout?: { address: string; chain: AccountChain }
 }
 
@@ -100,6 +102,7 @@ function summaryOf({ outcome, asset, amount, chain, to, toAsset, toChain }: Plan
   const on = (name: string | null) => (name ? ` on ${name}` : '')
   if (outcome === 'send') return `Send ${amount} ${asset}${on(chain)} to ${to}`
   if (outcome === 'swap') return `Swap ${amount} ${asset}${on(chain)} to ${toAsset}${on(toChain)}`
+  if (outcome === 'pay') return `Pay ${amount} ${asset}${on(toChain)}${to ? ` to ${to}` : ''}`
   return `Stake ${amount} ${asset}${on(chain)}${to ? ` with ${to}` : ''}`
 }
 
@@ -164,7 +167,8 @@ export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(),
       if (intent.outcome === 'swap' && !intent.toAsset) return { ok: false, reason: 'bad-request' }
       // Whatever the outcome, an address in the plan must be the person's own on the chain the funds land on, or one
       // they typed. A swap's funds land on its target chain, or on the same chain when it names none.
-      const landsOn = intent.outcome === 'swap' ? (intent.toChain ?? intent.chain) : intent.chain
+      if (intent.outcome === 'pay' && !intent.toChain) return { ok: false, reason: 'bad-request' }
+      const landsOn = intent.outcome === 'swap' || intent.outcome === 'pay' ? (intent.toChain ?? intent.chain) : intent.chain
       const recipient = intent.to ? allowedRecipient(intent.to, landsOn, own, typed) : null
       if (intent.to && !recipient) return { ok: false, reason: 'recipient-not-allowed' }
 
@@ -181,11 +185,14 @@ export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(),
       const at = now()
       // A swap pays the address the person typed, or else their own there, and nothing else; and outlives the plan.
       let payee = recipient
-      if (built.swap || built.payout) {
+      if (built.swap || built.swaps || built.payout) {
         const payout = built.payout
         const paid = !payout ? null : intent.to ? (payout.address === intent.to ? recipient : null) : allowedRecipient(payout.address, payout.chain, own, [])
-        if (intent.outcome !== 'swap' || !built.swap || !payout || !paid || (!intent.to && paid.why !== 'own') || built.swap.recipient !== paid.address) return { ok: false, reason: 'recipient-not-allowed' }
-        if (!(Date.parse(built.swap.deadline) >= at.getTime() + PLAN_TTL_MS + SWAP_DEADLINE_MARGIN_MS)) return { ok: false, reason: 'chain-unavailable' }
+        // A swap has one set of terms and a payment one for each leg; every one must pay the same allowed address.
+        const terms = built.swaps ?? (built.swap ? [built.swap] : [])
+        const fits = built.swaps ? intent.outcome === 'pay' && !built.swap : intent.outcome === 'swap'
+        if (!fits || terms.length === 0 || !payout || !paid || (!intent.to && paid.why !== 'own') || terms.some((each) => each.recipient !== paid.address)) return { ok: false, reason: 'recipient-not-allowed' }
+        if (terms.some((each) => !(Date.parse(each.deadline) >= at.getTime() + PLAN_TTL_MS + SWAP_DEADLINE_MARGIN_MS))) return { ok: false, reason: 'chain-unavailable' }
         payee = paid
       }
 
@@ -201,6 +208,7 @@ export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(),
         // Copied into plain objects, so only the strings the hash covers can be in them.
         steps: built.steps.map(({ chain, action, fields }) => ({ chain, action, fields: { ...fields } })),
         ...(built.swap ? { swap: { ...built.swap } } : {}),
+        ...(built.swaps ? { swaps: built.swaps.map((each) => ({ ...each })) } : {}),
       })
       const entry: Entry = { core, hash: planHash(core), owner, status: 'draft', deadline: monotonic() + PLAN_TTL_MS }
       plans.set(core.id, entry)

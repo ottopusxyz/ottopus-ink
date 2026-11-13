@@ -253,7 +253,7 @@ export interface ChatPlan {
   swap?: ChatSwap
   /** The NEAR transaction that sent it, once signed and sent. */
   transactionId?: string
-  outcome: 'send' | 'swap' | 'stake'
+  outcome: 'send' | 'swap' | 'stake' | 'pay'
   asset: string
   amount: string
   chain: string | null

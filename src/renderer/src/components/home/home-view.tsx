@@ -7,6 +7,7 @@ import { Sea } from '@/components/motion/sea'
 import { Ring } from '@/components/motion/ring'
 import { Badge, ChainLogo, TokenLogo } from '@/components/ui'
 import { planHeadline, type Chat } from '@/lib/chats'
+import { Bone } from '@/components/portfolio/portfolio-skeleton'
 import { formatMoney } from '@/lib/format'
 import { isTokenSymbol } from '@/lib/logos'
 import { portfolioView, spread } from '@/lib/portfolio'
@@ -43,9 +44,10 @@ function PortfolioGlance({ onOpen }: { onOpen: () => void }) {
         ) : null}
       </span>
       {result === null ? (
-        <span className="flex items-center gap-2 text-[13px] text-[var(--ot-text-2)]">
-          <Ring size={12} label="Reading balances" />
-          Reading your balances…
+        <span className="flex flex-col gap-2" role="status" aria-busy>
+          <span className="sr-only">Reading your balances</span>
+          <Bone className="h-[26px] w-[150px]" />
+          <Bone className="h-3 w-[190px]" />
         </span>
       ) : !view ? (
         <>

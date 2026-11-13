@@ -11,6 +11,7 @@ import { formatMoney, formatMoneyFlat, formatShare } from '@/lib/format'
 import { ACCOUNT_CHAIN_MARK, isChainId, isTokenSymbol, type ChainId } from '@/lib/logos'
 import { portfolioFailure, portfolioView, readAgo, shareBar, spread, type PortfolioRow } from '@/lib/portfolio'
 import { useNow, usePortfolio } from '@/lib/use-portfolio'
+import { PortfolioSkeleton } from './portfolio-skeleton'
 
 /** The chain chips, by short name. */
 const CHAIN_NAMES: Record<AccountChain, string> = { near: 'NEAR', evm: 'EVM', solana: 'Solana', bitcoin: 'Bitcoin', tron: 'Tron', sui: 'Sui', aptos: 'Aptos' }
@@ -181,7 +182,7 @@ export interface PortfolioViewProps {
  * shown apart and never counted; the rest are only counted.
  */
 export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewProps) {
-  const { result, reading, stale, refresh } = usePortfolio()
+  const { result, reading, saved, stale, refresh } = usePortfolio()
   const now = useNow()
   const [filter, setFilter] = useState<Filter>('all')
   const view = result?.ok ? portfolioView(result) : null
@@ -215,10 +216,7 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
           </div>
 
           {result === null ? (
-            <section className="ink-review-card flex items-center gap-3 px-5 py-6 text-[14px] text-[var(--ot-text-2)]" aria-busy>
-              <Ring size={16} label="Reading balances" />
-              Reading your balances from NEAR…
-            </section>
+            <PortfolioSkeleton />
           ) : !result.ok ? (
             <Callout severity="block" title="No balances" compact>
               {portfolioFailure(result)}
@@ -389,8 +387,8 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
 
               <p className="m-0 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ot-text-3)]">
                 {reading ? <Ring size={12} label="Reading balances" /> : null}
-                {reading ? 'Reading again · ' : ''}Balances read {readAgo(result.readAt, now)}: NEAR from NEAR’s RPC and FastNEAR, with prices and reviews from Intear; the Intents balance from intents.near, priced by 1Click
-                ; Tron from TronGrid{zerion === 'off' ? '' : result.zerionVia === 'ottopus' ? '; EVM and Solana from Zerion, through Ottopus’s service' : '; EVM and Solana from Zerion, with your key'}. They see the
+                {saved && reading ? 'Kept from before, updating now · ' : reading ? 'Reading again · ' : ''}Balances read {readAgo(result.readAt, now)}: NEAR from NEAR’s RPC and FastNEAR, with prices and reviews from Intear; the Intents balance from intents.near, priced by 1Click;{' '}
+                Tron from TronGrid{zerion === 'off' ? '' : result.zerionVia === 'ottopus' ? '; EVM and Solana from Zerion, through Ottopus’s service' : '; EVM and Solana from Zerion, with your key'}. They see the
                 addresses they read.
               </p>
             </>

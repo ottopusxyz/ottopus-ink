@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentId, ChatEvent } from '../../../shared/ipc'
-import { applyChatEvent, chatFailedToStart, chatStarted, ipcErrorText, messageFailed, messageSent, newChat, type Chat } from './chats'
+import { applyChatEvent, chatContinued, chatFailedToStart, chatStarted, ipcErrorText, messageFailed, messageSent, newChat, restoredChat, type Chat } from './chats'
 
 /** Replies arrive a few characters at a time, so React draws them at this pace at most. */
 const BATCH_MS = 50
@@ -14,11 +14,18 @@ export interface ChatActions {
   send(chat: Chat, text: string): void
   stop(chat: Chat): void
   end(chat: Chat): void
+  /** Goes on with a chat kept from before a restart, in a new session with the same agent. */
+  continue(chat: Chat): void
+  /** Drops an ended chat from the page and from what Ink keeps. */
+  forget(chat: Chat): void
+  /** Drops every ended chat, and everything Ink keeps. */
+  clearHistory(): void
 }
 
 /**
- * The chats in this window and their sessions in the main process. They live in
- * memory: a session keeps no history of its own, so a chat can't outlive it anyway.
+ * The chats in this window and their sessions in the main process. Ink keeps each
+ * chat's record, sealed, across restarts; the page gets the kept ones only while Ink is
+ * unlocked, read-only until the person continues one, and drops them when it locks.
  */
 export function useChats(): [Chat[], ChatActions] {
   const [chats, setChats] = useState<Chat[]>([])
@@ -53,6 +60,31 @@ export function useChats(): [Chat[], ChatActions] {
     )
   }, [])
 
+  // Kept chats appear once Ink is unlocked, after any live ones, and go when it locks.
+  useEffect(() => {
+    let live = true
+    const load = () =>
+      void window.ink.savedChats().then(
+        (saved) => {
+          if (!live) return
+          setChats((all) => {
+            const here = new Set(all.map((chat) => chat.id))
+            return [...all, ...saved.filter((kept) => !here.has(kept.id)).map(restoredChat)]
+          })
+        },
+        () => undefined,
+      )
+    load()
+    const off = window.ink.onVaultStatus((status) => {
+      if (status.state === 'unlocked') load()
+      else setChats((all) => all.filter((chat) => !chat.restored))
+    })
+    return () => {
+      live = false
+      off()
+    }
+  }, [])
+
   useEffect(() => {
     const unsubscribe = window.ink.onChatEvent((sessionId, event) => {
       queue.current.push([sessionId, event, Date.now()])
@@ -70,7 +102,7 @@ export function useChats(): [Chat[], ChatActions] {
       start(agent, text) {
         const id = crypto.randomUUID()
         setChats((all) => [newChat(id, agent, text), ...all])
-        window.ink.startChat(agent).then(
+        window.ink.startChat(agent, { historyId: id }).then(
           (sessionId) => {
             chatIds.current.set(sessionId, id)
             update(id, (chat) => chatStarted(chat, sessionId))
@@ -100,6 +132,28 @@ export function useChats(): [Chat[], ChatActions] {
         if (!chat.sessionId || chat.phase === 'ended') return
         update(chat.id, (current) => ({ ...current, phase: 'ended' }))
         window.ink.closeChat(chat.sessionId).catch(() => undefined)
+      },
+      continue(chat) {
+        if (!chat.restored) return
+        // Read-only until the new session is up, so nothing is sent twice.
+        update(chat.id, (current) => ({ ...current, restored: false, phase: 'starting' }))
+        window.ink.startChat(chat.agent, { historyId: chat.id, continue: true }).then(
+          (sessionId) => {
+            chatIds.current.set(sessionId, chat.id)
+            update(chat.id, (current) => chatContinued(current, sessionId, chat.agent))
+            flush()
+          },
+          (error: unknown) => update(chat.id, (current) => ({ ...chatFailedToStart(current, ipcErrorText(error)), restored: true })),
+        )
+      },
+      forget(chat) {
+        if (chat.phase !== 'ended') return
+        setChats((all) => all.filter((other) => other.id !== chat.id))
+        window.ink.deleteSavedChat(chat.id).catch(() => undefined)
+      },
+      clearHistory() {
+        setChats((all) => all.filter((chat) => chat.phase !== 'ended'))
+        window.ink.clearChatHistory().catch(() => undefined)
       },
     }),
     [flush, update],

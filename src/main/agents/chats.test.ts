@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentStatus, ChatEvent, ChatPlan } from '../../shared/ipc'
+import type { AgentStatus, ChatEvent, ChatPlan, ChatSwap } from '../../shared/ipc'
 import type { PlanStatus } from '../../shared/plan'
 import { NO_EXTERNAL, type SessionExternal } from '../external/session'
-import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './chats'
+import { closeChat, killChats, sendFromInk, sendToChat, startChat, stopChatTurn } from './chats'
 import { startClaudeSession, type ChatSession, type ClaudeSessionOptions } from './claude-session'
 
 vi.mock('./claude-session', () => ({ startClaudeSession: vi.fn() }))
@@ -21,13 +21,15 @@ const tools = {
   shim: '/app/shim.js',
   bridge: {
     socketPath: '/run/ink/mcp.sock',
-    addSession: (handlers?: { onPlan?: (plan: ChatPlan, owner: string) => void }) => {
+    addSession: (handlers?: { onPlan?: (plan: ChatPlan, owner: string) => void; typed?: () => readonly string[] }) => {
       proposePlan = handlers?.onPlan
+      typedNow = handlers?.typed
       return { token: 'token-for-this-chat', connected: () => shimConnected, remove: removeTools }
     },
   },
 }
 let proposePlan: ((plan: ChatPlan, owner: string) => void) | undefined
+let typedNow: (() => readonly string[]) | undefined
 let shimConnected = true
 const inkTool = 'mcp__ottopus-ink__get_accounts'
 const PLAN: ChatPlan = { id: 'p', status: 'draft', outcome: 'send', asset: 'NEAR', amount: '1', chain: null, to: null, toAsset: null, toChain: null }
@@ -259,7 +261,7 @@ describe('a running chat', () => {
   })
 
   it('puts a plan up for review only once the lock is checked, and passes on each status it reaches until the chat ends', () => {
-    const review = vi.fn<(planId: string, owner: string, notify: (status: PlanStatus) => void) => void>()
+    const review = vi.fn<(planId: string, owner: string, notify: (status: PlanStatus, transactionId: string | null) => void) => void>()
     const seen: ChatEvent[] = []
     startChat(ready, env, { ...tools, review }, NO_EXTERNAL, (_id, event) => seen.push(event))
     proposePlan?.(PLAN, 'owner-key')
@@ -269,13 +271,77 @@ describe('a running chat', () => {
     proposePlan?.(PLAN, 'owner-key')
     expect(review).toHaveBeenCalledExactlyOnceWith('p', 'owner-key', expect.any(Function))
     const notify = review.mock.calls[0]![2]
-    notify('awaiting_review')
+    notify('awaiting_review', null)
     expect(seen.at(-1)).toEqual({ type: 'plan-status', id: 'p', status: 'awaiting_review' })
+    notify('submitted', 'Tx1')
+    expect(seen.at(-1)).toEqual({ type: 'plan-status', id: 'p', status: 'submitted', transactionId: 'Tx1' })
 
     const before = seen.length
     launched?.onEvent({ type: 'ended', error: null })
-    notify('confirmed')
+    notify('confirmed', 'Tx1')
     expect(seen).toHaveLength(before + 1)
+  })
+
+  describe('how a plan ended', () => {
+    const NOTE = { tone: 'ok' as const, title: 'Sent', lines: ['NEAR ran it: 1 NEAR to alice.near.'], links: [] }
+    type Listen = { swap: (swap: ChatSwap) => void; ending: (ending: { note: typeof NOTE; forAgent: string }) => void }
+    function followed() {
+      const follow = vi.fn<(planId: string, owner: string, listen: Listen) => void>()
+      const seen: ChatEvent[] = []
+      const chatId = startChat(ready, env, { ...tools, follow }, NO_EXTERNAL, (_id, event) => seen.push(event))
+      launched?.onEvent(report())
+      proposePlan?.(PLAN, 'owner-key')
+      return { chatId, seen, listen: follow.mock.calls[0]![2] }
+    }
+
+    it('shows Ink’s note at once, and tells the agent once its turn is over', () => {
+      const { chatId, seen, listen } = followed()
+      sendToChat(chatId, 'swap 2 NEAR')
+      session.send.mockClear()
+      listen.ending({ note: NOTE, forAgent: 'Message from Ink: it went through.' })
+      expect(seen.at(-1)).toEqual({ type: 'plan-note', id: 'p', note: NOTE })
+      // The agent is still in the turn that made the plan.
+      expect(session.send).not.toHaveBeenCalled()
+      launched?.onEvent({ type: 'turn-end', outcome: 'done', error: null })
+      expect(session.send).toHaveBeenCalledExactlyOnceWith('Message from Ink: it went through.')
+      expect(seen.at(-1)).toEqual({ type: 'ink-told' })
+    })
+
+    it('lets Ink open a chat’s first turn, as when it goes on after a restart, never as typed text', () => {
+      const chatId = startChat(ready, env, tools, NO_EXTERNAL, () => undefined)
+      sendFromInk(chatId, 'Message from Ink: the recap.')
+      expect(session.send).toHaveBeenCalledExactlyOnceWith('Message from Ink: the recap.')
+      expect(typedNow?.()).toEqual([])
+      // The person's next message waits for nothing but goes as theirs.
+      launched?.onEvent({ type: 'turn-end', outcome: 'done', error: null })
+      sendToChat(chatId, 'go on')
+      expect(typedNow?.()).toEqual(['go on'])
+    })
+
+    it('tells a free agent at once, and never counts it as something the person typed', () => {
+      const { chatId, listen } = followed()
+      launched?.onEvent({ type: 'turn-end', outcome: 'done', error: null })
+      listen.ending({ note: NOTE, forAgent: 'Message from Ink: paid to 0xabc.' })
+      expect(session.send).toHaveBeenCalledExactlyOnceWith('Message from Ink: paid to 0xabc.')
+      expect(typedNow?.()).toEqual([])
+      // The person's own message still counts, and waits behind nothing.
+      sendToChat(chatId, 'thanks')
+      expect(typedNow?.()).toEqual(['thanks'])
+    })
+
+    it('holds Ink’s word while the person’s own turn runs, and says nothing after the chat ends', () => {
+      const { chatId, seen, listen } = followed()
+      launched?.onEvent({ type: 'turn-end', outcome: 'done', error: null })
+      sendToChat(chatId, 'what is my balance?')
+      listen.ending({ note: NOTE, forAgent: 'Message from Ink: done.' })
+      expect(session.send).toHaveBeenCalledExactlyOnceWith('what is my balance?')
+      launched?.onEvent({ type: 'turn-end', outcome: 'done', error: null })
+      expect(session.send).toHaveBeenLastCalledWith('Message from Ink: done.')
+      const before = seen.length
+      launched?.onEvent({ type: 'ended', error: null })
+      listen.ending({ note: NOTE, forAgent: 'late' })
+      expect(seen).toHaveLength(before + 1)
+    })
   })
 
   it('puts up no plan from a session that broke the lock', () => {

@@ -12,6 +12,8 @@ import { formatMoney } from '@/lib/format'
 import { isTokenSymbol } from '@/lib/logos'
 import { portfolioView, spread } from '@/lib/portfolio'
 import { usePortfolio } from '@/lib/use-portfolio'
+import { homeSwaps, useRecentSwaps } from '@/lib/recent-swaps'
+import { SwapBanner } from './swap-banner'
 import type { ChainId } from '@/lib/logos'
 import { TOOL_COPY } from '@/lib/tool-copy'
 import { INK_TOOLS, type AgentId, type ChatPlan } from '../../../../shared/ipc'
@@ -121,6 +123,7 @@ export function HomeView({
   readyAgent,
 }: HomeViewProps) {
   const running = live[0]
+  const swaps = homeSwaps(useRecentSwaps())
 
   return (
     <main className="ink-panel" id="main">
@@ -162,6 +165,10 @@ export function HomeView({
               <span className="ink-waiting__go">See the plan</span>
             </button>
           ) : null}
+
+          {swaps.map((swap) => (
+            <SwapBanner key={swap.planId} swap={swap} />
+          ))}
 
           <Composer
             value={draft}

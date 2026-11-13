@@ -10,8 +10,11 @@ import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { AgentMark } from './agent-picker'
 import { Composer, toolsChip } from './composer'
+import { InkNoteCard } from './ink-note'
 import { Markdown } from './markdown'
 import { PlanCard } from './plan-card'
+import { PlanTracker } from './plan-tracker'
+import { isUnderWay } from '@/lib/plan-tracker'
 import { ToolCall } from './tool-call'
 
 export interface ChatViewProps {
@@ -21,6 +24,10 @@ export interface ChatViewProps {
   onSubmit: () => void
   onStop: () => void
   onEnd: () => void
+  /** Goes on with a chat kept from before a restart. */
+  onContinue: () => void
+  /** Drops an ended chat from what Ink keeps. */
+  onForget: () => void
   /** Opens Settings on tools and skills. */
   onToolsSettings: () => void
 }
@@ -44,7 +51,7 @@ const WORKING: Partial<Record<Chat['phase'], string>> = {
  * it sends is drawn as plain text, so it has no way to load an image or disguise
  * where a link goes.
  */
-export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onToolsSettings }: ChatViewProps) {
+export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onContinue, onForget, onToolsSettings }: ChatViewProps) {
   const scroller = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const following = useRef(true)
@@ -56,6 +63,11 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onTool
   const turns = useMemo(() => chatTurns(chat.items), [chat.items])
   const lastTurn = turns.at(-1)
   const kept = trimmedPlan(chat)
+  // The chat's other plans, newest first, for the tracker's fold.
+  const earlier = useMemo(
+    () => chat.items.flatMap((item) => (item.kind === 'plan' && item.plan.id !== chat.plan?.id ? [item.plan] : [])).reverse(),
+    [chat.items, chat.plan?.id],
+  )
   const thinking = working ? <AgentThinking className="ink-thinking" variant="infinity" label={working} shimmer={false} /> : null
 
   // Opening a chat starts at its end, ready for a reply.
@@ -87,8 +99,9 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onTool
             {chip.text}
           </span>
         </Tooltip>
-        <ChatMenu canEnd={chat.phase !== 'ended' && Boolean(chat.sessionId)} onEnd={onEnd} />
+        <ChatMenu canEnd={chat.phase !== 'ended' && Boolean(chat.sessionId)} onEnd={onEnd} canForget={chat.phase === 'ended'} onForget={onForget} />
       </div>
+      {chat.plan && isUnderWay(chat.plan) && !chat.restored ? <PlanTracker plan={chat.plan} earlier={earlier} /> : null}
 
       <div
         ref={scroller}
@@ -129,6 +142,19 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onTool
       </div>
 
       <div className="relative px-6 pt-2 pb-4">
+        {chat.restored ? (
+          <div className="ink-waiting mx-auto mb-3 max-w-[760px] cursor-default">
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+              <span className="text-[14px] font-bold">From before Ink restarted</span>
+              <span className="text-[12.5px] text-[var(--ot-text-2)]">
+                Its plans are finished. Continue in a new session: Ink tells {agent.name} what happened so far, without what tools returned.
+              </span>
+            </span>
+            <button type="button" className="ink-waiting__go cursor-pointer" onClick={onContinue}>
+              Continue this chat
+            </button>
+          </div>
+        ) : null}
         <div className={cn('ink-rim mx-auto max-w-[760px]', working && 'ink-rim--on')}>
           <Composer
             compact
@@ -153,7 +179,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onTool
             stopping={chat.phase === 'stopping'}
             canSend={chat.phase === 'ready'}
             disabled={chat.phase === 'ended'}
-            placeholder={chat.phase === 'ended' ? 'This chat has ended. Start a new one to keep going.' : 'Reply to your agent'}
+            placeholder={chat.restored ? 'Continue this chat to reply.' : chat.phase === 'ended' ? 'This chat has ended. Start a new one to keep going.' : 'Reply to your agent'}
           />
         </div>
       </div>
@@ -162,7 +188,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onTool
 }
 
 /** The chat's options behind "…". Ending it is the one there is. */
-function ChatMenu({ canEnd, onEnd }: { canEnd: boolean; onEnd: () => void }) {
+function ChatMenu({ canEnd, onEnd, canForget, onForget }: { canEnd: boolean; onEnd: () => void; canForget: boolean; onForget: () => void }) {
   const id = useId()
   const popoverId = `ink-chat-menu-${id}`
   const anchor = `--ink-chat-menu-${id.replace(/[^\w-]/g, '')}`
@@ -186,6 +212,21 @@ function ChatMenu({ canEnd, onEnd }: { canEnd: boolean; onEnd: () => void }) {
           <span className="min-w-0 flex-1">
             <b className="text-[13.5px] font-semibold">End chat</b>
             <span className="block text-[12px] text-[var(--ot-text-3)]">Stops its agent. Nothing more can be written here after.</span>
+          </span>
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="ink-agent-option"
+          disabled={!canForget}
+          onClick={() => {
+            menu.current?.hidePopover()
+            onForget()
+          }}
+        >
+          <span className="min-w-0 flex-1">
+            <b className="text-[13.5px] font-semibold">Delete from history</b>
+            <span className="block text-[12px] text-[var(--ot-text-3)]">Ink stops keeping this chat. End it first.</span>
           </span>
         </button>
       </div>
@@ -219,5 +260,7 @@ const ConversationItem = memo(function ConversationItem({ item }: { item: ChatIt
       return <ToolCall {...item} />
     case 'plan':
       return <PlanCard plan={item.plan} />
+    case 'ink-note':
+      return <InkNoteCard note={item.note} />
   }
 })

@@ -3,7 +3,7 @@ import type { Account } from '../../shared/accounts'
 import { nearPublicKey, nearTransferStep, transferOfStep } from '../../shared/near/transaction'
 import type { PlanCore, PlanIntent } from '../../shared/plan'
 import { STORAGE_YOCTO_PER_BYTE } from './balance'
-import { buildNearSend, isNearSend, nearSendFeeCeiling, nearTransferOf, transferFeeCeiling } from './build'
+import { buildNearSend, CALL_OVERHEAD_GAS, callsFeeCeiling, isNearSend, nearSendFeeCeiling, nearTransferOf, transferFeeCeiling } from './build'
 import { NearRpcError, type NearAccountView, type NearProtocolFees, type NearRpc } from './rpc'
 
 const NEAR = 10n ** 24n
@@ -165,5 +165,14 @@ describe('reading a plan Ink can send', () => {
     expect(await nearSendFeeCeiling(rpc, 'alice.near')).toBe(FEE)
     expect(await nearSendFeeCeiling(rpc, 'a'.repeat(64))).toBe(IMPLICIT_FEE)
     await expect(nearSendFeeCeiling(rpc, 'Not An Account')).rejects.toThrow()
+  })
+})
+
+describe('the fee ceiling for contract calls', () => {
+  it('buys the attached gas and each call’s overhead at twice today’s price', () => {
+    const gas = 60n * 10n ** 12n
+    expect(callsFeeCeiling(100_000_000n, gas, 4)).toBe((gas + 4n * CALL_OVERHEAD_GAS) * 100_000_000n * 2n)
+    // 60 Tgas and four calls at NEAR's usual 0.0001 NEAR per Tgas is well under 0.02 NEAR.
+    expect(callsFeeCeiling(100_000_000n, gas, 4) < 2n * 10n ** 22n).toBe(true)
   })
 })

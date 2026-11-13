@@ -41,6 +41,8 @@ export interface SettingsDialogProps {
   onCheckAgain: () => void
   /** Called with the external tools list whenever the tab reads or changes it. */
   onExternalChange: (items: ExternalItem[]) => void
+  /** Forgets every chat Ink kept, and drops the ended ones from the page. */
+  onClearChatHistory: () => void
 }
 
 /**
@@ -64,6 +66,7 @@ export function SettingsDialog({
   checking,
   onCheckAgain,
   onExternalChange,
+  onClearChatHistory,
 }: SettingsDialogProps) {
   const [tab, setTab] = useState<TabId>(startTab)
   // Each opening starts on the section it was asked for.
@@ -123,7 +126,7 @@ export function SettingsDialog({
               </>
             ) : null
           ) : tab === 'wallet' ? (
-            <WalletTab onSeeAddresses={onSeeAddresses} />
+            <WalletTab onSeeAddresses={onSeeAddresses} onClearChatHistory={onClearChatHistory} />
           ) : (
             <EmptyTab />
           )}
@@ -257,7 +260,7 @@ function TerminalSetup() {
 
 const NEEDS_WALLET = 'This isn’t built yet.'
 
-function WalletTab({ onSeeAddresses }: { onSeeAddresses: () => void }) {
+function WalletTab({ onSeeAddresses, onClearChatHistory }: { onSeeAddresses: () => void; onClearChatHistory: () => void }) {
   const [confirm, setConfirm] = useState('above')
   const [lock, setLock] = useState('15')
   return (
@@ -266,8 +269,9 @@ function WalletTab({ onSeeAddresses }: { onSeeAddresses: () => void }) {
       <p className="mt-1.5 mb-3.5 text-[13px] text-[var(--ot-text-2)]">
         Your keys live on this device, encrypted with your password.
       </p>
-      {/* Above the preview note: unlike the choices under it, this one is saved. */}
+      {/* Above the preview note: unlike the choices under it, these are saved. */}
       <ZerionKeySetting />
+      <ChatHistorySetting onClear={onClearChatHistory} />
       <NotSavedYet />
       <div className="ink-backup-card">
         <Otto pose="heads-up" size={62} />
@@ -343,6 +347,45 @@ const ZERION_FAILURES = {
  * checks it with Zerion before keeping it, sealed by the OS keyring; the page can set
  * and remove it but never reads it back.
  */
+/** Forgets every chat Ink kept, after a second press, since it can't be undone. */
+function ChatHistorySetting({ onClear }: { onClear: () => void }) {
+  const [asking, setAsking] = useState(false)
+  const [cleared, setCleared] = useState(false)
+  return (
+    <Setting
+      title="Chat history"
+      description={
+        cleared
+          ? 'Cleared. Chats you start from now on are kept again.'
+          : 'Ink keeps your last 30 chats, encrypted on this device, and shows them only while it’s unlocked. Clearing can’t be undone.'
+      }
+    >
+      {asking ? (
+        <span className="flex gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setAsking(false)}>
+            Keep
+          </Button>
+          <Button
+            size="sm"
+            variant="danger-outline"
+            onClick={() => {
+              onClear()
+              setAsking(false)
+              setCleared(true)
+            }}
+          >
+            Clear all
+          </Button>
+        </span>
+      ) : (
+        <Button size="sm" variant="secondary" onClick={() => setAsking(true)}>
+          Clear chat history
+        </Button>
+      )}
+    </Setting>
+  )
+}
+
 function ZerionKeySetting() {
   const [status, setStatus] = useState<ZerionKeyStatus | null>(null)
   const [draft, setDraft] = useState('')

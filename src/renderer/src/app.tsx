@@ -217,6 +217,8 @@ export function App() {
           onSubmit={send}
           onStop={() => chatActions.stop(current)}
           onEnd={() => chatActions.end(current)}
+          onContinue={() => chatActions.continue(current)}
+          onForget={() => chatActions.forget(current)}
           onToolsSettings={() => openSettings('tools')}
         />
       ) : (
@@ -239,6 +241,7 @@ export function App() {
       )}
       <SettingsDialog
         onExternalChange={setExternalItems}
+        onClearChatHistory={chatActions.clearHistory}
         open={settingsOpen}
         startTab={settingsTab}
         version={info?.version}

@@ -1,3 +1,4 @@
+import type { SavedChat } from './history'
 import type { Account, AccountChain } from './accounts'
 import type { PlanStatus } from './plan'
 import type { PortfolioResult } from './portfolio'
@@ -48,6 +49,12 @@ export const IPC = {
   zerionKeyStatus: 'wallet:zerion-key-status',
   saveZerionKey: 'wallet:save-zerion-key',
   removeZerionKey: 'wallet:remove-zerion-key',
+  recentSwaps: 'wallet:recent-swaps',
+  savedChats: 'chat:saved',
+  deleteSavedChat: 'chat:delete-saved',
+  clearChatHistory: 'chat:clear-history',
+  /** Main to renderer: a followed swap moved on. It carries nothing: the page asks for them, which needs Ink unlocked. */
+  swapsChanged: 'wallet:swaps-changed',
   /** Main to renderer: the vault's status, sent on every change. */
   vaultStatusChanged: 'vault:status-changed',
 } as const
@@ -95,9 +102,54 @@ export const INK_TOOLS = ['get_accounts', 'get_portfolio', 'get_quote', 'create_
  * A plan an agent proposed, as its chat's card shows it. The agent wrote every
  * value here, so show them as text. Only the review window shows what's signed.
  */
+/**
+ * Where a swap stands once its deposit landed, as main follows it with NEAR Intents:
+ * `deposited` (NEAR Intents has it or is spotting it), `swapping`, `done`, `refunded`,
+ * `failed`, or `unknown` once Ink stopped checking without an answer.
+ */
+export interface ChatSwap {
+  stage: 'deposited' | 'swapping' | 'done' | 'refunded' | 'failed' | 'unknown'
+  /** What was paid out, once done: "17.4 USDC". */
+  got: string | null
+  /** What came back, once refunded: "5 NEAR". */
+  refunded: string | null
+  /** The payout's transaction on an explorer, once there is one. Always https. */
+  link: string | null
+}
+
+/**
+ * Ink's own word on how a plan ended, written by main from the plan's fixed terms and
+ * what NEAR and NEAR Intents reported, never from the agent's words.
+ */
+export interface InkNote {
+  tone: 'ok' | 'block' | 'info'
+  title: string
+  lines: string[]
+  /** Explorer pages, each https. */
+  links: { label: string; url: string }[]
+}
+
+/** A swap Ink followed lately, for Home: what went in, what it's for, and where it stands. */
+export interface RecentSwap {
+  planId: string
+  /** "2 NEAR". */
+  send: string
+  /** The token it pays out: "USDC". */
+  get: string
+  /** Where, in a phrase: "on Base", "in your NEAR Intents balance". */
+  where: string
+  progress: ChatSwap | null
+  /** When NEAR ran its deposit, ms since the epoch. */
+  startedAt: number
+}
+
 export interface ChatPlan {
   id: string
   status: PlanStatus
+  /** Where its swap stands, once a swap's deposit landed. */
+  swap?: ChatSwap
+  /** The NEAR transaction that sent it, once signed and sent. */
+  transactionId?: string
   outcome: 'send' | 'swap' | 'stake'
   asset: string
   amount: string
@@ -175,7 +227,12 @@ export type ChatEvent =
   /** From Ink's own server, not the agent's output, so an agent can't forge one by printing it. */
   | { type: 'plan'; plan: ChatPlan }
   /** A plan of this chat's moved on, in the review window or on the chain. From main, like `plan`. */
-  | { type: 'plan-status'; id: string; status: PlanStatus }
+  | { type: 'plan-status'; id: string; status: PlanStatus; transactionId?: string }
+  | { type: 'plan-swap'; id: string; swap: ChatSwap }
+  /** How a plan of this chat ended, from main. */
+  | { type: 'plan-note'; id: string; note: InkNote }
+  /** Ink passed a plan's ending to the agent, which is now answering it. */
+  | { type: 'ink-told' }
   | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
   /** The agent's process is gone and the chat can't continue. Error is null when Ink closed it. */
   | { type: 'ended'; error: string | null }
@@ -189,7 +246,15 @@ export interface InkBridge {
    */
   detectAgents(options?: { refresh?: boolean }): Promise<AgentStatus[]>
   /** Starts a chat with an agent detection found ready, and returns its id. */
-  startChat(agent: AgentId): Promise<string>
+  /**
+   * Starts a chat's session. `historyId` is the page's id for the chat, under which Ink
+   * keeps it; `continue` goes on with a kept chat, whose recap Ink sends the new session.
+   */
+  startChat(agent: AgentId, options?: { historyId?: string; continue?: boolean }): Promise<string>
+  /** Chats Ink kept from before, newest first. Empty while Ink is locked. */
+  savedChats(): Promise<SavedChat[]>
+  deleteSavedChat(id: string): Promise<void>
+  clearChatHistory(): Promise<void>
   /** Starts a turn. Rejects while one is running. */
   sendToChat(chatId: string, text: string): Promise<void>
   /** Stops the running turn and keeps the conversation. */
@@ -239,6 +304,9 @@ export interface InkBridge {
   removeZerionKey(): Promise<void>
   /** Calls listener whenever the vault's status changes; returns an unsubscribe. */
   onVaultStatus(listener: (status: VaultStatus) => void): () => void
+  /** The swaps Ink followed lately, newest first. Empty while Ink is locked. */
+  recentSwaps(): Promise<RecentSwap[]>
+  onSwapsChanged(listener: () => void): () => void
 }
 
 /** Messages between main and the signer utility process. */

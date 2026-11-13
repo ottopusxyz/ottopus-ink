@@ -1,7 +1,10 @@
 import { bytesToHex } from '@noble/hashes/utils.js'
 import type { PlanFailure, PlanStatus } from '../../shared/plan'
 import type { VaultFailure } from '../../shared/vault'
-import { nearSendFits, nearTransferOf } from '../near/build'
+import { callsDeposit, callsGas, callsOfStep } from '../../shared/near/calls'
+import { NearDecodeError } from '../../shared/near/transaction'
+import type { PlanCore } from '../../shared/plan'
+import { nearCallsFit, nearSendFits, nearTransferOf } from '../near/build'
 import { NearRpcError, type NearRpc } from '../near/rpc'
 import type { PlanStore, PlanView } from '../plans/store'
 import type { VaultService } from './service'
@@ -33,6 +36,34 @@ export interface PlanSenderOptions {
   store: PlanStore
   vault: Pick<VaultService, 'sign'>
   rpc: NearRpc
+  /** Told of each plan NEAR ran, with its transaction, so a swap can be followed from there. */
+  onConfirmed?: (plan: PlanView, transactionId: string) => void
+  now?: () => number
+}
+
+/**
+ * How long before a swap's deposit address dies Ink stops sending to it: time for the
+ * transaction to land and for 1Click to see it.
+ */
+export const SWAP_SEND_MARGIN_MS = 5 * 60_000
+
+type Fit = 'recipient-unknown' | 'insufficient-funds' | 'fee-rose' | null
+
+/** What a plan's one step sends: from whom, with which key, and whether it still fits. Null for a plan Ink can't send. */
+function sendableOf(core: PlanCore): { signerId: string; publicKey: string; fits: (rpc: NearRpc, maxFee: bigint) => Promise<Fit> } | null {
+  const transfer = nearTransferOf(core)
+  const [step, ...rest] = core.steps
+  if (transfer && step) {
+    return { signerId: transfer.signerId, publicKey: step.fields.publicKey as string, fits: (rpc, maxFee) => nearSendFits(rpc, transfer.signerId, transfer.receiverId, transfer.deposit, maxFee) }
+  }
+  if (!step || rest.length > 0 || step.action !== 'call') return null
+  try {
+    const { signerId, calls } = callsOfStep(step)
+    return { signerId, publicKey: step.fields.publicKey as string, fits: (rpc, maxFee) => nearCallsFit(rpc, signerId, callsDeposit(calls), callsGas(calls), calls.length, maxFee) }
+  } catch (error) {
+    if (error instanceof NearDecodeError) return null
+    throw error
+  }
 }
 
 /**
@@ -58,7 +89,7 @@ export const TRANSACTION_VALIDITY_BLOCKS = 86_400n
  * nothing else, so a later send can't overtake it. One plan at a time, each
  * signed above every nonce already signed with its key, so no two share one.
  */
-export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
+export function createPlanSender({ store, vault, rpc, onConfirmed, now = Date.now }: PlanSenderOptions) {
   let sending = false
   /**
    * The highest nonce signed with each key. A send that got no answer, or that
@@ -79,18 +110,21 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
     const plan = store.get(id, owner)
     if (!plan) return { ok: false, reason: 'not-found' }
     if (plan.status !== 'approved') return { ok: false, reason: 'cannot-move', status: plan.status }
-    const transfer = nearTransferOf(plan.core)
-    if (!transfer) return { ok: false, reason: 'bad-request', status: plan.status }
+    const sendable = sendableOf(plan.core)
+    if (!sendable) return { ok: false, reason: 'bad-request', status: plan.status }
+    // A swap's deposit address must still be alive when the deposit lands, with time to spare.
+    const swap = plan.core.swap
+    if (swap && !(now() < Date.parse(swap.deadline) - SWAP_SEND_MARGIN_MS)) return { ok: false, reason: 'cannot-move', status: plan.status }
 
-    const publicKey = plan.core.steps[0]?.fields.publicKey as string
-    const keyId = `${transfer.signerId} ${publicKey}`
+    const { signerId, publicKey } = sendable
+    const keyId = `${signerId} ${publicKey}`
     let live: { nonce: string; blockHash: string }
     let blockHeight: bigint
     try {
       if ((await rpc.chainId()) !== NEAR_NETWORK) return { ok: false, reason: 'wrong-network', status: plan.status }
-      const unfit = await nearSendFits(rpc, transfer.signerId, transfer.receiverId, transfer.deposit, maxFee)
+      const unfit = await sendable.fits(rpc, maxFee)
       if (unfit) return { ok: false, reason: unfit, status: plan.status }
-      const key = await rpc.viewAccessKey(transfer.signerId, publicKey)
+      const key = await rpc.viewAccessKey(signerId, publicKey)
       // No key means no account yet: nothing has been sent to it, so there is nothing to spend.
       if (!key) return { ok: false, reason: 'insufficient-funds', status: plan.status }
       const earlier = unanswered.get(keyId)
@@ -126,6 +160,7 @@ export function createPlanSender({ store, vault, rpc }: PlanSenderOptions) {
     try {
       const outcome = await rpc.sendTransaction(step.signed)
       const done = store.move(id, owner, outcome.ok ? 'confirmed' : 'failed')
+      if (done.ok && done.plan.status === 'confirmed') onConfirmed?.(done.plan, step.transactionId)
       return done.ok ? { ok: true, plan: done.plan, transactionId: step.transactionId } : done
     } catch (error) {
       if (!(error instanceof NearRpcError)) throw error

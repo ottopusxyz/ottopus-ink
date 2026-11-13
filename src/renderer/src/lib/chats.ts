@@ -1,4 +1,5 @@
-import { INK_TOOLS, type AgentId, type ChatEvent, type ChatPlan } from '../../../shared/ipc'
+import { INK_TOOLS, type AgentId, type ChatEvent, type ChatPlan, type InkNote } from '../../../shared/ipc'
+import type { SavedChat } from '../../../shared/history'
 import { NOTHING_SIGNED } from '@/components/ui/copy'
 
 export type ChatStatus = 'idle' | 'live' | 'settled'
@@ -19,6 +20,8 @@ export type ChatItem =
       result: { text: string; isError: boolean; ms: number | null } | null
     }
   | { kind: 'plan'; id: string; plan: ChatPlan }
+  /** How a plan ended, in Ink's own words, from main: never the agent's. */
+  | { kind: 'ink-note'; id: string; planId: string; note: InkNote }
   /** `ends` marks the failure that finished a chat, which gets more room than one it can carry on from. */
   | { kind: 'notice'; id: string; severity: 'info' | 'block'; title: string; text: string | null; ends?: true }
 
@@ -53,6 +56,8 @@ export interface Chat {
   trimmed: boolean
   /** The number in the next item's id. */
   nextItem: number
+  /** Kept from before Ink restarted: read-only until the person continues it in a new session. */
+  restored?: boolean
 }
 
 /** Enough for a very long chat, while an agent in a loop can't fill the window's memory. */
@@ -94,6 +99,34 @@ export function newChat(id: string, agent: AgentId, text: string): Chat {
     nextItem: 0,
   }
   return withItem(chat, { kind: 'user', text })
+}
+
+/**
+ * A chat Ink kept from before it restarted, drawn the way it was: rebuilt from Ink's own
+ * record with the same rules as a live chat, then ended, since its session is gone.
+ */
+export function restoredChat(saved: SavedChat): Chat {
+  const start: Chat = { ...newChat(saved.id, saved.agent, saved.opening), items: [], nextItem: 0, phase: 'ready', lock: 'locked' }
+  const rebuilt = saved.events.reduce((chat, event) => {
+    if (event.type === 'you') return withItem(chat, { kind: 'user', text: event.text })
+    if (event.type === 'continued') return withItem(chat, { kind: 'notice', severity: 'info', title: 'Continued after a restart', text: null })
+    return applyChatEvent(chat, event)
+  }, start)
+  return { ...rebuilt, phase: 'ended', status: 'settled', restored: true }
+}
+
+/**
+ * A kept chat goes on in a new session, which Ink has told what happened so far. What
+ * the person typed before counts for addresses only once they type it again.
+ */
+export function chatContinued(chat: Chat, sessionId: string, agent: AgentId): Chat {
+  const note = withItem(chat, {
+    kind: 'notice',
+    severity: 'info',
+    title: 'Continued after a restart',
+    text: 'Ink told your agent what happened so far. Type any address from before again if you want it paid.',
+  })
+  return { ...note, sessionId, agent, phase: 'answering', status: 'live', lock: 'unchecked', restored: false }
 }
 
 /** The session is up and has the first message. */
@@ -199,14 +232,25 @@ export function applyChatEvent(chat: Chat, event: ChatEvent, at?: number): Chat 
       }
     case 'plan':
       return { ...withItem(chat, { kind: 'plan', plan: event.plan }), plan: event.plan }
-    case 'plan-status': {
-      const moved = (plan: ChatPlan): ChatPlan => (plan.id === event.id ? { ...plan, status: event.status } : plan)
+    case 'plan-status':
+    case 'plan-swap': {
+      const moved = (plan: ChatPlan): ChatPlan =>
+        plan.id !== event.id
+          ? plan
+          : event.type === 'plan-status'
+            ? { ...plan, status: event.status, ...(event.transactionId ? { transactionId: event.transactionId } : {}) }
+            : { ...plan, swap: event.swap }
       return {
         ...chat,
         plan: chat.plan && moved(chat.plan),
         items: chat.items.map((item) => (item.kind === 'plan' ? { ...item, plan: moved(item.plan) } : item)),
       }
     }
+    case 'plan-note':
+      return withItem(chat, { kind: 'ink-note', planId: event.id, note: event.note })
+    case 'ink-told':
+      // Ink passed a plan's ending to the agent, which answers it now.
+      return chat.phase === 'ready' ? { ...chat, phase: 'answering' } : chat
     case 'turn-end':
       if (event.outcome === 'stopped') return { ...withItem(chat, { kind: 'notice', severity: 'info', title: 'Stopped', text: null }), phase: 'ready' }
       if (event.outcome === 'failed') {

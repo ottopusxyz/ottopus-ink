@@ -7,6 +7,8 @@ const STATE: ReviewState = {
     id: 'p',
     hash: 'a'.repeat(64),
     network: 'NEAR mainnet',
+    kind: 'send',
+    swap: null,
     from: 'b'.repeat(64),
     publicKey: 'ed25519:x',
     to: 'alice.near',
@@ -18,7 +20,7 @@ const STATE: ReviewState = {
     maxFee: '0.0003',
     maxFeeYocto: '300000000000000000000',
     maxTotal: '1.0003',
-    actions: [{ kind: 'Transfer', amount: '1', method: null }],
+    actions: [{ kind: 'Transfer', amount: '1', method: null, summary: 'Send 1 NEAR to alice.near' }],
     expiresAt: '2026-11-09T12:30:00.000Z',
   },
   status: 'awaiting_review',
@@ -35,6 +37,11 @@ describe('showing an address', () => {
     const id = '0123456789abcdef'.repeat(4)
     expect(groupAddress(id)).toEqual(['01234567', '89abcdef', '01234567', '89abcdef', '01234567', '89abcdef', '01234567', '89abcdef'])
     expect(groupAddress(id).join('')).toBe(id)
+  })
+
+  it('groups a checksummed EVM address too, keeping its case', () => {
+    const address = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    expect(groupAddress(address)).toEqual(['0x', 'd8dA6BF2', '6964aF9D', '7eEd9e03', 'E53415D3', '7aA96045'])
   })
 
   it('keeps the 0x apart for an Ethereum implicit account', () => {
@@ -121,6 +128,6 @@ describe('while it sends', () => {
 
   it('names every kind of recipient account', () => {
     expect(ACCOUNT_KIND.named).toMatch(/named/)
-    expect(Object.keys(ACCOUNT_KIND)).toHaveLength(3)
+    expect(Object.keys(ACCOUNT_KIND)).toHaveLength(4)
   })
 })

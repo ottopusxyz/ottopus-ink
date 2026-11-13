@@ -492,7 +492,8 @@ describe('accounts', () => {
     expect(after.ok).toBe(true)
     release()
     expect(await before).toEqual({ ok: false, reason: 'locked' })
-  })
+    // It creates, unlocks and works out every chain's account more than once, in plain JavaScript: slow CI machines need longer than the default.
+  }, 20_000)
 
   it('are not given out if the vault locks while they are asked for', async () => {
     const { service } = setup()

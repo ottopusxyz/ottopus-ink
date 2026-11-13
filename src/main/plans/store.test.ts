@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Account } from '../../shared/accounts'
-import type { PlanIntent } from '../../shared/plan'
+import type { PlanIntent, PlanSwap } from '../../shared/plan'
 import { planHash } from '../../shared/plan-hash'
 import { createPlanStore, MAX_PLANS, PLAN_TTL_MS, PLANS_PER_MINUTE, type BuildSteps } from './store'
 
-const OWN: Account[] = [{ chain: 'near', path: "m/44'/397'/0'", address: 'a'.repeat(64) }]
+const OWN: Account[] = [
+  { chain: 'near', path: "m/44'/397'/0'", address: 'a'.repeat(64) },
+  { chain: 'evm', path: "m/44'/60'/0'/0/0", address: '0x1111111111111111111111111111111111111111' },
+]
 const SEND: PlanIntent = { outcome: 'send', asset: 'NEAR', amount: '1.5', chain: 'near', to: 'alice.near', toAsset: null, toChain: null }
 const TYPED = ['send 1.5 NEAR to alice.near']
 
@@ -267,5 +270,67 @@ describe('reading and moving a plan', () => {
     const { plan } = ok(await make())
     ok(store.move(plan.id, 'chat-1', 'awaiting_review'))
     expect(store.get(plan.id, 'chat-1')?.hash).toBe(plan.hash)
+  })
+})
+
+describe('a swap’s terms', () => {
+  const SWAP_INTENT: Partial<PlanIntent> = { outcome: 'swap', asset: 'NEAR', amount: '5', chain: 'near', to: null, toAsset: 'USDC', toChain: 'base' }
+  const EVM = '0x1111111111111111111111111111111111111111'
+  const START = Date.parse('2026-11-08T00:00:00.000Z')
+  const TERMS: PlanSwap = {
+    via: '1click',
+    depositAddress: 'b'.repeat(64),
+    deadline: new Date(START + PLAN_TTL_MS + 20 * 60_000).toISOString(),
+    originAsset: 'nep141:wrap.near',
+    destinationAsset: 'nep141:base-usdc.omft.near',
+    amountIn: '5000000000000000000000000',
+    amountOut: '17400531',
+    minAmountOut: '17226525',
+    sendSymbol: 'NEAR',
+    getSymbol: 'USDC',
+    getDecimals: '6',
+    getChain: 'base',
+    recipient: EVM,
+    refundTo: 'a'.repeat(64),
+    feeBps: '20',
+    seconds: '22',
+  }
+  const swapping = (terms: Partial<PlanSwap> = {}, payout = { address: EVM, chain: 'evm' as const }) => async () => ({ ok: true as const, steps: [], swap: { ...TERMS, ...terms }, payout })
+
+  it('go in the hashed core, frozen, paying the person’s own address there', async () => {
+    const { make } = setup(swapping())
+    const { plan } = ok(await make(SWAP_INTENT))
+    expect(plan.core.swap).toEqual(TERMS)
+    expect(plan.core.recipient).toEqual({ address: EVM, why: 'own' })
+    expect(plan.hash).toBe(planHash(plan.core))
+    expect(() => ((plan.core.swap as PlanSwap).recipient = '0x2222222222222222222222222222222222222222')).toThrow(TypeError)
+  })
+
+  it('refuse a payout to anyone but the person, or one the terms don’t name', async () => {
+    const other = '0x2222222222222222222222222222222222222222'
+    expect(await setup(swapping({ recipient: other }, { address: other, chain: 'evm' })).make(SWAP_INTENT)).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    expect(await setup(swapping({ recipient: other })).make(SWAP_INTENT)).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    // The person's NEAR account isn't their address on Base.
+    expect(await setup(swapping({ recipient: 'a'.repeat(64) }, { address: 'a'.repeat(64), chain: 'evm' })).make(SWAP_INTENT)).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    // Only a swap carries swap terms.
+    expect(await setup(swapping()).make({ ...SWAP_INTENT, outcome: 'send', to: 'alice.near' })).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+  })
+
+  it('pay an address the person typed in the chat, and no other', async () => {
+    const friend = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
+    const typed = [`swap 5 NEAR to USDC and send it to ${friend} on base`]
+    const { make } = setup(swapping({ recipient: friend }, { address: friend, chain: 'evm' }))
+    const { plan } = ok(await make({ ...SWAP_INTENT, to: friend }, 'chat-1', typed))
+    expect(plan.core.recipient).toEqual({ address: friend, why: 'typed' })
+    // Never typed: the store refuses before anything is built.
+    expect(await setup(swapping({ recipient: friend }, { address: friend, chain: 'evm' })).make({ ...SWAP_INTENT, to: friend }, 'chat-1', [])).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+    // Typed, but the terms pay someone else.
+    expect(await setup(swapping()).make({ ...SWAP_INTENT, to: friend }, 'chat-1', typed)).toEqual({ ok: false, reason: 'recipient-not-allowed' })
+  })
+
+  it('refuse a deposit address that dies before the plan could be sent', async () => {
+    const soon = new Date(START + PLAN_TTL_MS).toISOString()
+    expect(await setup(swapping({ deadline: soon })).make(SWAP_INTENT)).toEqual({ ok: false, reason: 'chain-unavailable' })
+    expect(await setup(swapping({ deadline: 'not a date' })).make(SWAP_INTENT)).toEqual({ ok: false, reason: 'chain-unavailable' })
   })
 })

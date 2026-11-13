@@ -1,4 +1,5 @@
 import type { Account } from '../../shared/accounts'
+import type { ChatSwap } from '../../shared/ipc'
 import type { PlanIntent, PlanSummary, PlanToolResult, PlanTools } from '../../shared/plan'
 import type { VaultResult } from '../../shared/vault'
 import type { PlanStore, PlanView } from './store'
@@ -11,14 +12,17 @@ export interface AgentPlanContext {
   typed: () => readonly string[]
   /** The person's own addresses, which need the vault unlocked. */
   accounts: () => Promise<VaultResult<{ accounts: Account[] }>>
+  /** Where a swap plan stands once its deposit landed, as main follows it. */
+  swapOf?: (planId: string) => ChatSwap | null
 }
 
-const summaryOf = ({ id, status, core }: PlanView): PlanSummary => ({
+const summaryOf = ({ id, status, core }: PlanView, swap: ChatSwap | null = null): PlanSummary => ({
   id,
   status,
   summary: core.summary,
   intent: core.intent,
   recipient: core.recipient,
+  ...(swap ? { swap } : {}),
 })
 
 /**
@@ -26,7 +30,7 @@ const summaryOf = ({ id, status, core }: PlanView): PlanSummary => ({
  * the plan is marked as the agent's, it belongs to this chat, and only the
  * person's own addresses or ones they typed can be paid.
  */
-export function agentPlanTools({ store, owner, typed, accounts }: AgentPlanContext): PlanTools {
+export function agentPlanTools({ store, owner, typed, accounts, swapOf }: AgentPlanContext): PlanTools {
   return {
     async create(intent: PlanIntent): Promise<PlanToolResult> {
       let own: VaultResult<{ accounts: Account[] }>
@@ -42,7 +46,7 @@ export function agentPlanTools({ store, owner, typed, accounts }: AgentPlanConte
 
     async get(id: string): Promise<PlanToolResult> {
       const plan = store.get(id, owner)
-      return plan ? { ok: true, plan: summaryOf(plan) } : { ok: false, reason: 'not-found' }
+      return plan ? { ok: true, plan: summaryOf(plan, swapOf?.(id) ?? null) } : { ok: false, reason: 'not-found' }
     },
 
     async cancel(id: string): Promise<PlanToolResult> {

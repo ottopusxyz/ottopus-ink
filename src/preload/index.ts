@@ -10,7 +10,10 @@ import type { VaultStatus } from '../shared/vault'
 const bridge: InkBridge = {
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
   detectAgents: (options) => ipcRenderer.invoke(IPC.detectAgents, { refresh: options?.refresh === true }),
-  startChat: (agent) => ipcRenderer.invoke(IPC.startChat, agent),
+  startChat: (agent, options) => ipcRenderer.invoke(IPC.startChat, agent, options),
+  savedChats: () => ipcRenderer.invoke(IPC.savedChats),
+  deleteSavedChat: (id) => ipcRenderer.invoke(IPC.deleteSavedChat, id),
+  clearChatHistory: () => ipcRenderer.invoke(IPC.clearChatHistory),
   sendToChat: (chatId, text) => ipcRenderer.invoke(IPC.sendToChat, chatId, text),
   stopChatTurn: (chatId) => ipcRenderer.invoke(IPC.stopChatTurn, chatId),
   closeChat: (chatId) => ipcRenderer.invoke(IPC.closeChat, chatId),
@@ -46,6 +49,14 @@ const bridge: InkBridge = {
   copyAddress: (chain) => ipcRenderer.invoke(IPC.copyAddress, chain),
   portfolio: (options) => ipcRenderer.invoke(IPC.portfolio, { fresh: options?.fresh === true }),
   savedPortfolio: () => ipcRenderer.invoke(IPC.savedPortfolio),
+  recentSwaps: () => ipcRenderer.invoke(IPC.recentSwaps),
+  onSwapsChanged: (listener) => {
+    const handler = () => listener()
+    ipcRenderer.on(IPC.swapsChanged, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC.swapsChanged, handler)
+    }
+  },
   zerionKeyStatus: () => ipcRenderer.invoke(IPC.zerionKeyStatus),
   saveZerionKey: (key) => ipcRenderer.invoke(IPC.saveZerionKey, key),
   removeZerionKey: () => ipcRenderer.invoke(IPC.removeZerionKey),

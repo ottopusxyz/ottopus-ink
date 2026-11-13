@@ -1,5 +1,5 @@
 import { base58, base64 } from '@scure/base'
-import { decodeTransfer, transactionId as idOf } from '../../shared/near/transaction'
+import { decodeTransaction, transactionId as idOf } from '../../shared/near/transaction'
 
 /** Free mainnet RPCs, tried in order. FastNEAR first; NEAR's own as the fallback. */
 export const NEAR_RPC_URLS = ['https://rpc.mainnet.fastnear.com', 'https://rpc.mainnet.near.org'] as const
@@ -276,7 +276,7 @@ export function createNearRpc({ urls = NEAR_RPC_URLS, fetch = globalThis.fetch, 
      */
     async sendTransaction(signed: Uint8Array): Promise<NearTxOutcome> {
       const unsigned = signed.subarray(0, signed.length - 65)
-      const expected = { transactionId: idOf(unsigned), senderId: decodeTransfer(unsigned).signerId }
+      const expected = { transactionId: idOf(unsigned), senderId: decodeTransaction(unsigned).signerId }
       return outcomeOf(await call('send_tx', { signed_tx_base64: base64.encode(signed), wait_until: 'FINAL' }, sendTimeoutMs, { sends: true }), expected)
     },
 

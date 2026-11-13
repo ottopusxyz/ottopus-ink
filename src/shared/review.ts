@@ -9,6 +9,10 @@ import type { PlanStatus } from './plan'
 /** One plan as the review window draws it. Amounts are NEAR decimals, written by main. */
 export interface ReviewPlan {
   id: string
+  /** A plain NEAR send, or a swap through NEAR Intents. */
+  kind: 'send' | 'swap'
+  /** What a swap's quote promised, for a swap. Null for a send. */
+  swap: ReviewSwap | null
   /** The hash the person approves. The signer signs only a plan that hashes to it. */
   hash: string
   /** The network banner, such as `NEAR mainnet`. */
@@ -17,13 +21,13 @@ export interface ReviewPlan {
   from: string
   /** The key that signs for it. */
   publicKey: string
-  /** Who gets paid, in full. */
+  /** Who gets paid, in full: for a swap, who NEAR Intents pays out to. */
   to: string
-  /** What kind of NEAR account `to` is. A transfer creates an implicit one that doesn't exist yet. */
-  toKind: 'implicit' | 'eth-implicit' | 'named'
+  /** What kind of NEAR account `to` is. A transfer creates an implicit one that doesn't exist yet. `other-chain` is a swap's payout address on another chain. */
+  toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain'
   /** Why Ink lets this plan pay `to`: it's the person's own address, or they typed it in the chat. */
   toWhy: 'own' | 'typed'
-  /** The deposit, in NEAR. */
+  /** The deposit, in NEAR: for a swap, the NEAR swapped. */
   amount: string
   /** Exactly what is sent, in yoctoNEAR, for anyone checking the decimals. */
   amountYocto: string
@@ -42,11 +46,35 @@ export interface ReviewPlan {
 
 /** One decoded action. A transfer calls no contract, so `method` is null for it. */
 export interface ReviewAction {
-  kind: 'Transfer'
-  /** In NEAR. */
+  kind: 'Transfer' | 'FunctionCall'
+  /** What it attaches, in NEAR. */
   amount: string
   /** The contract method a call action runs. */
   method: string | null
+  /** What it does, in plain words, written by main from the decoded action. */
+  summary: string
+}
+
+/** A swap through NEAR Intents, as main read it from the plan's fixed terms. */
+export interface ReviewSwap {
+  /** "5 NEAR". */
+  send: string
+  /** What the quote expects to pay out: "17.400531 USDC". */
+  get: string
+  /** The least it pays out, or it's refunded. */
+  least: string
+  /** Where it pays out, as a person reads it: "Base", or "your NEAR Intents balance". */
+  getChain: string
+  /** Where a refund goes: the person's own NEAR account. */
+  refundTo: string
+  /** 1Click's deposit address, which the transaction pays. */
+  depositAddress: string
+  /** ISO 8601. After this the deposit address is dead. */
+  deadline: string
+  /** NEAR Intents' own fee, already out of `get`: "0.2%". */
+  fee: string
+  /** How long it should take once the deposit lands. */
+  seconds: number
 }
 
 /** Why an approval or a send didn't go ahead. */

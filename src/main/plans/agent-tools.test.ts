@@ -65,4 +65,13 @@ describe('an agent chat’s plan tools', () => {
     expect(cancelled.ok && cancelled.plan.status).toBe('cancelled')
     expect(await tools('chat-1').cancel(id)).toEqual({ ok: false, reason: 'cannot-move', status: 'cancelled' })
   })
+
+  it('report where a swap stands once main follows it', async () => {
+    const store = createPlanStore()
+    const swap = { stage: 'swapping' as const, got: null, refunded: null, link: null }
+    const tools = agentPlanTools({ store, owner: 'chat-1', typed: () => ['send 1 NEAR to alice.near'], accounts: async () => ({ ok: true, accounts: OWN }), swapOf: () => swap })
+    const made = await tools.create(SEND)
+    if (!made.ok) throw new Error(made.reason)
+    expect(await tools.get(made.plan.id)).toMatchObject({ ok: true, plan: { swap } })
+  })
 })

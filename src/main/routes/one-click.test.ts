@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { oneClickQuote, oneClickTokens, type OneClickQuoteRequest } from './one-click'
+import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickQuoteRequest } from './one-click'
 
 const respond = (body: unknown, status = 200) => {
   const calls: { url: string; body: Record<string, unknown> | null }[] = []
@@ -86,7 +86,7 @@ describe('a 1Click quote', () => {
     const { fetch, calls } = respond({ quote: quote(), quoteRequest: echo(), signature: 'ed25519:x' })
     expect(await oneClickQuote(request, { fetch })).toEqual({
       ok: true,
-      quote: { amountIn: 5n * 10n ** 24n, amountOut: 17_400_531n, minAmountOut: 17_226_525n, amountInUsd: 17.4, amountOutUsd: 17.39, seconds: 22, withdrawFee: 2400n, feeBps: 20, depositAddress: null, depositMemo: null },
+      quote: { amountIn: 5n * 10n ** 24n, amountOut: 17_400_531n, minAmountOut: 17_226_525n, amountInUsd: 17.4, amountOutUsd: 17.39, seconds: 22, withdrawFee: 2400n, feeBps: 20, depositAddress: null, depositMemo: null, deadline: null },
     })
     expect(calls[0]?.url).toBe('https://1click.chaindefuser.com/v0/quote')
     expect(calls[0]?.body).toMatchObject({ dry: true, swapType: 'EXACT_INPUT', amount: '5000000000000000000000000', refundType: 'ORIGIN_CHAIN', slippageTolerance: 100, deadline: '2026-11-13T12:00:00.000Z' })
@@ -98,12 +98,15 @@ describe('a 1Click quote', () => {
     expect(calls[0]?.body).toMatchObject({ depositType: 'INTENTS', refundType: 'INTENTS' })
   })
 
-  it('gives the deposit address only on a quote that isn’t dry', async () => {
-    const { fetch } = respond({ quote: quote({ depositAddress: 'a'.repeat(64) }), quoteRequest: echo({ dry: false }) })
+  it('gives the deposit address and its deadline only on a quote that isn’t dry', async () => {
+    const { fetch } = respond({ quote: quote({ depositAddress: 'a'.repeat(64), deadline: '2026-11-13T13:00:00Z' }), quoteRequest: echo({ dry: false }) })
     const result = await oneClickQuote({ ...request, dry: false }, { fetch })
     expect(result.ok && result.quote.depositAddress).toBe('a'.repeat(64))
+    expect(result.ok && result.quote.deadline).toEqual(new Date('2026-11-13T13:00:00Z'))
     const missing = respond({ quote: quote(), quoteRequest: echo({ dry: false }) })
     expect(await oneClickQuote({ ...request, dry: false }, missing)).toEqual({ ok: false, reason: 'unavailable' })
+    const noDeadline = respond({ quote: quote({ depositAddress: 'a'.repeat(64) }), quoteRequest: echo({ dry: false }) })
+    expect(await oneClickQuote({ ...request, dry: false }, noDeadline)).toEqual({ ok: false, reason: 'unavailable' })
   })
 
   it('refuses an answer for another swap, amount, recipient or refund address', async () => {
@@ -121,5 +124,29 @@ describe('a 1Click quote', () => {
     expect(await oneClickQuote(request, respond({ message: 'down' }, 503))).toEqual({ ok: false, reason: 'unavailable' })
     expect(await oneClickQuote(request, respond('not json'))).toEqual({ ok: false, reason: 'unavailable' })
     expect(await oneClickQuote(request, respond({ quote: quote({ amountOut: '1.5' }), quoteRequest: echo() }))).toEqual({ ok: false, reason: 'unavailable' })
+  })
+})
+
+describe('following a swap', () => {
+  const report = (status: string, details: Record<string, unknown> = {}) => ({ correlationId: 'c', status, updatedAt: '2026-11-13T12:00:00Z', quoteResponse: {}, swapDetails: details })
+
+  it('reads where it stands, the payout and any refund', async () => {
+    const { fetch, calls } = respond(report('SUCCESS', { amountOut: '17400531', destinationChainTxHashes: [{ hash: '0xabc', explorerUrl: 'https://basescan.org/tx/0xabc' }] }))
+    expect(await swapStatus('a'.repeat(64), { fetch })).toEqual({ stage: 'SUCCESS', amountOut: 17_400_531n, payoutTx: { hash: '0xabc', explorerUrl: 'https://basescan.org/tx/0xabc' }, refunded: null })
+    expect(calls[0]?.url).toBe(`https://1click.chaindefuser.com/v0/status?depositAddress=${'a'.repeat(64)}`)
+    expect(await swapStatus('x', respond(report('REFUNDED', { refundedAmount: '5' })))).toMatchObject({ stage: 'REFUNDED', refunded: 5n, payoutTx: null })
+  })
+
+  it('drops an explorer link that isn’t plain https, and stages it doesn’t know', async () => {
+    expect(await swapStatus('x', respond(report('SUCCESS', { destinationChainTxHashes: [{ hash: '0xabc', explorerUrl: 'javascript:alert(1)' }] })))).toMatchObject({ payoutTx: { hash: '0xabc', explorerUrl: null } })
+    expect(await swapStatus('x', respond(report('DONE')))).toBeNull()
+    expect(await swapStatus('x', respond('down', 503))).toBeNull()
+  })
+
+  it('tells 1Click the deposit’s transaction, from the NEAR account that sent it', async () => {
+    const { fetch, calls } = respond(report('KNOWN_DEPOSIT_TX'))
+    expect(await submitDeposit({ txHash: 'Tx1', depositAddress: 'a'.repeat(64), nearSenderAccount: 'b'.repeat(64) }, { fetch })).toMatchObject({ stage: 'KNOWN_DEPOSIT_TX' })
+    expect(calls[0]).toEqual({ url: 'https://1click.chaindefuser.com/v0/deposit/submit', body: { txHash: 'Tx1', depositAddress: 'a'.repeat(64), nearSenderAccount: 'b'.repeat(64) } })
+    expect(await submitDeposit({ txHash: 'Tx1', depositAddress: 'x' }, respond({ message: 'no' }, 400))).toBeNull()
   })
 })

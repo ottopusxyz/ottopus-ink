@@ -1,3 +1,5 @@
+import type { ChatSwap } from './ipc'
+
 /** What a plan is and the states it moves through. Types and vocabulary only: main builds and hashes plans. */
 
 /**
@@ -66,6 +68,38 @@ export interface PlanStep {
 }
 
 /**
+ * A swap through NEAR Intents' 1Click, as fixed when the plan was made from a binding
+ * quote. Every value is a string, so the plan hash covers it exactly. The steps pay the
+ * deposit address; these say what 1Click promised for it.
+ */
+export interface PlanSwap {
+  via: '1click'
+  depositAddress: string
+  /** ISO 8601. After this the deposit address is dead, and nothing may be sent to it. */
+  deadline: string
+  originAsset: string
+  destinationAsset: string
+  /** In each token's smallest unit. */
+  amountIn: string
+  amountOut: string
+  /** The least the swap pays out, or it's refunded. */
+  minAmountOut: string
+  sendSymbol: string
+  getSymbol: string
+  getDecimals: string
+  /** 1Click's name for the chain it pays out on: `base`, `sol`, or `intents` for the Intents balance. */
+  getChain: string
+  /** Who 1Click pays: the person's own address there, or one they typed. */
+  recipient: string
+  /** Where a refund goes: the person's own NEAR account. */
+  refundTo: string
+  /** 1Click's own fee, in basis points, already out of amountOut. */
+  feeBps: string
+  /** How long 1Click expects the swap to take once the deposit lands. */
+  seconds: string
+}
+
+/**
  * The part of a plan that is hashed, and so can never change once made. Status
  * and anything learned about the plan later live outside it.
  */
@@ -83,6 +117,8 @@ export interface PlanCore {
   /** What the person reads, written by main, never by the agent. Hashed so it can't change under the steps. */
   summary: string
   steps: PlanStep[]
+  /** A swap's terms, when the plan is one. Absent from every other plan. */
+  swap?: PlanSwap
 }
 
 export type PlanFailure =
@@ -102,6 +138,10 @@ export type PlanFailure =
   | 'recipient-unknown'
   /** The chain couldn't be reached to build the plan. */
   | 'chain-unavailable'
+  /** NEAR Intents wouldn't quote the swap: under its minimum, or no market maker answered. */
+  | 'no-route'
+  /** The payout address isn't a valid address on the chain it lands on, or one Ink can check yet. */
+  | 'bad-address'
 
 /** What an agent's chat learns about one of its plans. */
 export interface PlanSummary {
@@ -110,6 +150,8 @@ export interface PlanSummary {
   summary: string
   intent: PlanIntent
   recipient: PlanRecipient | null
+  /** Where its swap stands, once a swap's deposit landed. */
+  swap?: ChatSwap
 }
 
 export type PlanToolResult =

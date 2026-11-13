@@ -3,10 +3,15 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentStatus, type AppInfo, type ZerionKeyStatus } from '../shared/ipc'
+import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatSwap, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { formatUnits } from '../shared/token-text'
+import { CHAT_ID, type SavedChat } from '../shared/history'
+import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
-import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
+import { closeChat, killChats, sendFromInk, sendToChat, startChat, stopChatTurn, type PlanEnding } from './agents/chats'
+import { createChatHistory, savedEventOf, type ChatHistory } from './history/chat-history'
+import { recapOf } from './history/recap'
 import { detectAgents } from './agents/detect'
 import { agentEnv, readNamedShellEnv } from './agents/login-env'
 import { run, stopRuns } from './agents/run'
@@ -14,10 +19,11 @@ import { detectEntries } from './external/detect'
 import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
-import { buildNearSend, isNearSend, nearSendFeeCeiling, nearTransferOf } from './near/build'
+import { buildNearSend, callsFeeCeiling, isNearSend, nearCallsFit, nearSendFeeCeiling, nearTransferOf } from './near/build'
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
+import { planOutcome } from './plans/outcome'
 import { createPlanStore, type PlanView } from './plans/store'
 import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reader'
 import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
@@ -25,7 +31,11 @@ import { installId, INK_SERVICE_URL } from './portfolio/service'
 import { checkZerionKey, type ZerionAccess } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
-import { oneClickQuote, oneClickTokens, type OneClickToken } from './routes/one-click'
+import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
+import { buildOneClickSwap } from './routes/swap-plan'
+import { createSwapJournal, type SwapJournal } from './routes/swap-journal'
+import { createSwapTracker } from './routes/swap-tracker'
+import { chainName } from './routes/route'
 import { createQuoter } from './routes/quoter'
 import { describeForReview } from './review/describe'
 import { createReviewWindow } from './review/window'
@@ -130,8 +140,85 @@ const nearRpc = createNearRpc()
 
 /** Every plan made while the app runs. Each chain module builds the steps it knows; anything else stays a draft. */
 const plans = createPlanStore({
-  buildSteps: async (intent, own) => (isNearSend(intent) ? buildNearSend(intent, own, nearRpc) : { ok: true, steps: [] }),
+  buildSteps: async (intent, own) => {
+    if (isNearSend(intent)) return buildNearSend(intent, own, nearRpc)
+    if (intent.outcome === 'swap') {
+      return buildOneClickSwap(intent, own, {
+        tokens: listedTokens,
+        quote: (request) => oneClickQuote(request),
+        fits: (from, deposit, gas, calls) => nearCallsFit(nearRpc, from, deposit, gas, calls),
+      })
+    }
+    return { ok: true, steps: [] }
+  },
 })
+
+/** What a chat follows of each plan it made after review, by plan id: its swap's progress and how it ended. */
+interface Followed {
+  owner: string
+  swap: (swap: ChatSwap) => void
+  ending: (ending: PlanEnding) => void
+  transactionId: string | null
+  ended: boolean
+}
+const followed = new Map<string, Followed>()
+/** Room for every plan the store keeps, and no more. */
+const MAX_FOLLOWED = 500
+
+/** Tells the plan's chat how it ended, once it has, with Ink's note and the facts for the agent. Only once per plan. */
+function endingOf(planId: string): void {
+  const follow = followed.get(planId)
+  const plan = follow && !follow.ended ? plans.get(planId, follow.owner) : null
+  if (!follow || !plan) return
+  const outcome = planOutcome(planId, plan.core, plan.status, follow.transactionId, swapTracker.get(planId))
+  if (!outcome) return
+  follow.ended = true
+  follow.ending(outcome)
+}
+
+let swapJournal: SwapJournal | null = null
+
+/** The swaps Ink follows, sealed by the OS keyring, made on first use once the keyring can be asked. */
+function getSwapJournal(): SwapJournal {
+  swapJournal ??= createSwapJournal({ file: join(app.getPath('userData'), 'swaps.bin'), box: osSecretBox })
+  return swapJournal
+}
+
+/** Follows each swap once NEAR ran its deposit, across restarts, and tells the chat that made it and Home. */
+const swapTracker = createSwapTracker({
+  submit: (deposit) => submitDeposit(deposit),
+  status: (depositAddress) => swapStatus(depositAddress),
+  onUpdate: (planId, swap) => {
+    followed.get(planId)?.swap(swap)
+    endingOf(planId)
+    sendToWindows(IPC.swapsChanged)
+  },
+  journal: { list: () => getSwapJournal().list(), put: (entry) => getSwapJournal().put(entry), update: (planId, progress) => getSwapJournal().update(planId, progress) },
+})
+
+let chatHistory: ChatHistory | null = null
+
+/** Chats kept across restarts, sealed by the OS keyring, made on first use once the keyring can be asked. */
+function getChatHistory(): ChatHistory {
+  chatHistory ??= createChatHistory({ file: join(app.getPath('userData'), 'chats.bin'), box: osSecretBox })
+  return chatHistory
+}
+
+/** Which kept chat each running session belongs to, and with which agent. A continued chat runs in a new session. */
+const historyOf = new Map<string, { id: string; agent: AgentId }>()
+
+/** The swaps followed lately, for Home, only while unlocked: they hold addresses and amounts. */
+function recentSwaps(): RecentSwap[] {
+  if (vault?.isUnlocked() !== true) return []
+  return swapTracker.recent().map(({ planId, swap, progress, startedAt }) => ({
+    planId,
+    send: /^[0-9]+$/.test(swap.amountIn) ? `${formatUnits(BigInt(swap.amountIn), 24)} ${swap.sendSymbol}` : swap.sendSymbol,
+    get: swap.getSymbol,
+    where: swap.getChain === 'intents' ? 'in your NEAR Intents balance' : `on ${chainName(swap.getChain)}`,
+    progress,
+    startedAt,
+  }))
+}
 
 /** The review window. It opens whenever a plan waits for review. */
 const reviewWindow = createReviewWindow({
@@ -146,6 +233,22 @@ async function describePlan(plan: PlanView) {
   const transfer = nearTransferOf(plan.core)
   let fee: bigint | null = null
   if (transfer) fee = await nearSendFeeCeiling(nearRpc, transfer.receiverId).catch(() => null)
+  const [step] = plan.core.steps
+  if (!transfer && step?.action === 'call') {
+    let calls: ReturnType<typeof callsOfStep>['calls'] | null = null
+    try {
+      calls = callsOfStep(step).calls
+    } catch {
+      // A step that doesn't read as Ink's own calls isn't shown at all.
+    }
+    if (calls) {
+      const read = calls
+      fee = await nearRpc
+        .gasPrice()
+        .then((price) => callsFeeCeiling(price, callsGas(read), read.length))
+        .catch(() => null)
+    }
+  }
   return describeForReview(plan, `NEAR ${NEAR_NETWORK}`, fee)
 }
 
@@ -157,6 +260,9 @@ const reviews = createReviewBroker({
     // Looked up each time, since the vault is made on first use.
     vault: { sign: (core, hash, live) => getVault().sign(core, hash, live) },
     rpc: nearRpc,
+    onConfirmed: (plan, transactionId) => {
+      if (plan.core.swap) void swapTracker.follow(plan.id, plan.core.swap, transactionId)
+    },
   }),
   describe: describePlan,
   unlocked: () => vault?.isUnlocked() === true,
@@ -278,7 +384,7 @@ function getMcpBridge(): Promise<McpBridge> {
     accounts: ownAccounts,
     portfolio: () => ownPortfolio(),
     quote: quoteRoute,
-    plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts }),
+    plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts, swapOf: swapTracker.get }),
   }).catch((error: unknown) => {
     mcpBridge = null
     throw error
@@ -380,8 +486,17 @@ function registerIpc(): void {
     return agents
   })
 
-  ipcMain.handle(IPC.startChat, async (event, agent: unknown): Promise<string> => {
+  ipcMain.handle(IPC.startChat, async (event, agent: unknown, options: unknown): Promise<string> => {
     assertAppFrame(event)
+    const asked = typeof options === 'object' && options !== null ? (options as { historyId?: unknown; continue?: unknown }) : {}
+    const historyId = typeof asked.historyId === 'string' && CHAT_ID.test(asked.historyId) ? asked.historyId : null
+    // A chat goes on only from Ink's own record of it, which is read only while Ink is unlocked.
+    let continuing: SavedChat | null = null
+    if (asked.continue === true) {
+      if (!historyId || vault?.isUnlocked() !== true) throw new Error('Unlock Ink to continue this chat')
+      continuing = getChatHistory().get(historyId)
+      if (!continuing) throw new Error('Ink no longer keeps that chat')
+    }
     const askedIn = pageGeneration
     agents ??= agentEnv().then(detectAgents)
     const status = (await agents).find(({ id }) => id === agent)
@@ -389,16 +504,55 @@ function registerIpc(): void {
     const tools = {
       bridge: await getMcpBridge(),
       shim: join(import.meta.dirname, 'shim.js'),
-      review: (planId: string, owner: string, notify: Parameters<typeof reviews.offer>[2]) => void reviews.offer(planId, owner, notify),
+      review: (planId: string, owner: string, notify: NonNullable<Parameters<typeof reviews.offer>[2]>) =>
+        void reviews.offer(planId, owner, (status, transactionId) => {
+          notify(status, transactionId)
+          const follow = followed.get(planId)
+          if (follow && transactionId) follow.transactionId = transactionId
+          endingOf(planId)
+        }),
+      follow: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; ending: (ending: PlanEnding) => void }) => {
+        followed.set(planId, { owner, ...listen, transactionId: null, ended: false })
+        if (followed.size > MAX_FOLLOWED) followed.delete(followed.keys().next().value as string)
+      },
     }
     const env = await agentEnv()
     const external = await getExternalTools().forNewChat()
     // Nothing is left to show or close a chat for a page that went away during those waits.
     if (askedIn !== pageGeneration) throw new Error('The page that asked for this chat has gone')
-    return startChat(status, env, tools, external, (chatId, chatEvent) => {
+    const chatId = startChat(status, env, tools, external, (sessionId, chatEvent) => {
       if (chatEvent.type === 'session') getExternalTools().noteSignIn(external, chatEvent.needsSignIn)
-      sendToWindows(IPC.chatEvent, chatId, chatEvent)
+      const kept = historyOf.get(sessionId)
+      const saved = kept ? savedEventOf(chatEvent) : null
+      if (kept && saved) getChatHistory().record(kept.id, saved)
+      if (chatEvent.type === 'ended') historyOf.delete(sessionId)
+      sendToWindows(IPC.chatEvent, sessionId, chatEvent)
     })
+    if (historyId) historyOf.set(chatId, { id: historyId, agent: status.id })
+    if (continuing && historyId) {
+      // The new session hears the chat so far from Ink, then the person carries on.
+      const recap = recapOf(continuing)
+      getChatHistory().begin(historyId, status.id, continuing.opening)
+      getChatHistory().record(historyId, { type: 'continued', agent: status.id, at: Date.now() })
+      sendFromInk(chatId, recap)
+    }
+    return chatId
+  })
+
+  ipcMain.handle(IPC.savedChats, (event) => {
+    assertAppFrame(event)
+    return vault?.isUnlocked() === true ? getChatHistory().list() : []
+  })
+
+  ipcMain.handle(IPC.deleteSavedChat, (event, id: unknown) => {
+    assertAppFrame(event)
+    if (typeof id !== 'string' || !CHAT_ID.test(id)) throw new Error('Bad chat')
+    getChatHistory().remove(id)
+  })
+
+  ipcMain.handle(IPC.clearChatHistory, (event) => {
+    assertAppFrame(event)
+    getChatHistory().clear()
   })
 
   ipcMain.handle(IPC.listExternalTools, (event) => {
@@ -482,6 +636,11 @@ function registerIpc(): void {
     return ownPortfolio({ fresh })
   })
 
+  ipcMain.handle(IPC.recentSwaps, (event) => {
+    assertAppFrame(event)
+    return recentSwaps()
+  })
+
   ipcMain.handle(IPC.savedPortfolio, (event) => {
     assertAppFrame(event)
     return savedPortfolio()
@@ -526,6 +685,13 @@ function registerIpc(): void {
     assertAppFrame(event)
     if (typeof chatId !== 'string' || typeof text !== 'string') throw new Error('Bad message')
     sendToChat(chatId, text)
+    const kept = historyOf.get(chatId)
+    if (kept) {
+      // A chat is kept from its first message, which names it.
+      if (!getChatHistory().get(kept.id)) getChatHistory().begin(kept.id, kept.agent, text)
+      const saved = savedEventOf({ type: 'you', text })
+      if (saved) getChatHistory().record(kept.id, saved)
+    }
   })
 
   ipcMain.handle(IPC.stopChatTurn, (event, chatId: unknown) => {
@@ -568,6 +734,8 @@ void app.whenReady().then(() => {
 
   registerIpc()
   reviewWindow.attach(reviews)
+  // Swaps a quit cut off are followed again: NEAR Intents pays them out or refunds them whatever Ink does.
+  swapTracker.resume()
   signer.start()
   autoLock.start()
   powerMonitor.on('suspend', () => void vault?.lock())
@@ -587,5 +755,6 @@ app.on('before-quit', () => {
   signer.stop()
   stopRuns()
   killChats()
+  chatHistory?.flush()
   void mcpBridge?.then((bridge) => bridge.close())
 })

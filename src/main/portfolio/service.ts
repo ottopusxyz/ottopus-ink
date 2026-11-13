@@ -17,8 +17,15 @@ export function serviceUrl(raw: unknown): string | null {
   }
 }
 
-/** Set when Ink is built: MAIN_VITE_INK_SERVICE_URL. */
-export const INK_SERVICE_URL = serviceUrl(import.meta.env.MAIN_VITE_INK_SERVICE_URL)
+/** Ottopus's deployment of the Ink service. */
+export const DEFAULT_SERVICE_URL = 'https://api.ink.ottopus.xyz'
+
+/**
+ * The service this build uses: Ottopus's by default. A build can point elsewhere with
+ * MAIN_VITE_INK_SERVICE_URL, or turn the service off by setting it empty, and Ink then
+ * reads Zerion only with the person's own key.
+ */
+export const INK_SERVICE_URL = serviceUrl(import.meta.env.MAIN_VITE_INK_SERVICE_URL ?? DEFAULT_SERVICE_URL)
 
 const INSTALL_ID = /^[A-Za-z0-9_-]{16,64}$/
 

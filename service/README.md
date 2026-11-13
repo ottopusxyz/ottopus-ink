@@ -18,6 +18,8 @@ A small Cloudflare Worker that lets Ink use providers whose API keys Ottopus hol
 | `GET /v1/health` | `{ ok, zerion: 'ready' \| 'off' }` |
 | `GET /v1/zerion/wallets/{address}/positions/` | An EVM, Solana or Tron address's wallet balances from Zerion, with Zerion's spam filter on. Zerion's shape, cut down to what Ink reads. Cached 60 s per address. |
 
+Zerion's wallet endpoint doesn't read Tron addresses today (checked 13 Nov against the live service): those answer `503`, and Ink shows Tron as not read while the other accounts still count.
+
 Answers Ink already understands: `200` with `{ data, links: { next: null } }`, `400` for an address Zerion doesn't read, `429` with `retry-after` when a limit is reached, `503` when Zerion can't answer (including when it refuses the key, which callers never hear about). Requests may carry `x-ink-install`.
 
 ## Develop
@@ -40,6 +42,6 @@ The project uses the `cf` CLI (`cloudflare.config.ts`), not Wrangler.
 3. Deploy: `npm run deploy`.
 4. Set Ottopus's Zerion key as a secret. `cf` can't set a single secret yet, so use Wrangler for that one command: `npx wrangler secret put ZERION_API_KEY --name ottopus-ink-service`. Never put the key in this repo.
 5. Check it: `curl https://<the Worker's URL>/v1/health` should say `"zerion": "ready"`.
-6. Build Ink with the service's URL: `MAIN_VITE_INK_SERVICE_URL=https://<the Worker's URL> npm run build` in the app. Without it, Ink reads Zerion only with the person's own key.
+6. Ink uses Ottopus's deployment, `https://api.ink.ottopus.xyz`, by default. To point a build elsewhere, build the app with `MAIN_VITE_INK_SERVICE_URL=https://<another address>`; set it empty to turn the service off, and Ink then reads Zerion only with the person's own key.
 
 In Zerion's dashboard, set a spending alert or limit on the key: the per-IP and per-install limits slow abuse, but the service can't prove a caller is Ink.

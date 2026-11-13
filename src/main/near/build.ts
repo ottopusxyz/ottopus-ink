@@ -37,6 +37,35 @@ export function transferFeeCeiling(fees: NearProtocolFees, gasPrice: bigint, rec
   return send * price + exec * receiptPrice
 }
 
+/**
+ * Gas each action may burn besides what it attaches: a function call's own send and
+ * exec fees, its receipt and the bytes of its arguments, with room to spare. nearcore's
+ * are near 2.5 Tgas each way for a short call.
+ */
+export const CALL_OVERHEAD_GAS = 6n * 10n ** 12n
+
+/**
+ * The most a transaction of contract calls can take from the sender up front, yoctoNEAR:
+ * the gas it attaches and each call's overhead, bought at today's price with the same
+ * margin as a transfer. Unused gas comes back, so this only ever overstates.
+ */
+export function callsFeeCeiling(gasPrice: bigint, attachedGas: bigint, calls: number): bigint {
+  return (attachedGas + BigInt(calls) * CALL_OVERHEAD_GAS) * gasPrice * GAS_PRICE_MARGIN
+}
+
+/**
+ * Whether the sender can cover a transaction of calls now: what the calls attach and the
+ * most the fees could take. Before signing, `maxFee` is the ceiling the person saw when
+ * they approved, and a higher one now is `fee-rose`. Throws `NearRpcError`.
+ */
+export async function nearCallsFit(rpc: NearRpc, from: string, deposit: bigint, attachedGas: bigint, calls: number, maxFee?: bigint): Promise<'insufficient-funds' | 'fee-rose' | null> {
+  const [sender, gasPrice] = await Promise.all([rpc.viewAccount(from), rpc.gasPrice()])
+  const available = sender ? sender.amount - storageHeld(sender) : 0n
+  const fee = callsFeeCeiling(gasPrice, attachedGas, calls)
+  if (maxFee !== undefined && fee > maxFee) return 'fee-rose'
+  return available < deposit + fee ? 'insufficient-funds' : null
+}
+
 /** Placeholders that only let a step be read: the real nonce and block hash come from the chain when it's signed. */
 const READ_ONLY = { nonce: 1n, blockHash: new Uint8Array(32) }
 

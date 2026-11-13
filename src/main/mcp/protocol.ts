@@ -140,6 +140,8 @@ function planRefusal(result: Extract<PlanToolResult, { ok: false }>, id: string 
       return toolAnswer('That account doesn’t exist on the chain, so nothing sent to it would arrive. Check the name with the person.', true)
     case 'chain-unavailable':
       return toolAnswer('Ink couldn’t reach the chain to build the plan. Try again in a moment.', true)
+    case 'no-route':
+      return toolAnswer('NEAR Intents wouldn’t quote this swap right now: the amount may be under its minimum, or no market maker answered. Check with get_quote, then try again.', true)
     case 'locked':
       return toolAnswer('Ink is locked. Ask the person to unlock Ink, then try again.', true)
     case 'no-vault':

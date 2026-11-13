@@ -136,6 +136,8 @@ export type PlanFailure =
   | 'recipient-unknown'
   /** The chain couldn't be reached to build the plan. */
   | 'chain-unavailable'
+  /** NEAR Intents wouldn't quote the swap: under its minimum, or no market maker answered. */
+  | 'no-route'
 
 /** What an agent's chat learns about one of its plans. */
 export interface PlanSummary {

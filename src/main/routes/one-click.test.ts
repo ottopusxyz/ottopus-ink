@@ -92,6 +92,17 @@ describe('a 1Click quote', () => {
     expect(calls[0]?.body).toMatchObject({ dry: true, swapType: 'EXACT_INPUT', amount: '5000000000000000000000000', refundType: 'ORIGIN_CHAIN', slippageTolerance: 100, deadline: '2026-11-13T12:00:00.000Z' })
   })
 
+  it('asks for an exact output, and takes it only if 1Click pays out exactly that for some deposit', async () => {
+    const exact = { ...request, swapType: 'EXACT_OUTPUT' as const, amount: 5_000_000n }
+    const answer = (out: Record<string, unknown>) =>
+      respond({ quote: quote({ amountIn: '5066244818250790042', amountOut: '5000000', minAmountOut: '5000000', ...out }), quoteRequest: echo({ swapType: 'EXACT_OUTPUT', amount: '5000000' }) })
+    const { fetch, calls } = answer({})
+    expect(await oneClickQuote(exact, { fetch })).toMatchObject({ ok: true, quote: { amountIn: 5_066_244_818_250_790_042n, amountOut: 5_000_000n, minAmountOut: 5_000_000n } })
+    expect(calls[0]?.body).toMatchObject({ swapType: 'EXACT_OUTPUT', amount: '5000000' })
+    expect(await oneClickQuote(exact, answer({ amountOut: '4999999', minAmountOut: '4999999' }))).toEqual({ ok: false, reason: 'mismatch' })
+    expect(await oneClickQuote(exact, answer({ minAmountOut: '4900000' }))).toEqual({ ok: false, reason: 'mismatch' })
+  })
+
   it('refunds inside Intents for a deposit from the Intents balance', async () => {
     const { fetch, calls } = respond({ quote: quote(), quoteRequest: echo({ depositType: 'INTENTS', refundType: 'INTENTS' }) })
     expect((await oneClickQuote({ ...request, depositType: 'INTENTS' }, { fetch })).ok).toBe(true)

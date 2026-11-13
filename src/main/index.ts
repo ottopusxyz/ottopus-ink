@@ -19,7 +19,8 @@ import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { createPlanStore, type PlanView } from './plans/store'
-import { createPortfolioReader } from './portfolio/reader'
+import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reader'
+import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
 import { installId, INK_SERVICE_URL } from './portfolio/service'
 import { checkZerionKey, type ZerionAccess } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
@@ -192,22 +193,50 @@ function zerionAccess(): ZerionAccess | null {
 const portfolioReader = createPortfolioReader({ rpc: nearRpc, zerionAccess })
 
 /** What the wallet holds, for get_portfolio and the Portfolio screen. Public figures only, and only while unlocked, like the addresses. */
+let savedPortfolios: SavedPortfolios | null = null
+
+/** The last good read, sealed by the OS keyring, so the screens can show it at once and update behind it. */
+function getSavedPortfolios(): SavedPortfolios {
+  savedPortfolios ??= createSavedPortfolios({ file: join(app.getPath('userData'), 'portfolio.bin'), box: osSecretBox })
+  return savedPortfolios
+}
+
+/** The addresses the portfolio is read for, from the wallet's accounts. */
+function portfolioAccounts(accounts: Account[]): PortfolioAccounts | null {
+  const address = (chain: Account['chain']) => accounts.find((account) => account.chain === chain)?.address
+  const near = address('near')
+  return near ? { near, evm: address('evm'), solana: address('solana'), tron: address('tron') } : null
+}
+
+/** What the wallet holds, for get_portfolio and the Portfolio screen. Public figures only, and only while unlocked, like the addresses. */
 const ownPortfolio = async ({ fresh = false }: { fresh?: boolean } = {}): Promise<PortfolioResult> => {
   const wallet = getVault()
   if (wallet.status().state === 'none') return { ok: false, reason: 'no-vault' }
   // The vault answers only if it stayed unlocked for the whole read, so a lock while NEAR answers holds the figures back.
   const read = await wallet.withAccounts(async (accounts): Promise<PortfolioResult> => {
-    const address = (chain: Account['chain']) => accounts.find((account) => account.chain === chain)?.address
-    const near = address('near')
-    if (!near) return { ok: false, reason: 'unavailable' }
+    const own = portfolioAccounts(accounts)
+    if (!own) return { ok: false, reason: 'unavailable' }
     try {
-      return { ok: true, ...(await portfolioReader.read({ near, evm: address('evm'), solana: address('solana'), tron: address('tron') }, { fresh })) }
+      const portfolio = await portfolioReader.read(own, { fresh })
+      getSavedPortfolios().save(walletKey(own), portfolio)
+      return { ok: true, ...portfolio }
     } catch {
       return { ok: false, reason: 'unavailable' }
     }
   })
   if (!read.ok) return { ok: false, reason: read.reason === 'locked' ? 'locked' : 'unavailable' }
   return read.value
+}
+
+/** The last good read of this wallet, without reading again. Only while unlocked; null when there's none. */
+const savedPortfolio = async (): Promise<PortfolioResult | null> => {
+  const wallet = getVault()
+  if (wallet.status().state === 'none') return null
+  const read = await wallet.withAccounts(async (accounts) => {
+    const own = portfolioAccounts(accounts)
+    return own ? getSavedPortfolios().get(walletKey(own)) : null
+  })
+  return read.ok && read.value ? { ok: true, ...read.value } : null
 }
 
 /** Started with the first chat, so the app opens no socket until something needs one. */
@@ -423,6 +452,11 @@ function registerIpc(): void {
     assertAppFrame(event)
     const fresh = typeof options === 'object' && options !== null && (options as { fresh?: unknown }).fresh === true
     return ownPortfolio({ fresh })
+  })
+
+  ipcMain.handle(IPC.savedPortfolio, (event) => {
+    assertAppFrame(event)
+    return savedPortfolio()
   })
 
   ipcMain.handle(IPC.zerionKeyStatus, (event): ZerionKeyStatus => {

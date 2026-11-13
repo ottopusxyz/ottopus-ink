@@ -45,6 +45,7 @@ const bridge: InkBridge = {
   vaultAccounts: () => ipcRenderer.invoke(IPC.vaultAccounts),
   copyAddress: (chain) => ipcRenderer.invoke(IPC.copyAddress, chain),
   portfolio: (options) => ipcRenderer.invoke(IPC.portfolio, { fresh: options?.fresh === true }),
+  savedPortfolio: () => ipcRenderer.invoke(IPC.savedPortfolio),
   zerionKeyStatus: () => ipcRenderer.invoke(IPC.zerionKeyStatus),
   saveZerionKey: (key) => ipcRenderer.invoke(IPC.saveZerionKey, key),
   removeZerionKey: () => ipcRenderer.invoke(IPC.removeZerionKey),

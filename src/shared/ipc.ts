@@ -44,6 +44,7 @@ export const IPC = {
   vaultAccounts: 'vault:accounts',
   copyAddress: 'vault:copy-address',
   portfolio: 'wallet:portfolio',
+  savedPortfolio: 'wallet:saved-portfolio',
   zerionKeyStatus: 'wallet:zerion-key-status',
   saveZerionKey: 'wallet:save-zerion-key',
   removeZerionKey: 'wallet:remove-zerion-key',
@@ -229,6 +230,8 @@ export interface InkBridge {
    * reused unless `fresh` asks Ink to read again. Public figures only: no key, no words.
    */
   portfolio(options?: { fresh?: boolean }): Promise<PortfolioResult>
+  /** The last good read, kept from before, while unlocked: something to show at once while a new read runs. Null when there's none. */
+  savedPortfolio(): Promise<PortfolioResult | null>
   /** Whether a Zerion key is set, and whether it lasts past this run. Never the key itself. */
   zerionKeyStatus(): Promise<ZerionKeyStatus>
   /** Main checks the key with Zerion, then keeps it sealed by the OS keyring. */

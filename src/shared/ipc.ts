@@ -1,3 +1,4 @@
+import type { SavedChat } from './history'
 import type { Account, AccountChain } from './accounts'
 import type { PlanStatus } from './plan'
 import type { PortfolioResult } from './portfolio'
@@ -49,6 +50,9 @@ export const IPC = {
   saveZerionKey: 'wallet:save-zerion-key',
   removeZerionKey: 'wallet:remove-zerion-key',
   recentSwaps: 'wallet:recent-swaps',
+  savedChats: 'chat:saved',
+  deleteSavedChat: 'chat:delete-saved',
+  clearChatHistory: 'chat:clear-history',
   /** Main to renderer: a followed swap moved on. It carries nothing: the page asks for them, which needs Ink unlocked. */
   swapsChanged: 'wallet:swaps-changed',
   /** Main to renderer: the vault's status, sent on every change. */
@@ -242,7 +246,15 @@ export interface InkBridge {
    */
   detectAgents(options?: { refresh?: boolean }): Promise<AgentStatus[]>
   /** Starts a chat with an agent detection found ready, and returns its id. */
-  startChat(agent: AgentId): Promise<string>
+  /**
+   * Starts a chat's session. `historyId` is the page's id for the chat, under which Ink
+   * keeps it; `continue` goes on with a kept chat, whose recap Ink sends the new session.
+   */
+  startChat(agent: AgentId, options?: { historyId?: string; continue?: boolean }): Promise<string>
+  /** Chats Ink kept from before, newest first. Empty while Ink is locked. */
+  savedChats(): Promise<SavedChat[]>
+  deleteSavedChat(id: string): Promise<void>
+  clearChatHistory(): Promise<void>
   /** Starts a turn. Rejects while one is running. */
   sendToChat(chatId: string, text: string): Promise<void>
   /** Stops the running turn and keeps the conversation. */

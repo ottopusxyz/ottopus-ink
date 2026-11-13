@@ -3,12 +3,15 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentStatus, type AppInfo, type ChatSwap, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatSwap, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
 import { formatUnits } from '../shared/token-text'
+import { CHAT_ID, type SavedChat } from '../shared/history'
 import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
-import { closeChat, killChats, sendToChat, startChat, stopChatTurn, type PlanEnding } from './agents/chats'
+import { closeChat, killChats, sendFromInk, sendToChat, startChat, stopChatTurn, type PlanEnding } from './agents/chats'
+import { createChatHistory, savedEventOf, type ChatHistory } from './history/chat-history'
+import { recapOf } from './history/recap'
 import { detectAgents } from './agents/detect'
 import { agentEnv, readNamedShellEnv } from './agents/login-env'
 import { run, stopRuns } from './agents/run'
@@ -192,6 +195,17 @@ const swapTracker = createSwapTracker({
   },
   journal: { list: () => getSwapJournal().list(), put: (entry) => getSwapJournal().put(entry), update: (planId, progress) => getSwapJournal().update(planId, progress) },
 })
+
+let chatHistory: ChatHistory | null = null
+
+/** Chats kept across restarts, sealed by the OS keyring, made on first use once the keyring can be asked. */
+function getChatHistory(): ChatHistory {
+  chatHistory ??= createChatHistory({ file: join(app.getPath('userData'), 'chats.bin'), box: osSecretBox })
+  return chatHistory
+}
+
+/** Which kept chat each running session belongs to, and with which agent. A continued chat runs in a new session. */
+const historyOf = new Map<string, { id: string; agent: AgentId }>()
 
 /** The swaps followed lately, for Home, only while unlocked: they hold addresses and amounts. */
 function recentSwaps(): RecentSwap[] {
@@ -472,8 +486,17 @@ function registerIpc(): void {
     return agents
   })
 
-  ipcMain.handle(IPC.startChat, async (event, agent: unknown): Promise<string> => {
+  ipcMain.handle(IPC.startChat, async (event, agent: unknown, options: unknown): Promise<string> => {
     assertAppFrame(event)
+    const asked = typeof options === 'object' && options !== null ? (options as { historyId?: unknown; continue?: unknown }) : {}
+    const historyId = typeof asked.historyId === 'string' && CHAT_ID.test(asked.historyId) ? asked.historyId : null
+    // A chat goes on only from Ink's own record of it, which is read only while Ink is unlocked.
+    let continuing: SavedChat | null = null
+    if (asked.continue === true) {
+      if (!historyId || vault?.isUnlocked() !== true) throw new Error('Unlock Ink to continue this chat')
+      continuing = getChatHistory().get(historyId)
+      if (!continuing) throw new Error('Ink no longer keeps that chat')
+    }
     const askedIn = pageGeneration
     agents ??= agentEnv().then(detectAgents)
     const status = (await agents).find(({ id }) => id === agent)
@@ -497,10 +520,39 @@ function registerIpc(): void {
     const external = await getExternalTools().forNewChat()
     // Nothing is left to show or close a chat for a page that went away during those waits.
     if (askedIn !== pageGeneration) throw new Error('The page that asked for this chat has gone')
-    return startChat(status, env, tools, external, (chatId, chatEvent) => {
+    const chatId = startChat(status, env, tools, external, (sessionId, chatEvent) => {
       if (chatEvent.type === 'session') getExternalTools().noteSignIn(external, chatEvent.needsSignIn)
-      sendToWindows(IPC.chatEvent, chatId, chatEvent)
+      const kept = historyOf.get(sessionId)
+      const saved = kept ? savedEventOf(chatEvent) : null
+      if (kept && saved) getChatHistory().record(kept.id, saved)
+      if (chatEvent.type === 'ended') historyOf.delete(sessionId)
+      sendToWindows(IPC.chatEvent, sessionId, chatEvent)
     })
+    if (historyId) historyOf.set(chatId, { id: historyId, agent: status.id })
+    if (continuing && historyId) {
+      // The new session hears the chat so far from Ink, then the person carries on.
+      const recap = recapOf(continuing)
+      getChatHistory().begin(historyId, status.id, continuing.opening)
+      getChatHistory().record(historyId, { type: 'continued', agent: status.id, at: Date.now() })
+      sendFromInk(chatId, recap)
+    }
+    return chatId
+  })
+
+  ipcMain.handle(IPC.savedChats, (event) => {
+    assertAppFrame(event)
+    return vault?.isUnlocked() === true ? getChatHistory().list() : []
+  })
+
+  ipcMain.handle(IPC.deleteSavedChat, (event, id: unknown) => {
+    assertAppFrame(event)
+    if (typeof id !== 'string' || !CHAT_ID.test(id)) throw new Error('Bad chat')
+    getChatHistory().remove(id)
+  })
+
+  ipcMain.handle(IPC.clearChatHistory, (event) => {
+    assertAppFrame(event)
+    getChatHistory().clear()
   })
 
   ipcMain.handle(IPC.listExternalTools, (event) => {
@@ -633,6 +685,13 @@ function registerIpc(): void {
     assertAppFrame(event)
     if (typeof chatId !== 'string' || typeof text !== 'string') throw new Error('Bad message')
     sendToChat(chatId, text)
+    const kept = historyOf.get(chatId)
+    if (kept) {
+      // A chat is kept from its first message, which names it.
+      if (!getChatHistory().get(kept.id)) getChatHistory().begin(kept.id, kept.agent, text)
+      const saved = savedEventOf({ type: 'you', text })
+      if (saved) getChatHistory().record(kept.id, saved)
+    }
   })
 
   ipcMain.handle(IPC.stopChatTurn, (event, chatId: unknown) => {
@@ -696,5 +755,6 @@ app.on('before-quit', () => {
   signer.stop()
   stopRuns()
   killChats()
+  chatHistory?.flush()
   void mcpBridge?.then((bridge) => bridge.close())
 })

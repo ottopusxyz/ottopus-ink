@@ -38,6 +38,8 @@ function entryOf(value: unknown): JournalEntry | null {
   const { planId, swap, txHash, startedAt, progress } = value as Record<string, unknown>
   if (!isText(planId, 64) || !isText(txHash, 64) || typeof startedAt !== 'number' || typeof swap !== 'object' || swap === null) return null
   if (!SWAP_FIELDS.every((field) => isText((swap as Record<string, unknown>)[field]))) return null
+  const { payFrom, sendDecimals } = swap as Record<string, unknown>
+  if (!(payFrom === undefined || payFrom === 'intents') || !(sendDecimals === undefined || (isText(sendDecimals, 2) && /^[0-9]{1,2}$/.test(sendDecimals)))) return null
   let kept: ChatSwap | null = null
   if (progress !== null) {
     const { stage, got, refunded, link } = (progress ?? {}) as Record<string, unknown>

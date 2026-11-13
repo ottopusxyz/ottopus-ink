@@ -29,6 +29,7 @@ function deps(overrides: Partial<SwapPlanDeps> = {}, answer?: (request: OneClick
   const fitted: unknown[] = []
   const options: SwapPlanDeps = {
     tokens: async () => TOKENS,
+    held: async () => new Map(),
     quote: async (request) => {
       asked.push(request)
       return (
@@ -177,5 +178,44 @@ describe('building a swap from NEAR through 1Click', () => {
     })
     expect(await buildOneClickSwap(SWAP, OWN, deps({}, quoteWith({ depositAddress: '0xAbC' })).options)).toEqual({ ok: false, reason: 'chain-unavailable' })
     expect(await buildOneClickSwap(SWAP, OWN, deps({}, quoteWith({ deadline: new Date(NOW + PLAN_TTL_MS) })).options)).toEqual({ ok: false, reason: 'chain-unavailable' })
+  })
+})
+
+describe('building a swap paid from the Intents balance', () => {
+  const USDC_BASE = 'nep141:base-usdc.omft.near'
+  const holding = (raw: bigint) => async () => new Map([[`intents:${USDC_BASE}`, raw]])
+  const FROM_INTENTS: PlanIntent = { outcome: 'swap', asset: 'USDC', amount: '25', chain: 'intents', to: null, toAsset: 'NEAR', toChain: 'near' }
+
+  it('moves the token inside intents.near to the deposit address, in one call, with a refund back into the balance', async () => {
+    const { options, asked, fitted } = deps({ held: holding(30_000_000n) })
+    const built = await buildOneClickSwap(FROM_INTENTS, OWN, options)
+    if (!built.ok) throw new Error(built.reason)
+    expect(asked[0]).toMatchObject({ originAsset: USDC_BASE, destinationAsset: 'nep141:wrap.near', amount: 25_000_000n, depositType: 'INTENTS', refundTo: NEAR_ID, recipient: NEAR_ID })
+    const step = callsOfStep(built.steps[0]!)
+    expect(step).toMatchObject({ signerId: NEAR_ID, receiverId: 'intents.near', calls: [{ method: 'mt_transfer', receiverId: DEPOSIT, tokenId: USDC_BASE, amount: 25_000_000n }] })
+    expect(built.swap).toMatchObject({ payFrom: 'intents', sendSymbol: 'USDC', sendDecimals: '6', amountIn: '25000000', refundTo: NEAR_ID })
+    // Only the yoctoNEAR the transfer attaches, and its fee, come from the NEAR account.
+    expect(fitted).toEqual([[NEAR_ID, 1n, 50n * 10n ** 12n, 1]])
+  })
+
+  it('withdraws a token to its own chain, paid to the wallet’s own address there', async () => {
+    const { options, asked } = deps({ held: holding(30_000_000n) })
+    const built = await buildOneClickSwap({ ...FROM_INTENTS, toAsset: 'USDC', toChain: 'base' }, OWN, options)
+    if (!built.ok) throw new Error(built.reason)
+    expect(asked[0]).toMatchObject({ originAsset: USDC_BASE, destinationAsset: USDC_BASE, depositType: 'INTENTS', recipient: EVM, recipientType: 'DESTINATION_CHAIN' })
+    expect(built.payout).toEqual({ address: EVM, chain: 'evm' })
+  })
+
+  it('refuses more than the balance holds, and says so when the balance can’t be read', async () => {
+    expect(await buildOneClickSwap(FROM_INTENTS, OWN, deps({ held: holding(10_000_000n) }).options)).toEqual({ ok: false, reason: 'insufficient-funds' })
+    expect(await buildOneClickSwap(FROM_INTENTS, OWN, deps({ held: async () => null }).options)).toEqual({ ok: false, reason: 'chain-unavailable' })
+  })
+
+  it('still pays NEAR from the wallet when the wallet is the source', async () => {
+    const { options, asked } = deps({ held: holding(30_000_000n) })
+    const built = await buildOneClickSwap(SWAP, OWN, options)
+    if (!built.ok) throw new Error(built.reason)
+    expect(asked[0]?.depositType).toBe('ORIGIN_CHAIN')
+    expect(built.swap?.payFrom).toBeUndefined()
   })
 })

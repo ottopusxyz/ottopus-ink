@@ -56,9 +56,21 @@ describe('following a swap', () => {
     expect(follow.get('plan-1')).toMatchObject({ stage: 'done' })
   })
 
+  it('links the payout from its hash when 1Click names no explorer page for it', async () => {
+    const hash = '0x8e1b0cbaafe3f9244f2eda0ba6807356f5c14ba7d9d5f083ee30ba1360ae8157'
+    const { follow } = tracker([report('SUCCESS', { amountOut: 17_400_000n, payoutTx: { hash, explorerUrl: null } })])
+    expect(await follow.follow('plan-1', { ...SWAP, getChain: 'bsc' }, 'Tx1')).toMatchObject({ stage: 'done', link: `https://bscscan.com/tx/${hash}` })
+    // A chain Ink has no explorer for gets no link, rather than a guess.
+    const unknown = tracker([report('SUCCESS', { amountOut: 1n, payoutTx: { hash, explorerUrl: null } })])
+    expect(await unknown.follow.follow('plan-2', { ...SWAP, getChain: 'moonchain' }, 'Tx2')).toMatchObject({ stage: 'done', link: null })
+  })
+
   it('says what came back when the swap is refunded', async () => {
     const { follow } = tracker([report('REFUNDED', { refunded: 5n * 10n ** 24n })])
     expect(await follow.follow('plan-1', SWAP, 'Tx1')).toEqual({ stage: 'refunded', got: null, refunded: '5 NEAR', link: null })
+    // From the Intents balance, the token comes back at its own decimals.
+    const fromIntents = tracker([report('REFUNDED', { refunded: 25_000_000n })])
+    expect(await fromIntents.follow.follow('plan-2', { ...SWAP, payFrom: 'intents', sendSymbol: 'USDC', sendDecimals: '6' }, 'Tx2')).toMatchObject({ stage: 'refunded', refunded: '25 USDC' })
   })
 
   it('keeps checking through answers it can’t read, and tells the chat only when something moves', async () => {

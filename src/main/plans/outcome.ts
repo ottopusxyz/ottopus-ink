@@ -1,9 +1,9 @@
 import type { ChatSwap, InkNote } from '../../shared/ipc'
 import { formatNear } from '../../shared/near/units'
 import type { PlanCore, PlanStatus } from '../../shared/plan'
-import { formatUnits } from '../../shared/token-text'
 import { nearTransferOf } from '../near/build'
 import { chainName } from '../routes/route'
+import { refundPlace, swapSent } from '../routes/swap-terms'
 
 /** How a plan ended: Ink's note for the chat, and the same facts for the agent to pass on. */
 export interface PlanOutcome {
@@ -40,7 +40,9 @@ export function planOutcome(planId: string, core: PlanCore, status: PlanStatus, 
     return null
   }
 
-  const amountIn = /^[0-9]+$/.test(terms.amountIn) ? `${formatUnits(BigInt(terms.amountIn), 24)} NEAR` : 'the NEAR'
+  const amountIn = swapSent(terms) ?? `the ${terms.sendSymbol}`
+  const yours = refundPlace(terms)
+  const theirs = terms.payFrom === 'intents' ? 'the person’s NEAR Intents balance' : 'the person’s NEAR account'
   const where = terms.getChain === 'intents' ? 'into the NEAR Intents balance' : `to ${terms.recipient} on ${chainName(terms.getChain)}`
   if (status === 'failed') {
     const why = transactionId ? 'NEAR turned the deposit down or it failed on chain, so nothing reached NEAR Intents.' : 'Nothing was sent.'
@@ -59,14 +61,14 @@ export function planOutcome(planId: string, core: PlanCore, status: PlanStatus, 
     case 'refunded': {
       const back = swap.refunded ?? amountIn
       return {
-        note: { tone: 'info', title: 'Swap refunded', lines: [`NEAR Intents couldn’t swap ${amountIn} to ${terms.getSymbol} in time, and refunded ${back} to your NEAR account.`], links },
-        forAgent: toAgent(planId, `NEAR Intents couldn’t swap ${amountIn} to ${terms.getSymbol} and refunded ${back} to the person’s NEAR account.`),
+        note: { tone: 'info', title: 'Swap refunded', lines: [`NEAR Intents couldn’t swap ${amountIn} to ${terms.getSymbol} in time, and refunded ${back} to ${yours}.`], links },
+        forAgent: toAgent(planId, `NEAR Intents couldn’t swap ${amountIn} to ${terms.getSymbol} and refunded ${back} to ${theirs}.`),
       }
     }
     case 'failed':
       return {
-        note: { tone: 'block', title: 'Swap failed', lines: [`NEAR Intents couldn’t finish swapping ${amountIn} to ${terms.getSymbol}. Any refund goes to your NEAR account.`], links },
-        forAgent: toAgent(planId, `NEAR Intents couldn’t finish swapping ${amountIn} to ${terms.getSymbol}; any refund goes to the person’s NEAR account.`),
+        note: { tone: 'block', title: 'Swap failed', lines: [`NEAR Intents couldn’t finish swapping ${amountIn} to ${terms.getSymbol}. Any refund goes to ${yours}.`], links },
+        forAgent: toAgent(planId, `NEAR Intents couldn’t finish swapping ${amountIn} to ${terms.getSymbol}; any refund goes to ${theirs}.`),
       }
     case 'unknown':
       return {

@@ -206,9 +206,12 @@ export function ReviewApp() {
 
         <Section label="Amount" card>
           <p className="selectable m-0 flex items-center gap-2.5">
-            <TokenLogo symbol="NEAR" chain="near" size="lg" />
-            <span className="font-display text-[32px] leading-none font-bold tracking-[-0.02em]">{plan.amount} NEAR</span>
+            <TokenLogo symbol={plan.asset} chain={plan.asset === 'NEAR' ? 'near' : null} size="lg" />
+            <span className="font-display text-[32px] leading-none font-bold tracking-[-0.02em]">
+              {plan.amount} {plan.asset}
+            </span>
           </p>
+          {plan.swap?.from === 'intents' ? <p className="m-0 text-[13px] font-semibold text-[var(--ot-text-2)]">From your NEAR Intents balance</p> : null}
           <p className="m-0 text-[13px] text-[var(--ot-text-2)]">
             {plan.maxFee ? (
               <>
@@ -220,7 +223,7 @@ export function ReviewApp() {
           </p>
           {plan.maxTotal ? (
             <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 border-t border-dashed border-[var(--ot-border)] pt-2 text-[11.5px]">
-              <dt className="text-[var(--ot-text-3)]">Most that can leave</dt>
+              <dt className="text-[var(--ot-text-3)]">{plan.swap?.from === 'intents' ? 'Most NEAR that can leave your account' : 'Most that can leave'}</dt>
               <dd className="selectable m-0 text-right font-mono">{plan.maxTotal} NEAR</dd>
               <dt className="text-[var(--ot-text-3)]">Network fee, at most</dt>
               <dd className={feeRose ? 'selectable m-0 rounded-md bg-[var(--ot-warn-bg)] px-1.5 text-right font-mono font-bold text-[var(--ot-warn-text)]' : 'selectable m-0 text-right font-mono'}>
@@ -229,7 +232,7 @@ export function ReviewApp() {
               </dd>
               <dd className="col-span-2 m-0 text-[var(--ot-text-3)]">
                 Most of the fee comes back.
-                {plan.kind === 'swap' ? ' It also counts registering with wNEAR, refunded where you or the deposit address already are.' : ''}
+                {plan.swap?.from === 'wallet' ? ' It also counts registering with wNEAR, refunded where you or the deposit address already are.' : ''}
               </dd>
             </dl>
           ) : null}
@@ -265,7 +268,9 @@ export function ReviewApp() {
               <Address value={plan.from} small />
             </Detail>
             <Detail label="Signing key">{plan.publicKey}</Detail>
-            <Detail label="Exact amount">{plan.amountYocto} yoctoNEAR</Detail>
+            <Detail label="Exact amount">
+              {plan.amountYocto} {plan.asset === 'NEAR' ? 'yoctoNEAR' : `in ${plan.asset}’s smallest unit`}
+            </Detail>
             <Detail label="Plan hash">{shortHash(plan.hash)}</Detail>
           </dl>
         </details>
@@ -394,7 +399,9 @@ function SwapTerms({ plan, swap }: { plan: ReviewPlan; swap: ReviewSwap }) {
       <div className="flex flex-col gap-1">
         <span className="ink-eyebrow">Refunds go to</span>
         <Address value={swap.refundTo} small />
-        <span className="text-[12px] text-[var(--ot-text-3)]">Your own NEAR account, if the swap can’t pay at least the amount above.</span>
+        <span className="text-[12px] text-[var(--ot-text-3)]">
+          {swap.from === 'intents' ? 'Back into your NEAR Intents balance' : 'Your own NEAR account'}, if the swap can’t pay at least the amount above.
+        </span>
       </div>
       <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
         NEAR Intents’ {swap.fee} fee is already taken out. It should take about {swap.seconds} seconds once the deposit lands.

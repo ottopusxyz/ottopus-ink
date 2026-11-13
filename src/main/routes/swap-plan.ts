@@ -2,7 +2,7 @@ import { hexToBytes } from '@noble/hashes/utils.js'
 import type { Account } from '../../shared/accounts'
 import { isAddressOn } from '../../shared/addresses'
 import { isNearAccountId, nearAccountKind } from '../../shared/near/account-id'
-import { callsDeposit, callsGas, nearCallStep, WRAP_NEAR, type NearCall } from '../../shared/near/calls'
+import { callsDeposit, callsGas, INTENTS_NEAR, nearCallStep, WRAP_NEAR, type NearCall } from '../../shared/near/calls'
 import { nearPublicKey } from '../../shared/near/transaction'
 import type { PlanFailure, PlanIntent, PlanStep } from '../../shared/plan'
 import { PLAN_TTL_MS, SWAP_DEADLINE_MARGIN_MS, type BuiltSwap } from '../plans/store'
@@ -18,6 +18,8 @@ export const SWAP_DEADLINE_AFTER_PLAN_MS = 30 * 60_000
 
 export interface SwapPlanDeps {
   tokens: () => Promise<OneClickToken[] | null>
+  /** What the Intents balance holds now, as `intents:<asset id>`. Null when it can't be read. */
+  held: () => Promise<ReadonlyMap<string, bigint> | null>
   quote: (request: OneClickQuoteRequest) => Promise<OneClickQuoteResult>
   /** Whether the NEAR account covers what the calls attach and the most their fees could take. Throws when NEAR can't be asked. */
   fits: (from: string, deposit: bigint, gas: bigint, calls: number) => Promise<'insufficient-funds' | 'fee-rose' | null>
@@ -35,17 +37,21 @@ const QUOTE_FAILURES: Record<OneClickFailure, PlanFailure> = {
 }
 
 /**
- * A swap of NEAR from the wallet through NEAR Intents, as a plan's steps. Main picks the
- * route and every address: 1Click pays the person's own address on the chain it pays out
- * on, their Intents balance, or an address they typed in the chat that's valid there (on
- * an EVM chain, Solana or NEAR so far), and refunds their NEAR account. The binding quote's deposit
- * address goes into one transaction to wrap.near: register the person and the deposit
- * address (refunded when either already is), wrap the NEAR, and send that wNEAR to it.
+ * A swap through NEAR Intents, as a plan's steps. Main picks the route and every address:
+ * 1Click pays the person's own address on the chain it pays out on, their Intents balance,
+ * or an address they typed in the chat that's valid there (on an EVM chain, Solana or
+ * NEAR so far), and refunds them. Two ways to pay, whichever the route prefers:
+ * - NEAR from the wallet: one transaction to wrap.near registers the person and the
+ *   deposit address (refunded when either already is), wraps the NEAR, and sends that
+ *   wNEAR to the deposit address. A refund comes back to the NEAR account.
+ * - A token in the Intents balance: one mt_transfer inside intents.near moves it to the
+ *   deposit address. A refund comes back into the Intents balance. The same token paid
+ *   out on its own chain is a withdrawal.
  *
- * Anything else, such as paying from the Intents balance or a token other than NEAR, isn't
- * built yet: the plan stays a draft.
+ * Anything else, such as a token on NEAR outside the Intents balance, isn't built yet:
+ * the plan stays a draft.
  */
-export async function buildOneClickSwap(intent: PlanIntent, own: readonly Account[], { tokens, quote, fits, now = Date.now }: SwapPlanDeps): Promise<SwapPlanResult> {
+export async function buildOneClickSwap(intent: PlanIntent, own: readonly Account[], { tokens, held, quote, fits, now = Date.now }: SwapPlanDeps): Promise<SwapPlanResult> {
   const NOT_YET: SwapPlanResult = { ok: true, steps: [] }
   if (intent.outcome !== 'swap' || !intent.toAsset) return NOT_YET
   const near = own.find((account) => account.chain === 'near')?.address
@@ -53,16 +59,21 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
   const listed = await tokens().catch(() => null)
   if (!listed) return { ok: false, reason: 'chain-unavailable' }
 
-  // Only the wallet pays here: the Intents balance can pay once Ink spends from it (#29).
+  // The Intents balance as it is now, so a deposit that just landed can pay.
+  const holdings = await held().catch(() => null)
   const route = pickRoute(
     { fromAsset: intent.asset, ...(intent.chain ? { fromChain: intent.chain } : {}), toAsset: intent.toAsset, ...(intent.toChain ? { toChain: intent.toChain } : {}), amount: intent.amount },
     listed,
-    new Map(),
+    holdings ?? new Map(),
   )
   if (route.kind === 'none') return route.reason === 'bad-amount' ? { ok: false, reason: 'bad-request' } : route.reason === 'cannot-sign' || route.reason === 'direct-not-built' ? NOT_YET : { ok: false, reason: 'no-route' }
   if (route.kind !== 'intents') return NOT_YET
-  const leg = route.legs.find((candidate) => candidate.source === 'wallet')
-  if (!leg || leg.from.assetId !== `nep141:${WRAP_NEAR}`) return NOT_YET
+  // The first leg the route prefers that Ink can pay from: NEAR from the wallet, or anything in the Intents balance.
+  const leg = route.legs.find((candidate) => (candidate.source === 'wallet' ? candidate.from.assetId === `nep141:${WRAP_NEAR}` : true))
+  if (!leg) return NOT_YET
+  const fromIntents = leg.source === 'intents'
+  if (fromIntents && !holdings) return { ok: false, reason: 'chain-unavailable' }
+  if (fromIntents && leg.held < leg.amount) return { ok: false, reason: 'insufficient-funds' }
 
   // Who it pays: an address the person typed (the store checks they did), or their own there.
   const payoutChain = route.toIntents ? 'near' : accountChainFor(route.to.blockchain)
@@ -80,7 +91,7 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
     originAsset: leg.from.assetId,
     destinationAsset: route.to.assetId,
     amount: leg.amount,
-    depositType: 'ORIGIN_CHAIN',
+    depositType: fromIntents ? 'INTENTS' : 'ORIGIN_CHAIN',
     refundTo: near,
     recipient: payout,
     recipientType: route.toIntents ? 'INTENTS' : 'DESTINATION_CHAIN',
@@ -90,15 +101,17 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
   }).catch((): OneClickQuoteResult => ({ ok: false, reason: 'unavailable' }))
   if (!quoted.ok) return { ok: false, reason: QUOTE_FAILURES[quoted.reason] }
   const { depositAddress, deadline } = quoted.quote
-  // The deposit goes by ft_transfer, so the address must be a NEAR account; and it must outlive the plan.
+  // The deposit goes by ft_transfer or mt_transfer, so the address must be a NEAR account; and it must outlive the plan.
   if (!depositAddress || !isNearAccountId(depositAddress) || !deadline || deadline.getTime() < now() + PLAN_TTL_MS + SWAP_DEADLINE_MARGIN_MS) return { ok: false, reason: 'chain-unavailable' }
 
-  const calls: NearCall[] = [
-    { method: 'storage_deposit', accountId: near },
-    { method: 'storage_deposit', accountId: depositAddress },
-    { method: 'near_deposit', amount: leg.amount },
-    { method: 'ft_transfer', receiverId: depositAddress, amount: leg.amount },
-  ]
+  const calls: NearCall[] = fromIntents
+    ? [{ method: 'mt_transfer', receiverId: depositAddress, tokenId: leg.from.assetId, amount: leg.amount }]
+    : [
+        { method: 'storage_deposit', accountId: near },
+        { method: 'storage_deposit', accountId: depositAddress },
+        { method: 'near_deposit', amount: leg.amount },
+        { method: 'ft_transfer', receiverId: depositAddress, amount: leg.amount },
+      ]
   try {
     const unfit = await fits(near, callsDeposit(calls), callsGas(calls), calls.length)
     if (unfit) return { ok: false, reason: 'insufficient-funds' }
@@ -108,7 +121,7 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
 
   return {
     ok: true,
-    steps: [nearCallStep({ signerId: near, publicKey: nearPublicKey(hexToBytes(near)), receiverId: WRAP_NEAR, calls })],
+    steps: [nearCallStep({ signerId: near, publicKey: nearPublicKey(hexToBytes(near)), receiverId: fromIntents ? INTENTS_NEAR : WRAP_NEAR, calls })],
     swap: {
       via: '1click',
       depositAddress,
@@ -118,7 +131,7 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
       amountIn: leg.amount.toString(),
       amountOut: quoted.quote.amountOut.toString(),
       minAmountOut: quoted.quote.minAmountOut.toString(),
-      sendSymbol: 'NEAR',
+      sendSymbol: fromIntents ? leg.from.symbol : 'NEAR',
       getSymbol: route.to.symbol,
       getDecimals: String(route.to.decimals),
       getChain: route.toIntents ? 'intents' : route.to.blockchain,
@@ -126,6 +139,7 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
       refundTo: near,
       feeBps: String(quoted.quote.feeBps),
       seconds: String(Math.round(quoted.quote.seconds)),
+      ...(fromIntents ? { payFrom: 'intents' as const, sendDecimals: String(leg.from.decimals) } : {}),
     },
     payout: { address: payout, chain: payoutChain },
   }

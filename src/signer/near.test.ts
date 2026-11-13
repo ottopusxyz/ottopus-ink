@@ -90,6 +90,18 @@ describe('signing NEAR contract calls', () => {
     expect(ours.transactionId).toBe(near.baseEncode(txHash))
   })
 
+  it('signs a move out of the Intents balance exactly as near-api-js does', async () => {
+    const { key } = derivePath(ACCOUNT_PATHS.near, SEED_HEX)
+    const secret = Uint8Array.from(key)
+    const pair = near.KeyPair.fromString(`ed25519:${near.baseEncode(new Uint8Array([...secret, ...ed25519.getPublicKey(secret)]))}`)
+    const tokenId = 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near'
+    const step = nearCallStep({ signerId: ID, publicKey: KEY, receiverId: 'intents.near', calls: [{ method: 'mt_transfer', receiverId: DEPOSIT, tokenId, amount: 25_000_000n }] })
+    const actions = [near.actions.functionCall('mt_transfer', { receiver_id: DEPOSIT, token_id: tokenId, amount: '25000000' }, 5n * 10n ** 13n, 1n)]
+    const transaction = near.createTransaction(ID, pair.getPublicKey(), 'intents.near', LIVE.nonce, actions, LIVE.blockHash)
+    const { signedTransaction } = await new near.KeyPairSigner(pair).signTransaction(transaction)
+    expect(bytesToHex(signNearCalls(SEED, step, LIVE).signed)).toBe(bytesToHex(signedTransaction.encode()))
+  })
+
   it('signs what verifies against the account’s own key, holding just the step’s calls', () => {
     const { signed } = signNearCalls(SEED, CALL_STEP, LIVE)
     const transaction = signed.subarray(0, signed.length - 65)

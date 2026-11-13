@@ -3,6 +3,8 @@ import type { PlanSwap } from '../../shared/plan'
 import { formatUnits } from '../../shared/token-text'
 import type { SwapReport, SwapStage } from './one-click'
 import type { JournalEntry, SwapJournal } from './swap-journal'
+import { oneClickTxPage } from '../intents/explorers'
+import { swapSent } from './swap-terms'
 
 /** How often a swap is checked while it runs. 1Click swaps take seconds to minutes. */
 export const SWAP_POLL_MS = 5_000
@@ -36,9 +38,12 @@ function progressOf(report: SwapReport, swap: PlanSwap): ChatSwap {
   const stage = STAGES[report.stage]
   const decimals = /^[0-9]{1,2}$/.test(swap.getDecimals) ? Number(swap.getDecimals) : null
   const got = stage === 'done' && report.amountOut !== null && decimals !== null ? `${formatUnits(report.amountOut, decimals)} ${swap.getSymbol}` : null
-  // The deposit was wrapped NEAR, so that's what a refund pays back.
-  const refunded = stage === 'refunded' && report.refunded !== null && swap.originAsset === 'nep141:wrap.near' ? `${formatUnits(report.refunded, 24)} NEAR` : null
-  return { stage, got, refunded, link: report.payoutTx?.explorerUrl ?? null }
+  // A refund pays back what was sent: wrapped NEAR from the wallet, or the token from the Intents balance.
+  const refunded = stage === 'refunded' && report.refunded !== null ? swapSent({ ...swap, amountIn: report.refunded.toString() }) : null
+  // 1Click names an explorer page for some payouts and not others, such as BNB Chain's: then Ink makes one from the hash.
+  const payout = report.payoutTx
+  const link = payout ? (payout.explorerUrl ?? oneClickTxPage(swap.getChain, payout.hash)?.url ?? null) : null
+  return { stage, got, refunded, link }
 }
 
 const same = (a: ChatSwap | undefined, b: ChatSwap) => a !== undefined && a.stage === b.stage && a.got === b.got && a.refunded === b.refunded && a.link === b.link

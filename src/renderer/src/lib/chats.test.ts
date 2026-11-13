@@ -109,6 +109,15 @@ describe('applyChatEvent', () => {
     expect(after([{ type: 'plan', plan }, { type: 'plan-swap', id: 'unknown', swap }]).plan).toBe(plan)
   })
 
+  it('puts Ink’s note on how a plan ended in the conversation, and shows the agent answering it', () => {
+    const note = { tone: 'ok' as const, title: 'Swap done', lines: ['2 NEAR → 7.07 USDC.'], links: [] }
+    const ready = { ...after([{ type: 'plan', plan }, { type: 'turn-end', outcome: 'done', error: null }]) }
+    const noted = applyChatEvent(ready, { type: 'plan-note', id: plan.id, note })
+    expect(noted.items.at(-1)).toMatchObject({ kind: 'ink-note', planId: plan.id, note })
+    expect(noted.phase).toBe('ready')
+    expect(applyChatEvent(noted, { type: 'ink-told' }).phase).toBe('answering')
+  })
+
   it('ignores a status for a plan it has no card for', () => {
     const chat = after([{ type: 'plan', plan }, { type: 'plan-status', id: 'unknown', status: 'confirmed' }])
     expect(chat.plan).toBe(plan)

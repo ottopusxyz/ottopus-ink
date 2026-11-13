@@ -110,6 +110,18 @@ export interface ChatSwap {
   link: string | null
 }
 
+/**
+ * Ink's own word on how a plan ended, written by main from the plan's fixed terms and
+ * what NEAR and NEAR Intents reported, never from the agent's words.
+ */
+export interface InkNote {
+  tone: 'ok' | 'block' | 'info'
+  title: string
+  lines: string[]
+  /** Explorer pages, each https. */
+  links: { label: string; url: string }[]
+}
+
 export interface ChatPlan {
   id: string
   status: PlanStatus
@@ -196,6 +208,10 @@ export type ChatEvent =
   /** A plan of this chat's moved on, in the review window or on the chain. From main, like `plan`. */
   | { type: 'plan-status'; id: string; status: PlanStatus; transactionId?: string }
   | { type: 'plan-swap'; id: string; swap: ChatSwap }
+  /** How a plan of this chat ended, from main. */
+  | { type: 'plan-note'; id: string; note: InkNote }
+  /** Ink passed a plan's ending to the agent, which is now answering it. */
+  | { type: 'ink-told' }
   | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
   /** The agent's process is gone and the chat can't continue. Error is null when Ink closed it. */
   | { type: 'ended'; error: string | null }

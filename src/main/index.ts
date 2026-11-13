@@ -7,7 +7,7 @@ import { IPC, type AgentStatus, type AppInfo, type ChatSwap, type ZerionKeyStatu
 import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
-import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
+import { closeChat, killChats, sendToChat, startChat, stopChatTurn, type PlanEnding } from './agents/chats'
 import { detectAgents } from './agents/detect'
 import { agentEnv, readNamedShellEnv } from './agents/login-env'
 import { run, stopRuns } from './agents/run'
@@ -19,6 +19,7 @@ import { buildNearSend, callsFeeCeiling, isNearSend, nearCallsFit, nearSendFeeCe
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
+import { planOutcome } from './plans/outcome'
 import { createPlanStore, type PlanView } from './plans/store'
 import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reader'
 import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
@@ -146,14 +147,37 @@ const plans = createPlanStore({
   },
 })
 
-/** Each chat's ear for its swap plans, by plan id. */
-const swapListeners = new Map<string, (swap: ChatSwap) => void>()
+/** What a chat follows of each plan it made after review, by plan id: its swap's progress and how it ended. */
+interface Followed {
+  owner: string
+  swap: (swap: ChatSwap) => void
+  ending: (ending: PlanEnding) => void
+  transactionId: string | null
+  ended: boolean
+}
+const followed = new Map<string, Followed>()
+/** Room for every plan the store keeps, and no more. */
+const MAX_FOLLOWED = 500
+
+/** Tells the plan's chat how it ended, once it has, with Ink's note and the facts for the agent. Only once per plan. */
+function endingOf(planId: string): void {
+  const follow = followed.get(planId)
+  const plan = follow && !follow.ended ? plans.get(planId, follow.owner) : null
+  if (!follow || !plan) return
+  const outcome = planOutcome(planId, plan.core, plan.status, follow.transactionId, swapTracker.get(planId))
+  if (!outcome) return
+  follow.ended = true
+  follow.ending(outcome)
+}
 
 /** Follows each swap once NEAR ran its deposit, and tells the chat that made it. */
 const swapTracker = createSwapTracker({
   submit: (deposit) => submitDeposit(deposit),
   status: (depositAddress) => swapStatus(depositAddress),
-  onUpdate: (planId, swap) => swapListeners.get(planId)?.(swap),
+  onUpdate: (planId, swap) => {
+    followed.get(planId)?.swap(swap)
+    endingOf(planId)
+  },
 })
 
 /** The review window. It opens whenever a plan waits for review. */
@@ -431,11 +455,16 @@ function registerIpc(): void {
     const tools = {
       bridge: await getMcpBridge(),
       shim: join(import.meta.dirname, 'shim.js'),
-      review: (planId: string, owner: string, notify: Parameters<typeof reviews.offer>[2]) => void reviews.offer(planId, owner, notify),
-      swaps: (planId: string, notify: (swap: ChatSwap) => void) => {
-        swapListeners.set(planId, notify)
-        // Room for every plan the store keeps, and no more.
-        if (swapListeners.size > 500) swapListeners.delete(swapListeners.keys().next().value as string)
+      review: (planId: string, owner: string, notify: NonNullable<Parameters<typeof reviews.offer>[2]>) =>
+        void reviews.offer(planId, owner, (status, transactionId) => {
+          notify(status, transactionId)
+          const follow = followed.get(planId)
+          if (follow && transactionId) follow.transactionId = transactionId
+          endingOf(planId)
+        }),
+      follow: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; ending: (ending: PlanEnding) => void }) => {
+        followed.set(planId, { owner, ...listen, transactionId: null, ended: false })
+        if (followed.size > MAX_FOLLOWED) followed.delete(followed.keys().next().value as string)
       },
     }
     const env = await agentEnv()

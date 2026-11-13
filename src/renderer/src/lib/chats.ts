@@ -1,4 +1,4 @@
-import { INK_TOOLS, type AgentId, type ChatEvent, type ChatPlan } from '../../../shared/ipc'
+import { INK_TOOLS, type AgentId, type ChatEvent, type ChatPlan, type InkNote } from '../../../shared/ipc'
 import { NOTHING_SIGNED } from '@/components/ui/copy'
 
 export type ChatStatus = 'idle' | 'live' | 'settled'
@@ -19,6 +19,8 @@ export type ChatItem =
       result: { text: string; isError: boolean; ms: number | null } | null
     }
   | { kind: 'plan'; id: string; plan: ChatPlan }
+  /** How a plan ended, in Ink's own words, from main: never the agent's. */
+  | { kind: 'ink-note'; id: string; planId: string; note: InkNote }
   /** `ends` marks the failure that finished a chat, which gets more room than one it can carry on from. */
   | { kind: 'notice'; id: string; severity: 'info' | 'block'; title: string; text: string | null; ends?: true }
 
@@ -213,6 +215,11 @@ export function applyChatEvent(chat: Chat, event: ChatEvent, at?: number): Chat 
         items: chat.items.map((item) => (item.kind === 'plan' ? { ...item, plan: moved(item.plan) } : item)),
       }
     }
+    case 'plan-note':
+      return withItem(chat, { kind: 'ink-note', planId: event.id, note: event.note })
+    case 'ink-told':
+      // Ink passed a plan's ending to the agent, which answers it now.
+      return chat.phase === 'ready' ? { ...chat, phase: 'answering' } : chat
     case 'turn-end':
       if (event.outcome === 'stopped') return { ...withItem(chat, { kind: 'notice', severity: 'info', title: 'Stopped', text: null }), phase: 'ready' }
       if (event.outcome === 'failed') {

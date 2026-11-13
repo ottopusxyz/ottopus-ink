@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentStatus, ChatEvent, ChatSwap } from '../../shared/ipc'
+import type { AgentStatus, ChatEvent, ChatSwap, InkNote } from '../../shared/ipc'
 import type { PlanStatus } from '../../shared/plan'
 import { looksLikeItMovesFunds } from '../external/catalog'
 import { itemsNeedingSignIn, type SessionExternal } from '../external/session'
@@ -20,8 +20,18 @@ export interface ChatTools {
    * window or anything that signs.
    */
   review?: (planId: string, owner: string, notify: (status: PlanStatus, transactionId: string | null) => void) => void
-  /** Tells the chat where a swap plan stands once its deposit landed. Main passes this in too. */
-  swaps?: (planId: string, notify: (swap: ChatSwap) => void) => void
+  /**
+   * Tells the chat where a plan stands after review: a swap's progress once its deposit
+   * landed, and how the plan ended, with Ink's note and the same facts for the agent.
+   * Main passes this in too.
+   */
+  follow?: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; ending: (ending: PlanEnding) => void }) => void
+}
+
+/** How a plan ended: Ink's note for the person, and the facts to pass to the agent. */
+export interface PlanEnding {
+  note: InkNote
+  forAgent: string
 }
 
 /** Longer than anyone types or pastes into a chat. */
@@ -46,6 +56,16 @@ const typedIn = new Map<string, string[]>()
 /** Enough of a conversation for the addresses someone gave; older messages make way. */
 const TYPED_KEPT = 50
 
+/** Whether a chat's agent is mid-turn, and what Ink waits to tell it once it isn't. */
+interface Turn {
+  busy: boolean
+  forAgent: string[]
+  /** Tells the page the agent is answering Ink. */
+  told: () => void
+}
+
+const turns = new Map<string, Turn>()
+
 /**
  * Starts a chat with an agent detection found ready. Which binary runs comes
  * from detection, never from the renderer. Returns the chat's id; onEvent gets
@@ -54,7 +74,7 @@ const TYPED_KEPT = 50
 export function startChat(
   agent: AgentStatus,
   agentEnv: AgentEnv,
-  { bridge, shim, review, swaps }: ChatTools,
+  { bridge, shim, review, follow }: ChatTools,
   external: SessionExternal,
   onEvent: (chatId: string, event: ChatEvent) => void,
 ): string {
@@ -69,6 +89,8 @@ export function startChat(
   let locked = false
   const typed: string[] = []
   typedIn.set(chatId, typed)
+  const turn: Turn = { busy: true, forAgent: [], told: () => onEvent(chatId, { type: 'ink-told' }) }
+  turns.set(chatId, turn)
   const tools = bridge.addSession({
     onPlan: (plan, owner) => {
       if (over || !locked) return
@@ -76,8 +98,16 @@ export function startChat(
       review?.(plan.id, owner, (status, transactionId) => {
         if (!over) onEvent(chatId, { type: 'plan-status', id: plan.id, status, ...(transactionId ? { transactionId } : {}) })
       })
-      swaps?.(plan.id, (swap) => {
-        if (!over) onEvent(chatId, { type: 'plan-swap', id: plan.id, swap })
+      follow?.(plan.id, owner, {
+        swap: (swap) => {
+          if (!over) onEvent(chatId, { type: 'plan-swap', id: plan.id, swap })
+        },
+        ending: ({ note, forAgent }) => {
+          if (over) return
+          onEvent(chatId, { type: 'plan-note', id: plan.id, note })
+          turn.forAgent.push(forAgent)
+          if (!turn.busy) tellAgent(chatId)
+        },
       })
     },
     typed: () => typed,
@@ -99,9 +129,14 @@ export function startChat(
         over = true
         chats.delete(chatId)
         typedIn.delete(chatId)
+        turns.delete(chatId)
         tools.remove()
       }
       onEvent(chatId, event)
+      if (event.type === 'turn-end') {
+        turn.busy = false
+        tellAgent(chatId)
+      }
       if (event.type === 'session') {
         externalTools = (event.tools ?? []).filter((tool) => !tool.startsWith(`mcp__${MCP_SERVER_NAME}__`))
         waiting = [...new Set([...external.needsSignIn, ...itemsNeedingSignIn(external, event.needsSignIn)].map((item) => item.name))]
@@ -128,7 +163,23 @@ export function sendToChat(chatId: string, text: string): void {
     typed.push(text)
     if (typed.length > TYPED_KEPT) typed.splice(0, typed.length - TYPED_KEPT)
   }
+  const turn = turns.get(chatId)
+  if (turn) turn.busy = true
   chat.send(text)
+}
+
+/**
+ * Passes what Ink has to tell the agent, once its turn is free, as one message. It never
+ * joins the person's typed messages, so nothing in it counts as an address they typed.
+ */
+function tellAgent(chatId: string): void {
+  const turn = turns.get(chatId)
+  const chat = chats.get(chatId)
+  if (!turn || !chat || turn.busy || turn.forAgent.length === 0) return
+  const text = turn.forAgent.splice(0).join('\n\n')
+  turn.busy = true
+  chat.send(text)
+  turn.told()
 }
 
 export function stopChatTurn(chatId: string): void {

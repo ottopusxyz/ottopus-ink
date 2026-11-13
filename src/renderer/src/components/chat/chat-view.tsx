@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { AgentMark } from './agent-picker'
 import { Composer, toolsChip } from './composer'
+import { InkNoteCard } from './ink-note'
 import { Markdown } from './markdown'
 import { PlanCard } from './plan-card'
 import { ToolCall } from './tool-call'
@@ -219,5 +220,7 @@ const ConversationItem = memo(function ConversationItem({ item }: { item: ChatIt
       return <ToolCall {...item} />
     case 'plan':
       return <PlanCard plan={item.plan} />
+    case 'ink-note':
+      return <InkNoteCard note={item.note} />
   }
 })

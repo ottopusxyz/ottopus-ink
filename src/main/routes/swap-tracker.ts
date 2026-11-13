@@ -12,7 +12,7 @@ export const SWAP_POLL_MS = 5_000
 export const SWAP_FOLLOW_AFTER_DEADLINE_MS = 15 * 60_000
 
 export interface SwapTrackerDeps {
-  submit: (deposit: { txHash: string; depositAddress: string; nearSenderAccount: string }) => Promise<SwapReport | null>
+  submit: (deposit: { txHash: string; depositAddress: string; nearSenderAccount?: string }) => Promise<SwapReport | null>
   status: (depositAddress: string) => Promise<SwapReport | null>
   /** Told each time a swap moves on. */
   onUpdate: (planId: string, swap: ChatSwap) => void
@@ -67,7 +67,8 @@ export function createSwapTracker({ submit, status, onUpdate, journal, now = Dat
   /** Follows one swap until it settles, or Ink gives up on it. */
   async function follow(planId: string, swap: PlanSwap, txHash: string): Promise<ChatSwap> {
     update(planId, { stage: 'deposited', got: null, refunded: null, link: null })
-    const told = await submit({ txHash, depositAddress: swap.depositAddress, nearSenderAccount: swap.refundTo }).catch(() => null)
+    // A deposit sent on an EVM chain has no NEAR sender to name.
+    const told = await submit({ txHash, depositAddress: swap.depositAddress, ...(swap.payFrom === 'evm' ? {} : { nearSenderAccount: swap.refundTo }) }).catch(() => null)
     if (told) update(planId, progressOf(told, swap))
     const until = Date.parse(swap.deadline) + SWAP_FOLLOW_AFTER_DEADLINE_MS
     while (!FINAL.has(latest.get(planId)?.stage ?? 'deposited')) {

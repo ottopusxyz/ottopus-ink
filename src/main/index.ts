@@ -168,10 +168,11 @@ const plans = createPlanStore({
     if (intent.outcome === 'swap') {
       return buildOneClickSwap(intent, own, {
         tokens: listedTokens,
+        evmRpc: evmRpcFor,
         // Read afresh, so a deposit that just landed can pay; only while the vault stays unlocked.
         held: async () => {
           const read = await ownPortfolio({ fresh: true })
-          return read.ok ? holdingsOf(read) : null
+          return read.ok ? holdingsOf(read, (await listedTokens()) ?? []) : null
         },
         quote: (request) => oneClickQuote(request),
         fits: (from, deposit, gas, calls) => nearCallsFit(nearRpc, from, deposit, gas, calls),

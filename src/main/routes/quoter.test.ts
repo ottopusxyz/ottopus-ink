@@ -124,7 +124,8 @@ describe('quoting a payment', () => {
     const { quote, asked } = quoter({ portfolio: async () => portfolio('0', [intentsUsdc('20')]) })
     const outcome = await quote({ fromAsset: 'USDC', fromChain: 'intents', toAsset: 'NEAR', toChain: 'near', amount: '10' })
     expect(asked[0]).toMatchObject({ originAsset: BASE_USDC.assetId, depositType: 'INTENTS', refundTo: 'a'.repeat(64), recipient: 'a'.repeat(64), recipientType: 'DESTINATION_CHAIN' })
-    expect(outcome).toMatchObject({ ok: true, source: 'intents', signsOrigin: false, enough: true })
+    // Base USDC's own chain is one Ink signs on now, though here the Intents balance pays.
+    expect(outcome).toMatchObject({ ok: true, source: 'intents', signsOrigin: true, enough: true })
   })
 
   it('quotes both the wallet and the Intents balance when both cover it, and keeps the better', async () => {
@@ -143,7 +144,7 @@ describe('quoting a payment', () => {
   })
 
   it('passes on why there is no route or quote', async () => {
-    expect(await quoter().quote({ fromAsset: 'USDC', fromChain: 'base', toAsset: 'NEAR', amount: '5' })).toEqual({ ok: false, reason: 'cannot-sign', chain: 'base' })
+    expect(await quoter().quote({ fromAsset: 'XRP', fromChain: 'xrp', toAsset: 'NEAR', amount: '5' })).toEqual({ ok: false, reason: 'cannot-sign', chain: 'xrp' })
     const small = quoter({}, () => ({ ok: false, reason: 'too-small' }))
     expect(await small.quote({ fromAsset: 'NEAR', toAsset: 'USDC', toChain: 'base', amount: '0.01' })).toEqual({ ok: false, reason: 'too-small', chain: 'base' })
   })

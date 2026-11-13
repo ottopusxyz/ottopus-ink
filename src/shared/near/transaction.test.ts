@@ -2,7 +2,9 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js'
 import * as near from 'near-api-js'
 import { describe, expect, it } from 'vitest'
 import {
+  decodeTransaction,
   decodeTransfer,
+  encodeTransaction,
   encodeSignedTransaction,
   encodeTransfer,
   NearDecodeError,
@@ -12,6 +14,7 @@ import {
   transactionHash,
   transactionId,
   transferOfStep,
+  type NearTransaction,
   type NearTransfer,
 } from './transaction'
 
@@ -158,5 +161,57 @@ describe('a plan step for a NEAR transfer', () => {
     refuse({ chain: 'near', action: 'transfer', fields: { ...fields, memo: 'x' } })
     refuse({ chain: 'near', action: 'transfer', fields: Object.fromEntries(Object.entries(fields).filter(([name]) => name !== 'deposit')) })
     for (const deposit of ['1.5', '-1', '01', '1e24', '']) refuse(nearTransferStep({ ...fields, deposit }))
+  })
+})
+
+describe('a NEAR transaction of contract calls', () => {
+  const utf8 = (text: string) => new TextEncoder().encode(text)
+  const header = { signerId: SAMPLE.signerId, publicKey: SAMPLE.publicKey, nonce: SAMPLE.nonce, receiverId: SAMPLE.receiverId, blockHash: SAMPLE.blockHash }
+  const calls: NearTransaction = {
+    ...header,
+    receiverId: 'wrap.near',
+    actions: [
+      { kind: 'FunctionCall', methodName: 'storage_deposit', args: utf8('{"account_id":"abc.near","registration_only":true}'), gas: 10_000_000_000_000n, deposit: 1_250_000_000_000_000_000_000n },
+      { kind: 'FunctionCall', methodName: 'near_deposit', args: utf8('{}'), gas: 10_000_000_000_000n, deposit: 5n * 10n ** 24n },
+      { kind: 'FunctionCall', methodName: 'ft_transfer', args: utf8('{"receiver_id":"abc.near","amount":"5"}'), gas: 30_000_000_000_000n, deposit: 1n },
+    ],
+  }
+  const referenceOf = (transaction: NearTransaction) =>
+    near.createTransaction(
+      transaction.signerId,
+      near.PublicKey.fromString(nearPublicKey(transaction.publicKey)),
+      transaction.receiverId,
+      transaction.nonce,
+      transaction.actions.map((action) => (action.kind === 'Transfer' ? near.actions.transfer(action.deposit) : near.actions.functionCall(action.methodName, action.args, action.gas, action.deposit))),
+      transaction.blockHash,
+    )
+
+  it('writes the same bytes as near-api-js, and reads them back', () => {
+    expect(hex(encodeTransaction(calls))).toBe(hex(near.encodeTransaction(referenceOf(calls))))
+    expect(decodeTransaction(near.encodeTransaction(referenceOf(calls)))).toEqual(calls)
+    const transfer = { ...header, actions: [{ kind: 'Transfer' as const, deposit: SAMPLE.deposit }] }
+    expect(hex(encodeTransaction(transfer))).toBe(hex(encodeTransfer(SAMPLE)))
+  })
+
+  it('refuses other actions, a transfer mixed with calls, too many actions or none', () => {
+    const refuse = (actions: Parameters<typeof near.createTransaction>[4]) =>
+      expect(() => decodeTransaction(near.encodeTransaction(near.createTransaction(SAMPLE.signerId, near.PublicKey.fromString(nearPublicKey(SAMPLE.publicKey)), 'wrap.near', 1n, actions, SAMPLE.blockHash)))).toThrow(NearDecodeError)
+    refuse([near.actions.deleteAccount('mallory.near')])
+    refuse([near.actions.addFullAccessKey(near.PublicKey.fromString(nearPublicKey(SAMPLE.publicKey)))])
+    refuse([near.actions.deployContract(new Uint8Array(8))])
+    refuse([near.actions.transfer(1n), near.actions.functionCall('near_deposit', {}, 1n, 1n)])
+    refuse(Array.from({ length: 5 }, () => near.actions.functionCall('near_deposit', {}, 1n, 1n)))
+    refuse([])
+    expect(() => encodeTransaction({ ...calls, actions: [] })).toThrow(NearDecodeError)
+  })
+
+  it('refuses a method name or arguments it couldn’t have written, and gas out of range', () => {
+    const one = (action: Partial<Extract<NearTransaction['actions'][number], { kind: 'FunctionCall' }>>) => ({ ...calls, actions: [{ ...(calls.actions[0] as object), ...action } as NearTransaction['actions'][number]] })
+    for (const methodName of ['', 'two words', 'é', 'a'.repeat(65), '1abc']) expect(() => encodeTransaction(one({ methodName }))).toThrow(NearDecodeError)
+    expect(() => encodeTransaction(one({ args: new Uint8Array(4096) }))).toThrow(NearDecodeError)
+    expect(() => encodeTransaction(one({ gas: 0n }))).toThrow(NearDecodeError)
+    expect(() => encodeTransaction(one({ gas: 1n << 64n }))).toThrow(NearDecodeError)
+    // Cut short inside the last call.
+    expect(() => decodeTransaction(near.encodeTransaction(referenceOf(one({ methodName: 'ok' }))).subarray(0, -1))).toThrow(NearDecodeError)
   })
 })

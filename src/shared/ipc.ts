@@ -51,9 +51,10 @@ export const IPC = {
   removeZerionKey: 'wallet:remove-zerion-key',
   recentSwaps: 'wallet:recent-swaps',
   savedChats: 'chat:saved',
-  intentsDepositChains: 'wallet:intents-deposit-chains',
-  intentsDepositAddress: 'wallet:intents-deposit-address',
-  copyIntentsDeposit: 'wallet:copy-intents-deposit',
+  receiveChains: 'wallet:receive-chains',
+  searchReceiveTokens: 'wallet:search-receive-tokens',
+  receiveAddress: 'wallet:receive-address',
+  copyReceive: 'wallet:copy-receive',
   deleteSavedChat: 'chat:delete-saved',
   clearChatHistory: 'chat:clear-history',
   /** Main to renderer: a followed swap moved on. It carries nothing: the page asks for them, which needs Ink unlocked. */
@@ -143,8 +144,40 @@ export interface IntentsDepositChain {
   tokens: { symbol: string; min: string }[]
 }
 
-/** The account's deposit address on one chain, from the bridge, with the memo a chain needs. */
-export type IntentsDepositResult = { ok: true; address: string; memo: string | null; account: string } | { ok: false; reason: 'locked' | 'unavailable' }
+/** A token to receive on a chain: whether NEAR Intents takes it there, and the least it credits. */
+export interface ReceiveToken {
+  symbol: string
+  /** Zerion's name for it, when the search found it there. */
+  name: string | null
+  /** The least NEAR Intents credits, or null where it doesn't take this token. */
+  min: string | null
+  intents: boolean
+}
+
+/** A chain to receive on: the wallet's own, one NEAR Intents takes deposits on, or both. */
+export interface ReceiveChain {
+  /** Ink's name for it: `base`. */
+  id: string
+  name: string
+  /** Ink's mark for it, when it has one. */
+  mark: string | null
+  /** The wallet's account that receives there, if any. */
+  own: AccountChain | null
+  /** Whether NEAR Intents takes deposits there. */
+  intents: boolean
+  /** Its top few tokens, before any search. */
+  tokens: ReceiveToken[]
+}
+
+/**
+ * Where to receive, NEAR Intents first: its deposit address, so what arrives lands in the
+ * Intents balance; or the wallet's own address, and why (`not-in-intents`, `below-minimum`
+ * or `intents-unavailable`); or why neither can take it.
+ */
+export type ReceiveAnswer =
+  | { ok: true; kind: 'intents'; chain: string; chainName: string; asset: string; address: string; memo: string | null; min: string; account: string }
+  | { ok: true; kind: 'own'; chain: string; chainName: string; asset: string; address: string; path: string; why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable'; min: string | null }
+  | { ok: false; reason: 'locked' | 'unavailable' | 'unknown-chain' | 'bad-amount' | 'below-minimum' | 'not-supported'; min?: string | null }
 
 /** A swap Ink followed lately, for Home: what went in, what it's for, and where it stands. */
 export interface RecentSwap {
@@ -268,12 +301,14 @@ export interface InkBridge {
    * keeps it; `continue` goes on with a kept chat, whose recap Ink sends the new session.
    */
   startChat(agent: AgentId, options?: { historyId?: string; continue?: boolean }): Promise<string>
-  /** The chains NEAR Intents takes deposits on, with each token's minimum. Null when the bridge can't be read. */
-  intentsDepositChains(): Promise<IntentsDepositChain[] | null>
-  /** The wallet's NEAR Intents deposit address on a chain, only while Ink is unlocked. */
-  intentsDepositAddress(chain: string): Promise<IntentsDepositResult>
-  /** Copies that address or its memo, as main read it from the bridge, never text from the page. */
-  copyIntentsDeposit(chain: string, part: 'address' | 'memo'): Promise<{ ok: boolean }>
+  /** The chains to receive on, the wallet's own and NEAR Intents' together, each with its top tokens. */
+  receiveChains(): Promise<ReceiveChain[]>
+  /** A chain's tokens matching a search: NEAR Intents' first, then Zerion's. */
+  searchReceiveTokens(chain: string, query: string): Promise<ReceiveToken[]>
+  /** Where to receive a token, NEAR Intents first. Only while Ink is unlocked. */
+  receiveAddress(ask: { chain: string; asset: string; amount: string | null }): Promise<ReceiveAnswer>
+  /** Copies that address or its memo, as main worked it out, never text from the page. */
+  copyReceive(ask: { chain: string; asset: string; amount: string | null }, part: 'address' | 'memo'): Promise<{ ok: boolean }>
   /** Chats Ink kept from before, newest first. Empty while Ink is locked. */
   savedChats(): Promise<SavedChat[]>
   deleteSavedChat(id: string): Promise<void>

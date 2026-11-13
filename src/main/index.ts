@@ -3,8 +3,9 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatSwap, type IntentsDepositChain, type IntentsDepositResult, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
-import { depositAddress, depositChains, isDepositChain } from './intents/deposits'
+import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatSwap, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { depositAddress, depositChains } from './intents/deposits'
+import { pickReceive, receiveChainOf, receiveChains, searchTokens, type ReceiveAsk } from './intents/receive'
 import { formatUnits } from '../shared/token-text'
 import { CHAT_ID, type SavedChat } from '../shared/history'
 import { callsGas, callsOfStep } from '../shared/near/calls'
@@ -29,7 +30,7 @@ import { createPlanStore, type PlanView } from './plans/store'
 import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reader'
 import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
 import { installId, INK_SERVICE_URL } from './portfolio/service'
-import { checkZerionKey, type ZerionAccess } from './portfolio/zerion'
+import { checkZerionKey, zerionOptions, zerionTokenSearch, type ZerionAccess } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
@@ -224,18 +225,33 @@ function listedDepositChains(): Promise<IntentsDepositChain[] | null> {
 /** Deposit addresses are fixed for an account, so each is asked for once a run. */
 const depositAddresses = new Map<string, { address: string; memo: string | null }>()
 
-/** The wallet's own NEAR Intents deposit address on a chain, only while unlocked: it ties the chain to the wallet. */
-async function ownDepositAddress(chain: unknown): Promise<IntentsDepositResult> {
-  if (typeof chain !== 'string' || !isDepositChain(chain)) return { ok: false, reason: 'unavailable' }
+async function keptDepositAddress(account: string, key: string): Promise<{ address: string; memo: string | null } | null> {
+  const id = `${account} ${key}`
+  const kept = depositAddresses.get(id) ?? (await depositAddress(account, key))
+  if (kept) depositAddresses.set(id, kept)
+  return kept
+}
+
+/** A receive the page or the agent asked about, checked: a chain, a token, and an amount or none. */
+function receiveAskOf(value: unknown): ReceiveAsk | null {
+  if (typeof value !== 'object' || value === null) return null
+  const { chain, asset, amount } = value as Record<string, unknown>
+  if (typeof chain !== 'string' || chain.length > 40 || typeof asset !== 'string' || !/^[A-Za-z0-9$._+-]{1,16}$/.test(asset.trim())) return null
+  if (amount !== null && amount !== undefined && (typeof amount !== 'string' || amount.length > 80)) return null
+  return { chain, asset: asset.trim(), amount: typeof amount === 'string' && amount.trim() ? amount.trim() : null }
+}
+
+/**
+ * Where the wallet receives a token, NEAR Intents first, for the Receive screen and the
+ * agent alike. Only while unlocked: either address ties a chain to the wallet.
+ */
+async function ownReceive(value: unknown): Promise<ReceiveAnswer> {
+  const ask = receiveAskOf(value)
+  if (!ask) return { ok: false, reason: 'unknown-chain' }
   if (vault?.isUnlocked() !== true) return { ok: false, reason: 'locked' }
   const own = await ownAccounts().catch(() => null)
-  const near = own?.ok ? own.accounts.find((account) => account.chain === 'near')?.address : undefined
-  if (!near) return { ok: false, reason: own?.ok === false && own.reason === 'locked' ? 'locked' : 'unavailable' }
-  const key = `${near} ${chain}`
-  const kept = depositAddresses.get(key) ?? (await depositAddress(near, chain))
-  if (!kept) return { ok: false, reason: 'unavailable' }
-  depositAddresses.set(key, kept)
-  return { ok: true, ...kept, account: near }
+  if (!own?.ok) return { ok: false, reason: own?.ok === false && own.reason === 'locked' ? 'locked' : 'unavailable' }
+  return pickReceive(ask, { bridge: await listedDepositChains(), accounts: own.accounts, depositAddress: keptDepositAddress })
 }
 
 /** Which kept chat each running session belongs to, and with which agent. A continued chat runs in a new session. */
@@ -573,23 +589,33 @@ function registerIpc(): void {
     return chatId
   })
 
-  ipcMain.handle(IPC.intentsDepositChains, (event) => {
+  ipcMain.handle(IPC.receiveChains, async (event) => {
     assertAppFrame(event)
-    return listedDepositChains()
+    return receiveChains(await listedDepositChains())
   })
 
-  ipcMain.handle(IPC.intentsDepositAddress, (event, chain: unknown) => {
+  ipcMain.handle(IPC.searchReceiveTokens, async (event, chain: unknown, query: unknown) => {
     assertAppFrame(event)
-    return ownDepositAddress(chain)
+    if (typeof chain !== 'string' || typeof query !== 'string' || !/^[A-Za-z0-9 $._+-]{1,32}$/.test(query.trim())) return []
+    const known = receiveChainOf(chain)
+    const access = zerionAccess()
+    // Zerion knows only some chains; it's asked only for those, and only for a few letters, never an address.
+    const zerion = known?.zerion && access ? await zerionTokenSearch(query.trim(), known.zerion, zerionOptions(access)) : []
+    return searchTokens(chain, query, await listedDepositChains(), zerion)
   })
 
-  ipcMain.handle(IPC.copyIntentsDeposit, async (event, chain: unknown, part: unknown) => {
+  ipcMain.handle(IPC.receiveAddress, (event, ask: unknown) => {
     assertAppFrame(event)
-    // Only for the window in front, and only what main read from the bridge.
+    return ownReceive(ask)
+  })
+
+  ipcMain.handle(IPC.copyReceive, async (event, ask: unknown, part: unknown) => {
+    assertAppFrame(event)
+    // Only for the window in front, and only what main worked out itself.
     const focused = () => BrowserWindow.fromWebContents(event.sender)?.isFocused() === true
     if (!focused() || (part !== 'address' && part !== 'memo')) return { ok: false }
-    const found = await ownDepositAddress(chain)
-    const text = found.ok ? (part === 'memo' ? found.memo : found.address) : null
+    const found = await ownReceive(ask)
+    const text = !found.ok ? null : part === 'memo' ? (found.kind === 'intents' ? found.memo : null) : found.address
     if (!text || !focused()) return { ok: false }
     clipboard.writeText(text)
     return { ok: true }

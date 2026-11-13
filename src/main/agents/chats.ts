@@ -89,7 +89,8 @@ export function startChat(
   let locked = false
   const typed: string[] = []
   typedIn.set(chatId, typed)
-  const turn: Turn = { busy: true, forAgent: [], told: () => onEvent(chatId, { type: 'ink-told' }) }
+  // Free until the first message, from the person or from Ink, starts a turn.
+  const turn: Turn = { busy: false, forAgent: [], told: () => onEvent(chatId, { type: 'ink-told' }) }
   turns.set(chatId, turn)
   const tools = bridge.addSession({
     onPlan: (plan, owner) => {
@@ -166,6 +167,19 @@ export function sendToChat(chatId: string, text: string): void {
   const turn = turns.get(chatId)
   if (turn) turn.busy = true
   chat.send(text)
+}
+
+/**
+ * Tells the agent something from Ink rather than the person, such as the recap that
+ * opens a chat continued after a restart: now if its turn is free, else once it is.
+ * Like a plan's ending, it never counts as something the person typed.
+ */
+export function sendFromInk(chatId: string, text: string): void {
+  if (text.length > MAX_MESSAGE_CHARS) throw new Error('That message is too long')
+  const turn = turns.get(chatId)
+  if (!turn || !chats.has(chatId)) throw new Error('This chat has ended')
+  turn.forAgent.push(text)
+  tellAgent(chatId)
 }
 
 /**

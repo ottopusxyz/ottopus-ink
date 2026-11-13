@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentStatus, ChatEvent, ChatPlan, ChatSwap } from '../../shared/ipc'
 import type { PlanStatus } from '../../shared/plan'
 import { NO_EXTERNAL, type SessionExternal } from '../external/session'
-import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './chats'
+import { closeChat, killChats, sendFromInk, sendToChat, startChat, stopChatTurn } from './chats'
 import { startClaudeSession, type ChatSession, type ClaudeSessionOptions } from './claude-session'
 
 vi.mock('./claude-session', () => ({ startClaudeSession: vi.fn() }))
@@ -295,7 +295,9 @@ describe('a running chat', () => {
     }
 
     it('shows Ink’s note at once, and tells the agent once its turn is over', () => {
-      const { seen, listen } = followed()
+      const { chatId, seen, listen } = followed()
+      sendToChat(chatId, 'swap 2 NEAR')
+      session.send.mockClear()
       listen.ending({ note: NOTE, forAgent: 'Message from Ink: it went through.' })
       expect(seen.at(-1)).toEqual({ type: 'plan-note', id: 'p', note: NOTE })
       // The agent is still in the turn that made the plan.
@@ -303,6 +305,17 @@ describe('a running chat', () => {
       launched?.onEvent({ type: 'turn-end', outcome: 'done', error: null })
       expect(session.send).toHaveBeenCalledExactlyOnceWith('Message from Ink: it went through.')
       expect(seen.at(-1)).toEqual({ type: 'ink-told' })
+    })
+
+    it('lets Ink open a chat’s first turn, as when it goes on after a restart, never as typed text', () => {
+      const chatId = startChat(ready, env, tools, NO_EXTERNAL, () => undefined)
+      sendFromInk(chatId, 'Message from Ink: the recap.')
+      expect(session.send).toHaveBeenCalledExactlyOnceWith('Message from Ink: the recap.')
+      expect(typedNow?.()).toEqual([])
+      // The person's next message waits for nothing but goes as theirs.
+      launched?.onEvent({ type: 'turn-end', outcome: 'done', error: null })
+      sendToChat(chatId, 'go on')
+      expect(typedNow?.()).toEqual(['go on'])
     })
 
     it('tells a free agent at once, and never counts it as something the person typed', () => {

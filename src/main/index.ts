@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentStatus, type AppInfo, type ChatSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { IPC, type AgentStatus, type AppInfo, type ChatSwap, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { formatUnits } from '../shared/token-text'
 import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
@@ -29,7 +30,9 @@ import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfo
 import { createReviewBroker } from './review/broker'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
 import { buildOneClickSwap } from './routes/swap-plan'
+import { createSwapJournal, type SwapJournal } from './routes/swap-journal'
 import { createSwapTracker } from './routes/swap-tracker'
+import { chainName } from './routes/route'
 import { createQuoter } from './routes/quoter'
 import { describeForReview } from './review/describe'
 import { createReviewWindow } from './review/window'
@@ -170,15 +173,38 @@ function endingOf(planId: string): void {
   follow.ending(outcome)
 }
 
-/** Follows each swap once NEAR ran its deposit, and tells the chat that made it. */
+let swapJournal: SwapJournal | null = null
+
+/** The swaps Ink follows, sealed by the OS keyring, made on first use once the keyring can be asked. */
+function getSwapJournal(): SwapJournal {
+  swapJournal ??= createSwapJournal({ file: join(app.getPath('userData'), 'swaps.bin'), box: osSecretBox })
+  return swapJournal
+}
+
+/** Follows each swap once NEAR ran its deposit, across restarts, and tells the chat that made it and Home. */
 const swapTracker = createSwapTracker({
   submit: (deposit) => submitDeposit(deposit),
   status: (depositAddress) => swapStatus(depositAddress),
   onUpdate: (planId, swap) => {
     followed.get(planId)?.swap(swap)
     endingOf(planId)
+    sendToWindows(IPC.swapsChanged)
   },
+  journal: { list: () => getSwapJournal().list(), put: (entry) => getSwapJournal().put(entry), update: (planId, progress) => getSwapJournal().update(planId, progress) },
 })
+
+/** The swaps followed lately, for Home, only while unlocked: they hold addresses and amounts. */
+function recentSwaps(): RecentSwap[] {
+  if (vault?.isUnlocked() !== true) return []
+  return swapTracker.recent().map(({ planId, swap, progress, startedAt }) => ({
+    planId,
+    send: /^[0-9]+$/.test(swap.amountIn) ? `${formatUnits(BigInt(swap.amountIn), 24)} ${swap.sendSymbol}` : swap.sendSymbol,
+    get: swap.getSymbol,
+    where: swap.getChain === 'intents' ? 'in your NEAR Intents balance' : `on ${chainName(swap.getChain)}`,
+    progress,
+    startedAt,
+  }))
+}
 
 /** The review window. It opens whenever a plan waits for review. */
 const reviewWindow = createReviewWindow({
@@ -558,6 +584,11 @@ function registerIpc(): void {
     return ownPortfolio({ fresh })
   })
 
+  ipcMain.handle(IPC.recentSwaps, (event) => {
+    assertAppFrame(event)
+    return recentSwaps()
+  })
+
   ipcMain.handle(IPC.savedPortfolio, (event) => {
     assertAppFrame(event)
     return savedPortfolio()
@@ -644,6 +675,8 @@ void app.whenReady().then(() => {
 
   registerIpc()
   reviewWindow.attach(reviews)
+  // Swaps a quit cut off are followed again: NEAR Intents pays them out or refunds them whatever Ink does.
+  swapTracker.resume()
   signer.start()
   autoLock.start()
   powerMonitor.on('suspend', () => void vault?.lock())

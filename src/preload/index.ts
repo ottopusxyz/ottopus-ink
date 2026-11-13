@@ -46,6 +46,14 @@ const bridge: InkBridge = {
   copyAddress: (chain) => ipcRenderer.invoke(IPC.copyAddress, chain),
   portfolio: (options) => ipcRenderer.invoke(IPC.portfolio, { fresh: options?.fresh === true }),
   savedPortfolio: () => ipcRenderer.invoke(IPC.savedPortfolio),
+  recentSwaps: () => ipcRenderer.invoke(IPC.recentSwaps),
+  onSwapsChanged: (listener) => {
+    const handler = () => listener()
+    ipcRenderer.on(IPC.swapsChanged, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC.swapsChanged, handler)
+    }
+  },
   zerionKeyStatus: () => ipcRenderer.invoke(IPC.zerionKeyStatus),
   saveZerionKey: (key) => ipcRenderer.invoke(IPC.saveZerionKey, key),
   removeZerionKey: () => ipcRenderer.invoke(IPC.removeZerionKey),

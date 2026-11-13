@@ -48,6 +48,9 @@ export const IPC = {
   zerionKeyStatus: 'wallet:zerion-key-status',
   saveZerionKey: 'wallet:save-zerion-key',
   removeZerionKey: 'wallet:remove-zerion-key',
+  recentSwaps: 'wallet:recent-swaps',
+  /** Main to renderer: a followed swap moved on. It carries nothing: the page asks for them, which needs Ink unlocked. */
+  swapsChanged: 'wallet:swaps-changed',
   /** Main to renderer: the vault's status, sent on every change. */
   vaultStatusChanged: 'vault:status-changed',
 } as const
@@ -120,6 +123,20 @@ export interface InkNote {
   lines: string[]
   /** Explorer pages, each https. */
   links: { label: string; url: string }[]
+}
+
+/** A swap Ink followed lately, for Home: what went in, what it's for, and where it stands. */
+export interface RecentSwap {
+  planId: string
+  /** "2 NEAR". */
+  send: string
+  /** The token it pays out: "USDC". */
+  get: string
+  /** Where, in a phrase: "on Base", "in your NEAR Intents balance". */
+  where: string
+  progress: ChatSwap | null
+  /** When NEAR ran its deposit, ms since the epoch. */
+  startedAt: number
 }
 
 export interface ChatPlan {
@@ -275,6 +292,9 @@ export interface InkBridge {
   removeZerionKey(): Promise<void>
   /** Calls listener whenever the vault's status changes; returns an unsubscribe. */
   onVaultStatus(listener: (status: VaultStatus) => void): () => void
+  /** The swaps Ink followed lately, newest first. Empty while Ink is locked. */
+  recentSwaps(): Promise<RecentSwap[]>
+  onSwapsChanged(listener: () => void): () => void
 }
 
 /** Messages between main and the signer utility process. */

@@ -1,7 +1,7 @@
 import type { Account, AccountChain } from '../../shared/accounts'
 import type { ChatPlan } from '../../shared/ipc'
 import type { PlanIntent, PlanStatus, PlanSummary, PlanToolResult, PlanTools } from '../../shared/plan'
-import type { PortfolioResult } from '../../shared/portfolio'
+import type { HoldingGroup, PortfolioGap, PortfolioResult, TokenHolding, ZerionState } from '../../shared/portfolio'
 import type { VaultResult } from '../../shared/vault'
 
 /** The server's name in the agent's tool names (`mcp__ottopus-ink__*`). Not `ottopus`: that's another product's connector. */
@@ -31,7 +31,7 @@ const TOOLS = [
   },
   {
     name: 'get_portfolio',
-    description: 'What the wallet holds, optionally on one chain.',
+    description: 'What the wallet holds and what it is worth, optionally on one chain: near, intents (the NEAR Intents balance), evm, solana, tron, or a chain such as base.',
     inputSchema: objectSchema({ chain: text }),
   },
   {
@@ -179,10 +179,51 @@ async function planAnswer(work: () => Promise<PlanToolResult>, id: string | null
   return result.ok ? { answer: toolAnswer(said(result.plan)), plan: result.plan } : { answer: planRefusal(result, id), plan: null }
 }
 
-/** get_portfolio's answer: the NEAR balance in words an agent can pass on, or why there isn't one. */
+/** Token lines in one get_portfolio answer, most valuable first. */
+const MAX_TOKEN_LINES = 20
+
+const GAP_LINES: Record<PortfolioGap, string> = {
+  tokens: 'The list of tokens couldn’t be read, so tokens may be missing.',
+  prices: 'Prices couldn’t be read, so there are no dollar values.',
+  reviews: 'Some tokens couldn’t be checked with the price service, so they aren’t counted.',
+  intents: 'The NEAR Intents balance couldn’t be read, so it may be missing.',
+  tron: 'The Tron account couldn’t be read, so it may be missing.',
+}
+
+const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
+/** Dollars as a person reads them: $1,234.56, or under a cent as such. */
+function dollars(value: number): string {
+  return value > 0 && value < 0.01 ? 'under $0.01' : USD.format(value)
+}
+
+function change(fraction: number | null): string {
+  if (fraction === null || !Number.isFinite(fraction)) return ''
+  const percent = Math.abs(fraction * 100).toFixed(1)
+  return percent === '0.0' ? ', unchanged today' : `, ${fraction > 0 ? 'up' : 'down'} ${percent}% today`
+}
+
+/** Chains a get_portfolio filter can name that Ink doesn't read at all yet. */
+const UNREAD_CHAINS: Record<string, string> = { bitcoin: 'Bitcoin', btc: 'Bitcoin', sui: 'Sui', aptos: 'Aptos', ton: 'TON', xrp: 'XRP' }
+
+const ZERION_LINES: Record<Exclude<ZerionState, 'ok'>, string> = {
+  off: 'EVM and Solana balances need a Zerion API key. The person can add their own in Ink’s Settings, under Wallet.',
+  'bad-key': 'Zerion turned down the person’s API key, so EVM and Solana balances are missing. They can change it in Ink’s Settings.',
+  'rate-limited': 'Zerion’s limit is used up for now, so EVM and Solana balances are missing. Try again in a minute.',
+  unavailable: 'Zerion couldn’t be reached, so EVM and Solana balances are missing. Try again in a moment.',
+}
+
+const GROUP_NAMES: Record<HoldingGroup, string> = { near: 'NEAR', intents: 'NEAR Intents', evm: 'EVM', solana: 'Solana', tron: 'Tron' }
+
+/**
+ * get_portfolio's answer: NEAR, every token on every chain Ink reads with what it's worth,
+ * and what isn't read, in words an agent can pass on. A chain filter names an account
+ * (`near`, `evm`, `solana`, `tron`) or one chain (`base`).
+ */
 async function portfolioAnswer(read: McpHandlers['portfolio'], args: unknown): Promise<object> {
   const chain = isRecord(args) && typeof args.chain === 'string' ? args.chain.trim().toLowerCase() : ''
-  if (chain && chain !== 'near') return toolAnswer('Ink can only read NEAR balances so far.')
+  const unreadChain = UNREAD_CHAINS[chain]
+  if (unreadChain) return toolAnswer(`Ink can’t read ${unreadChain} balances yet.`)
   if (!read) return NOT_BUILT.get_portfolio ?? NOT_SET_UP
   let answer: PortfolioResult
   try {
@@ -195,20 +236,51 @@ async function portfolioAnswer(read: McpHandlers['portfolio'], args: unknown): P
     if (answer.reason === 'locked') return toolAnswer('Ink is locked. Ask the person to unlock Ink, then try again.', true)
     return toolAnswer('Ink couldn’t reach NEAR to read the balance. Try again in a moment.', true)
   }
-  const { near } = answer
-  if (!near.onChain) {
-    return toolAnswer(
-      `NEAR account ${near.accountId} holds no NEAR yet. NEAR creates it with the first transfer into it, from any wallet or exchange. Other chains’ balances aren’t read yet.`,
-    )
+  const { near, nearPrice, unpriced, totalUsd, gaps, zerion, unread } = answer
+  const showNear = chain === '' || chain === 'near'
+  const tokens = answer.tokens.filter((token) => chain === '' || token.group === chain || token.network === chain)
+  // Zerion answers for every chain but NEAR, the Intents balance and Tron, which Ink reads itself.
+  const zerionReads = chain === '' || (chain !== 'near' && chain !== 'intents' && chain !== 'tron')
+  if (!showNear && tokens.length === 0) {
+    if (chain === 'intents') return toolAnswer(gaps.includes('intents') ? GAP_LINES.intents : 'The NEAR Intents balance holds nothing with a price.')
+    if (chain === 'tron') return toolAnswer(gaps.includes('tron') ? GAP_LINES.tron : 'The Tron account holds nothing with a price.')
+    return toolAnswer(zerion === 'ok' ? `Nothing with a price was found on ${chain}.` : ZERION_LINES[zerion])
   }
+
+  const inUsd = (amount: string) => (nearPrice ? ` (${dollars(Number(amount) * nearPrice.usd)})` : '')
   const pools = near.pools.map((pool) => `${pool.poolId}: ${pool.staked} NEAR${pool.unstaked !== '0' ? `, plus ${pool.unstaked} NEAR unstaked and waiting to be withdrawn` : ''}`)
+  const nearLines = !showNear
+    ? []
+    : near.onChain
+      ? [
+          `NEAR account ${near.accountId}:`,
+          `- Available to send: ${near.available} NEAR${inUsd(near.available)}`,
+          `- Staked: ${near.staked} NEAR${inUsd(near.staked)}${pools.length > 0 ? ` (${pools.join('; ')})` : ''}`,
+          `- Held for storage: ${near.storage} NEAR${inUsd(near.storage)}`,
+          ...(near.stakingComplete ? [] : ['Some staking pools couldn’t be read, so the staked amount may be higher.']),
+          ...(nearPrice ? [`NEAR is ${dollars(nearPrice.usd)}${change(nearPrice.change24h)}.`] : []),
+        ]
+      : [`NEAR account ${near.accountId} holds no NEAR yet. NEAR creates it with the first transfer into it, from any wallet or exchange.`]
+
+  const reviewed = tokens.filter((token) => token.trust === 'reviewed')
+  const unreviewed = tokens.filter((token) => token.trust === 'unreviewed')
+  const thin = (token: TokenHolding) => (token.trust === 'reviewed' && token.countedUsd < token.usdValue * 0.95 ? `, counted as ${dollars(token.countedUsd)} since its market is too thin to sell this much near the price` : '')
+  const where = (token: TokenHolding) => (token.group === 'intents' ? `in the NEAR Intents balance${token.origin ? `, from ${token.origin}` : ''}` : `on ${token.networkName}`)
+  const which = (token: TokenHolding) => (!token.contract ? `${token.networkName}’s own coin` : token.group === 'intents' ? `token ${token.contract}` : `contract ${token.contract}`)
+  const tokenLine = (token: TokenHolding) => `- ${token.amount} ${token.symbol} ${where(token)} (${dollars(token.usdValue)}${thin(token)}), ${which(token)}`
+  const listed = (list: TokenHolding[]) => [...list.slice(0, MAX_TOKEN_LINES).map(tokenLine), ...(list.length > MAX_TOKEN_LINES ? [`- and ${list.length - MAX_TOKEN_LINES} more`] : [])]
   const lines = [
-    `NEAR account ${near.accountId}:`,
-    `- Available to send: ${near.available} NEAR`,
-    `- Staked: ${near.staked} NEAR${pools.length > 0 ? ` (${pools.join('; ')})` : ''}`,
-    `- Held for storage: ${near.storage} NEAR`,
-    ...(near.stakingComplete ? [] : ['Some staking pools couldn’t be read, so the staked amount may be higher.']),
-    'Other chains’ balances aren’t read yet.',
+    ...nearLines,
+    ...(reviewed.length > 0 ? ['Tokens:', ...listed(reviewed)] : []),
+    ...(unreviewed.length > 0 ? ['Tokens nobody vouches for. They aren’t counted, and may be worth nothing or be fakes of real tokens:', ...listed(unreviewed)] : []),
+    ...(chain === '' && unpriced > 0 ? [`${unpriced === 1 ? '1 more token has' : `${unpriced} more tokens have`} no price or ${unpriced === 1 ? 'is' : 'are'} marked as spam, so ${unpriced === 1 ? 'it isn’t' : 'they aren’t'} listed.`] : []),
+    ...(chain === '' && totalUsd !== null
+      ? [`Total: ${dollars(totalUsd)}, counting NEAR (staked and storage included) and the tokens above. Prices from Intear${zerion === 'ok' ? ' and Zerion' : ''}.`]
+      : []),
+    ...(showNear ? gaps.map((gap) => GAP_LINES[gap]) : (chain === 'intents' || chain === 'tron') && gaps.includes(chain) ? [GAP_LINES[chain]] : []),
+    ...(zerionReads && zerion !== 'ok' ? [ZERION_LINES[zerion]] : []),
+    ...(zerionReads && unread.length > 0 ? [`Zerion couldn’t read the ${unread.map((group) => GROUP_NAMES[group]).join(' or ')} account, so it’s missing.`] : []),
+    ...(chain === '' ? ['Bitcoin, Sui and Aptos balances aren’t read yet.'] : []),
   ]
   return toolAnswer(lines.join('\n'))
 }

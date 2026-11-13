@@ -1,6 +1,15 @@
 import type { Account, AccountChain } from './accounts'
 import type { PlanStatus } from './plan'
+import type { PortfolioResult } from './portfolio'
 import type { BackupAnswer, NewPhrase, VaultRequest, VaultResult, VaultStatus, VaultWordCount } from './vault'
+
+export interface ZerionKeyStatus {
+  set: boolean
+  /** False where the OS has no keyring: a key then lasts until Ink quits. */
+  kept: boolean
+  /** This build reaches Zerion through Ottopus's service when no key is set. */
+  shared: boolean
+}
 
 /**
  * The IPC contract between the renderer (through the preload bridge) and the
@@ -34,6 +43,11 @@ export const IPC = {
   lockVault: 'vault:lock',
   vaultAccounts: 'vault:accounts',
   copyAddress: 'vault:copy-address',
+  portfolio: 'wallet:portfolio',
+  savedPortfolio: 'wallet:saved-portfolio',
+  zerionKeyStatus: 'wallet:zerion-key-status',
+  saveZerionKey: 'wallet:save-zerion-key',
+  removeZerionKey: 'wallet:remove-zerion-key',
   /** Main to renderer: the vault's status, sent on every change. */
   vaultStatusChanged: 'vault:status-changed',
 } as const
@@ -211,6 +225,18 @@ export interface InkBridge {
   vaultAccounts(): Promise<VaultResult<{ accounts: Account[] }>>
   /** Main copies that chain's address as the signer gave it, not text from the page, and only while Ink's window is in front. */
   copyAddress(chain: AccountChain): Promise<VaultResult>
+  /**
+   * What the wallet holds, with prices, while unlocked. A read from the last minute is
+   * reused unless `fresh` asks Ink to read again. Public figures only: no key, no words.
+   */
+  portfolio(options?: { fresh?: boolean }): Promise<PortfolioResult>
+  /** The last good read, kept from before, while unlocked: something to show at once while a new read runs. Null when there's none. */
+  savedPortfolio(): Promise<PortfolioResult | null>
+  /** Whether a Zerion key is set, and whether it lasts past this run. Never the key itself. */
+  zerionKeyStatus(): Promise<ZerionKeyStatus>
+  /** Main checks the key with Zerion, then keeps it sealed by the OS keyring. */
+  saveZerionKey(key: string): Promise<{ ok: true } | { ok: false; reason: 'invalid' | 'bad-key' | 'unavailable' }>
+  removeZerionKey(): Promise<void>
   /** Calls listener whenever the vault's status changes; returns an unsubscribe. */
   onVaultStatus(listener: (status: VaultStatus) => void): () => void
 }

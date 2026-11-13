@@ -1,9 +1,9 @@
-import { useState, type ReactNode } from 'react'
-import type { AgentId, AgentState, AgentStatus, ExternalItem } from '../../../../shared/ipc'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import type { AgentId, AgentState, AgentStatus, ExternalItem, ZerionKeyStatus } from '../../../../shared/ipc'
 import { Otto } from '@/components/brand/otto'
 import { OttoBadge } from '@/components/brand/otto-badge'
 import { AgentMark } from '@/components/chat/agent-picker'
-import { Badge, Button, Callout, ChainStack, Dialog, Segmented, Tooltip, type Tone } from '@/components/ui'
+import { Badge, Button, Callout, ChainStack, Dialog, Input, Segmented, Tooltip, type Tone } from '@/components/ui'
 import { BotIcon, CloseIcon, PlugIcon, RefreshIcon, ShieldIcon, SlidersIcon, WalletIcon } from '@/components/shell/icons'
 import { agentInfo, describeAgent, LATER_AGENTS } from '@/lib/agents'
 import { ToolsTab } from './tools-tab'
@@ -266,6 +266,8 @@ function WalletTab({ onSeeAddresses }: { onSeeAddresses: () => void }) {
       <p className="mt-1.5 mb-3.5 text-[13px] text-[var(--ot-text-2)]">
         Your keys live on this device, encrypted with your password.
       </p>
+      {/* Above the preview note: unlike the choices under it, this one is saved. */}
+      <ZerionKeySetting />
       <NotSavedYet />
       <div className="ink-backup-card">
         <Otto pose="heads-up" size={62} />
@@ -327,6 +329,119 @@ function WalletTab({ onSeeAddresses }: { onSeeAddresses: () => void }) {
         />
       </Setting>
     </>
+  )
+}
+
+const ZERION_FAILURES = {
+  invalid: 'That doesn’t look like a Zerion API key. Copy it again from your Zerion dashboard.',
+  'bad-key': 'Zerion turned that key down. Check it in your Zerion dashboard, or make a new one.',
+  unavailable: 'Ink couldn’t reach Zerion to check the key. Try again in a moment.',
+} as const
+
+/**
+ * The person's own Zerion API key, for balances on EVM chains and Solana. Main
+ * checks it with Zerion before keeping it, sealed by the OS keyring; the page can set
+ * and remove it but never reads it back.
+ */
+function ZerionKeySetting() {
+  const [status, setStatus] = useState<ZerionKeyStatus | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    let live = true
+    window.ink.zerionKeyStatus().then(
+      (answer) => live && setStatus(answer),
+      (error: unknown) => console.error('Could not read the Zerion key status', error),
+    )
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault()
+    setBusy(true)
+    setNote(null)
+    try {
+      const answer = await window.ink.saveZerionKey(draft)
+      if (answer.ok) {
+        setStatus((current) => ({ set: true, kept: current?.kept ?? true, shared: current?.shared ?? false }))
+        setDraft('')
+        setNote({ ok: true, text: 'Saved. Portfolio now reads your EVM and Solana balances with it.' })
+      } else {
+        setNote({ ok: false, text: ZERION_FAILURES[answer.reason] })
+      }
+    } catch {
+      setNote({ ok: false, text: ZERION_FAILURES.unavailable })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async () => {
+    setBusy(true)
+    try {
+      await window.ink.removeZerionKey()
+      setStatus((current) => ({ set: false, kept: current?.kept ?? true, shared: current?.shared ?? false }))
+      setNote({ ok: true, text: status?.shared ? 'Removed. Ink reads them through Ottopus’s Zerion access again.' : 'Removed. Ink reads only NEAR balances now.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="border-t border-[var(--ot-border)] py-4">
+      <div className="flex items-start gap-5">
+        <div className="min-w-0 flex-1">
+          <h3 className="m-0 text-[14px] font-semibold">Balances on other chains</h3>
+          <p className="m-0 mt-0.5 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
+            {status?.shared && !status.set
+              ? 'Ink reads EVM and Solana balances through Ottopus’s Zerion access, so you need no key. Ottopus’s service and Zerion see those addresses, and keep no record of them. To go straight to Zerion instead, add your own key, free from '
+              : 'Ink reads EVM and Solana balances through Zerion, with your own API key. Get a free one from '}
+            <a className="ink-text-link" href="https://dashboard.zerion.io" target="_blank" rel="noreferrer">
+              dashboard.zerion.io
+            </a>
+            . {status?.set ? 'Zerion sees those addresses, and the key never leaves this computer except to Zerion.' : ''}
+          </p>
+        </div>
+        {status?.set ? (
+          <span className="flex shrink-0 items-center gap-2">
+            <Badge tone="ok">Key saved</Badge>
+            <Button size="sm" variant="secondary" onClick={() => void remove()} disabled={busy}>
+              Remove
+            </Button>
+          </span>
+        ) : null}
+      </div>
+      {status && !status.set ? (
+        <form className="mt-3 flex gap-2" onSubmit={(event) => void save(event)}>
+          <Input
+            type="password"
+            mono
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Zerion API key"
+            placeholder={status.shared ? 'Your own Zerion API key, if you’d rather' : 'Paste your Zerion API key'}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            invalid={note !== null && !note.ok}
+          />
+          <Button type="submit" variant="primary" size="sm" disabled={busy || draft.trim() === ''} className="shrink-0">
+            {busy ? 'Checking…' : 'Save key'}
+          </Button>
+        </form>
+      ) : null}
+      {status && !status.kept ? (
+        <p className="m-0 mt-2 text-[12px] text-[var(--ot-text-3)]">This computer has no keyring, so a key lasts until Ink quits.</p>
+      ) : null}
+      {note ? (
+        <p className={`m-0 mt-2 text-[12.5px] ${note.ok ? 'text-[var(--ot-ok-text)]' : 'text-[var(--ot-block-text)]'}`} role={note.ok ? 'status' : 'alert'}>
+          {note.text}
+        </p>
+      ) : null}
+    </div>
   )
 }
 

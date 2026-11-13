@@ -1,0 +1,317 @@
+import { describe, expect, it } from 'vitest'
+import type { NearAccountView, NearRpc } from '../near/rpc'
+import { createPortfolioReader, MAX_REVIEWS, PORTFOLIO_TTL_MS, saleValue } from './reader'
+
+const ID = 'alice.near'
+const TRON = 'TJCo98saj6WND61g1uuKwJ9GMWMT9WkJFo'
+const USDT_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+const NEAR = 10n ** 24n
+
+/** NEAR's RPC: the account, pools that hold nothing, and intents.near with what the Intents balance holds. */
+function fakeRpc(view: NearAccountView | null | 'down', intents: Record<string, string> | 'down' = {}) {
+  return {
+    viewAccount: async () => {
+      if (view === 'down') throw new Error('no RPC answered')
+      return view
+    },
+    callView: async (contract: string, method: string, args: { token_ids?: string[] }) => {
+      if (contract !== 'intents.near') return '0'
+      if (intents === 'down') throw new Error('no RPC answered')
+      if (method === 'mt_tokens_for_owner') return Object.keys(intents).map((token_id) => ({ token_id }))
+      return (args.token_ids ?? []).map((id) => intents[id] ?? '0')
+    },
+  } as unknown as NearRpc
+}
+
+interface World {
+  tokens?: { contract_id: string; balance: string }[] | 'down'
+  prices?: Record<string, { price: string; symbol: string; decimal: number }> | 'down'
+  reviews?: Record<string, string | 'down'>
+  liquidity?: Record<string, number>
+  /** TronGrid's answer for the account, or a failure. */
+  tron?: unknown | 'down'
+  /** 1Click's token list, or a failure. */
+  oneClick?: unknown[] | 'down'
+  /** Zerion's answer for each address: positions, or a status it fails with. */
+  zerion?: Record<string, unknown[] | number>
+}
+
+/** The services the reader asks, by address, with a count of what was asked. */
+function fakeFetch(world: World) {
+  const asked: string[] = []
+  const json = (body: unknown) => new Response(JSON.stringify(body))
+  const fetch = (async (url: string) => {
+    asked.push(url)
+    if (url.endsWith('/staking')) return json({ pools: [] })
+    if (url.startsWith('https://api.trongrid.io/')) return world.tron === 'down' ? new Response('', { status: 503 }) : json(world.tron ?? { data: [] })
+    if (url.endsWith('/v0/tokens')) return world.oneClick === 'down' ? new Response('', { status: 500 }) : json(world.oneClick ?? [])
+    const wallet = /api\.zerion\.io\/v1\/wallets\/([^/]+)\/positions/.exec(url)?.[1]
+    if (wallet) {
+      const answer = world.zerion?.[decodeURIComponent(wallet)]
+      return typeof answer === 'number' || answer === undefined ? new Response('', { status: answer ?? 404 }) : json({ data: answer, links: {} })
+    }
+    if (url.endsWith('/ft')) return world.tokens === 'down' ? new Response('', { status: 500 }) : json({ tokens: world.tokens ?? [] })
+    if (url.endsWith('/list-token-price')) return world.prices === 'down' ? new Response('', { status: 500 }) : json(world.prices ?? {})
+    const token = new URL(url).searchParams.get('token_id')
+    if (token) {
+      const reputation = world.reviews?.[token] ?? 'Unknown'
+      if (reputation === 'down') return new Response('', { status: 500 })
+      return json({ account_id: token, reputation, price_usd_raw: '1.1', price_usd_raw_24h_ago: '1', liquidity_usd: world.liquidity?.[token] })
+    }
+    throw new Error(`unexpected ${url}`)
+  }) as unknown as typeof globalThis.fetch
+  return { fetch, asked }
+}
+
+const VIEW: NearAccountView = { amount: 10n * NEAR, locked: 0n, storageUsage: 182n }
+const PRICES = {
+  'wrap.near': { price: '4', symbol: 'wNEAR', decimal: 24 },
+  'usdc.near': { price: '1', symbol: 'USDC', decimal: 6 },
+  'meme.near': { price: '0.5', symbol: 'MEME', decimal: 18 },
+  'scam.near': { price: '100', symbol: 'SCAM', decimal: 18 },
+}
+
+describe('what a token would fetch', () => {
+  it('is the market value on a deep market, or with no liquidity figure', () => {
+    expect(saleValue(1000, 10_000_000)).toBe(1000)
+    expect(saleValue(1000, null)).toBe(1000)
+  })
+
+  it('falls short on a thin one, and never past the other side of the pool', () => {
+    expect(saleValue(39_000, 81_000)).toBeCloseTo((39_000 * 40_500) / 79_500)
+    expect(saleValue(1e12, 1000)).toBeLessThan(500)
+  })
+})
+
+describe('the portfolio on NEAR', () => {
+  it('values NEAR and each held token, and counts only the vouched-for ones in the total', async () => {
+    const { fetch } = fakeFetch({
+      tokens: [
+        { contract_id: 'usdc.near', balance: '25000000' },
+        { contract_id: 'meme.near', balance: '4000000000000000000' },
+        { contract_id: 'scam.near', balance: '1000000000000000000' },
+        { contract_id: 'nobody.near', balance: '5' },
+      ],
+      prices: PRICES,
+      reviews: { 'wrap.near': 'Reputable', 'usdc.near': 'Reputable', 'meme.near': 'Unknown', 'scam.near': 'Spam' },
+    })
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, now: () => 1000 }).read({ near: ID })
+
+    expect(portfolio.near).toMatchObject({ accountId: ID, onChain: true, available: '10', staked: '0', storage: '0' })
+    expect(portfolio.nearPrice?.usd).toBe(4)
+    expect(portfolio.nearPrice?.change24h).toBeCloseTo(0.1)
+    expect(portfolio.tokens.map(({ symbol, amount, usdValue, trust }) => ({ symbol, amount, usdValue, trust }))).toEqual([
+      { symbol: 'USDC', amount: '25', usdValue: 25, trust: 'reviewed' },
+      { symbol: 'MEME', amount: '4', usdValue: 2, trust: 'unreviewed' },
+    ])
+    // The token marked spam and the one with no price are only counted.
+    expect(portfolio.unpriced).toBe(2)
+    expect(portfolio.totalUsd).toBe(10 * 4 + 25)
+    expect(portfolio.readAt).toBe(1000)
+    expect(portfolio.gaps).toEqual([])
+  })
+
+  it('still shows NEAR when the token list or the prices can’t be read, and says which', async () => {
+    const noTokens = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ tokens: 'down', prices: PRICES }).fetch }).read({ near: ID })
+    expect(noTokens).toMatchObject({ tokens: [], unpriced: 0, totalUsd: 40, gaps: ['tokens'] })
+
+    const noPrices = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ tokens: [{ contract_id: 'usdc.near', balance: '1' }], prices: 'down' }).fetch }).read({ near: ID })
+    expect(noPrices).toMatchObject({ nearPrice: null, tokens: [], unpriced: 1, totalUsd: null, gaps: ['prices'] })
+  })
+
+  it('leaves a token unreviewed, and says so, when its review can’t be read', async () => {
+    const { fetch } = fakeFetch({ tokens: [{ contract_id: 'usdc.near', balance: '1000000' }], prices: PRICES, reviews: { 'usdc.near': 'down' } })
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).read({ near: ID })
+    expect(portfolio.tokens[0]?.trust).toBe('unreviewed')
+    expect(portfolio.totalUsd).toBe(40)
+    expect(portfolio.gaps).toEqual(['reviews'])
+  })
+
+  it('looks up only the most valuable tokens one by one', async () => {
+    const many = Array.from({ length: MAX_REVIEWS + 10 }, (_, i) => `t${i}.near`)
+    const prices = Object.fromEntries(many.map((contract, i) => [contract, { price: String(i + 1), symbol: `T${i}`, decimal: 0 }]))
+    const { fetch, asked } = fakeFetch({ tokens: many.map((contract_id) => ({ contract_id, balance: '1' })), prices: { ...prices, ...PRICES } })
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).read({ near: ID })
+    const looked = asked.filter((url) => url.includes('token_id=') && !url.includes('wrap.near'))
+    expect(looked).toHaveLength(MAX_REVIEWS)
+    expect(looked).not.toContain('https://prices.intear.tech/token?token_id=t0.near')
+    expect(portfolio.tokens).toHaveLength(MAX_REVIEWS + 10)
+  })
+
+  it('counts a reviewed token on a thin market at what selling it would fetch', async () => {
+    const { fetch } = fakeFetch({
+      tokens: [
+        { contract_id: 'usdc.near', balance: '100000000' },
+        { contract_id: 'meme.near', balance: '80000000000000000000' },
+      ],
+      prices: PRICES,
+      reviews: { 'usdc.near': 'Reputable', 'meme.near': 'NotFake' },
+      liquidity: { 'usdc.near': 1_000_000, 'meme.near': 80 },
+    })
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).read({ near: ID })
+    expect(portfolio.tokens.map(({ symbol, usdValue, countedUsd }) => ({ symbol, usdValue, countedUsd }))).toEqual([
+      { symbol: 'USDC', usdValue: 100, countedUsd: 100 },
+      // $40 of MEME into a pool with $40 on the other side fetches $20.
+      { symbol: 'MEME', usdValue: 40, countedUsd: 20 },
+    ])
+    expect(portfolio.totalUsd).toBe(40 + 100 + 20)
+  })
+
+  it('adds what Zerion reads for each account, counting only the tokens it knows', async () => {
+    const position = (symbol: string, chain: string, value: number, verified = true, address: string | null = '0xtoken') => ({
+      attributes: {
+        quantity: { int: '2000000', decimals: 6 },
+        value,
+        price: value / 2,
+        changes: { percent_1d: 1 },
+        fungible_info: { symbol, flags: { verified }, implementations: [{ chain_id: chain, address }] },
+      },
+      relationships: { chain: { data: { id: chain } } },
+    })
+    const { fetch, asked } = fakeFetch({
+      prices: PRICES,
+      zerion: {
+        '0xevm': [position('ETH', 'base', 3000, true, null), position('USDC', 'arbitrum', 2), position('RUG', 'base', 50, false)],
+        // A Solana address answers only for Solana, so a stray EVM row in it is dropped.
+        SoLaNa: [position('SOL', 'solana', 160, true, null), position('ETH', 'base', 999)],
+        // Zerion doesn't read Tron addresses, and Ink no longer asks it to.
+        [TRON]: 400,
+      },
+    })
+    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionAccess: () => ({ via: 'own-key', key: 'zk_dev_test_not_a_real_key_0001' }) })
+    const portfolio = await reader.read({ near: ID, evm: '0xevm', solana: 'SoLaNa', tron: TRON })
+
+    expect(portfolio.tokens.map(({ id, group, networkName, symbol, amount, countedUsd, trust }) => ({ id, group, networkName, symbol, amount, countedUsd, trust }))).toEqual([
+      { id: 'base:native', group: 'evm', networkName: 'Base', symbol: 'ETH', amount: '2', countedUsd: 3000, trust: 'reviewed' },
+      { id: 'solana:native', group: 'solana', networkName: 'Solana', symbol: 'SOL', amount: '2', countedUsd: 160, trust: 'reviewed' },
+      { id: 'base:0xtoken', group: 'evm', networkName: 'Base', symbol: 'RUG', amount: '2', countedUsd: 0, trust: 'unreviewed' },
+      { id: 'arbitrum:0xtoken', group: 'evm', networkName: 'Arbitrum', symbol: 'USDC', amount: '2', countedUsd: 2, trust: 'reviewed' },
+    ])
+    expect(portfolio.zerion).toBe('ok')
+    expect(portfolio.unread).toEqual([])
+    expect(portfolio.totalUsd).toBe(40 + 3000 + 160 + 2)
+    expect(asked.filter((url) => url.includes('api.zerion.io'))).toHaveLength(2)
+  })
+
+  it('reads no other chain without a key, and says when Zerion turns the key down', async () => {
+    const accounts = { near: ID, evm: '0xevm' }
+    const noKey = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ prices: PRICES }).fetch })
+    expect(await noKey.read(accounts)).toMatchObject({ zerion: 'off', unread: [], totalUsd: 40 })
+
+    const refused = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ prices: PRICES, zerion: { '0xevm': 401 } }).fetch, zerionAccess: () => ({ via: 'own-key', key: 'zk_dev_test_not_a_real_key_0001' }) })
+    expect(await refused.read(accounts)).toMatchObject({ zerion: 'bad-key', unread: [], totalUsd: 40 })
+  })
+
+  it('reads again once a key is added, and forgets every read when asked', async () => {
+    let key: string | null = null
+    const { fetch, asked } = fakeFetch({ prices: PRICES, zerion: { '0xevm': [] } })
+    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionAccess: () => (key ? { via: 'own-key', key } : null) })
+    const lists = () => asked.filter((url) => url.endsWith('/list-token-price')).length
+    await reader.read({ near: ID, evm: '0xevm' })
+    key = 'zk_dev_test_not_a_real_key_0001'
+    expect(await reader.read({ near: ID, evm: '0xevm' })).toMatchObject({ zerion: 'ok', zerionVia: 'own-key' })
+    expect(lists()).toBe(2)
+    reader.forget()
+    await reader.read({ near: ID, evm: '0xevm' })
+    expect(lists()).toBe(3)
+  })
+
+  it('adds the Intents balance, counting what 1Click lists and only showing the rest', async () => {
+    const { fetch } = fakeFetch({
+      prices: { ...PRICES, 'odd.near': { price: '2', symbol: 'ODD', decimal: 0 } },
+      oneClick: [
+        { assetId: 'nep141:eth.omft.near', decimals: 18, blockchain: 'eth', symbol: 'ETH', price: 2000 },
+        { assetId: 'nep141:dead.omft.near', decimals: 6, blockchain: 'base', symbol: 'DEAD', price: 0 },
+      ],
+    })
+    const rpc = fakeRpc(VIEW, { 'nep141:eth.omft.near': '500000000000000000', 'nep141:odd.near': '3', 'nep141:dead.omft.near': '5', 'nep245:mystery.near:1': '9' })
+    const portfolio = await createPortfolioReader({ rpc, fetch }).read({ near: ID })
+    const intents = portfolio.tokens.filter((token) => token.group === 'intents')
+    expect(intents.map(({ id, symbol, amount, origin, usdValue, countedUsd, trust }) => ({ id, symbol, amount, origin, usdValue, countedUsd, trust }))).toEqual([
+      { id: 'intents:nep141:eth.omft.near', symbol: 'ETH', amount: '0.5', origin: 'Ethereum', usdValue: 1000, countedUsd: 1000, trust: 'reviewed' },
+      { id: 'intents:nep141:odd.near', symbol: 'ODD', amount: '3', origin: undefined, usdValue: 6, countedUsd: 0, trust: 'unreviewed' },
+    ])
+    // A token 1Click lists without a price, and one nothing prices, are only counted.
+    expect(portfolio.unpriced).toBe(2)
+    expect(portfolio.totalUsd).toBe(40 + 1000)
+    expect(portfolio.gaps).toEqual([])
+  })
+
+  it('says when the Intents balance can’t be read, and still shows the rest', async () => {
+    const down = await createPortfolioReader({ rpc: fakeRpc(VIEW, 'down'), fetch: fakeFetch({ prices: PRICES }).fetch }).read({ near: ID })
+    expect(down).toMatchObject({ totalUsd: 40, gaps: ['intents'] })
+    const unnamed = await createPortfolioReader({ rpc: fakeRpc(VIEW, { 'nep141:eth.omft.near': '1' }), fetch: fakeFetch({ prices: PRICES, oneClick: 'down' }).fetch }).read({ near: ID })
+    expect(unnamed).toMatchObject({ unpriced: 0, gaps: ['intents'] })
+  })
+
+  it('reads through Ottopus’s service with only the install id, and the same answers', async () => {
+    const asked: { url: string; headers: Record<string, string> }[] = []
+    const base = fakeFetch({ prices: PRICES }).fetch
+    const fetch = (async (url: string, init: RequestInit) => {
+      if (!url.startsWith('https://service.example.test/')) return base(url, init)
+      asked.push({ url, headers: init.headers as Record<string, string> })
+      return new Response(JSON.stringify({ data: [], links: { next: null } }))
+    }) as unknown as typeof globalThis.fetch
+    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionAccess: () => ({ via: 'ottopus', url: 'https://service.example.test/v1/zerion', install: 'install_test_0123456789' }) })
+    expect(await reader.read({ near: ID, evm: '0xevm' })).toMatchObject({ zerion: 'ok', zerionVia: 'ottopus' })
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.url.startsWith('https://service.example.test/v1/zerion/wallets/0xevm/positions/')).toBe(true)
+    expect(asked[0]!.headers).toEqual({ 'x-ink-install': 'install_test_0123456789', accept: 'application/json' })
+  })
+
+  it('reads Tron from TronGrid, counting what 1Click prices and only counting the rest', async () => {
+    const { fetch } = fakeFetch({
+      prices: PRICES,
+      tron: { data: [{ balance: 10_000_000, trc20: [{ [USDT_TRON]: '25000000' }, { TL81r5Zze7Av4DiKxCBzCbtDnUQVSQfm82: '999' }] }] },
+      oneClick: [
+        { assetId: 'nep245:v2_1.omni.hot.tg:728126428_11111111111111111111', decimals: 6, blockchain: 'tron', symbol: 'TRX', price: 0.3 },
+        { assetId: 'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near', decimals: 6, blockchain: 'tron', symbol: 'USDT', price: 1, contractAddress: USDT_TRON },
+      ],
+    })
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).read({ near: ID, tron: TRON })
+    expect(portfolio.tokens.filter((token) => token.group === 'tron').map(({ id, symbol, amount, usdValue, trust }) => ({ id, symbol, amount, usdValue, trust }))).toEqual([
+      { id: `tron:${USDT_TRON}`, symbol: 'USDT', amount: '25', usdValue: 25, trust: 'reviewed' },
+      { id: 'tron:native', symbol: 'TRX', amount: '10', usdValue: 3, trust: 'reviewed' },
+    ])
+    // An airdropped token 1Click doesn't price is only counted.
+    expect(portfolio.unpriced).toBe(1)
+    expect(portfolio.totalUsd).toBe(40 + 25 + 3)
+    expect(portfolio.gaps).toEqual([])
+
+    const down = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ prices: PRICES, tron: 'down' }).fetch }).read({ near: ID, tron: TRON })
+    expect(down).toMatchObject({ totalUsd: 40, gaps: ['tron'] })
+  })
+
+  it('throws when NEAR itself can’t be read', async () => {
+    await expect(createPortfolioReader({ rpc: fakeRpc('down'), fetch: fakeFetch({}).fetch }).read({ near: ID })).rejects.toThrow()
+  })
+
+  it('keeps a read for a minute, reads again when asked fresh, and shares one under way', async () => {
+    let time = 0
+    const { fetch, asked } = fakeFetch({ prices: PRICES })
+    const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, now: () => time })
+    const lists = () => asked.filter((url) => url.endsWith('/list-token-price')).length
+
+    await Promise.all([reader.read({ near: ID }), reader.read({ near: ID }, { fresh: true })])
+    expect(lists()).toBe(1)
+    time = PORTFOLIO_TTL_MS - 1
+    await reader.read({ near: ID })
+    expect(lists()).toBe(1)
+    await reader.read({ near: ID }, { fresh: true })
+    expect(lists()).toBe(2)
+    time += PORTFOLIO_TTL_MS
+    await reader.read({ near: ID })
+    expect(lists()).toBe(3)
+    // NEAR's own review is kept for an hour, so it was asked once.
+    expect(asked.filter((url) => url.includes('token_id=wrap.near'))).toHaveLength(1)
+  })
+
+  it('doesn’t keep a failed read', async () => {
+    let down = true
+    const rpc = { viewAccount: async () => (down ? Promise.reject(new Error('down')) : VIEW), callView: async () => '0' } as unknown as NearRpc
+    const reader = createPortfolioReader({ rpc, fetch: fakeFetch({ prices: PRICES }).fetch })
+    await expect(reader.read({ near: ID })).rejects.toThrow()
+    down = false
+    expect((await reader.read({ near: ID })).totalUsd).toBe(40)
+  })
+})

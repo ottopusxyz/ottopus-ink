@@ -4,7 +4,8 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import globals from 'globals'
 
 export default tseslint.config(
-  { ignores: ['out/', 'dist/', 'node_modules/'] },
+  // The service is its own project, with its own config and checks.
+  { ignores: ['out/', 'dist/', 'node_modules/', 'service/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

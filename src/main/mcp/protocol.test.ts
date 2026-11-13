@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ACCOUNT_CHAINS, ACCOUNT_PATHS, type Account } from '../../shared/accounts'
 import { INK_TOOLS, type ChatPlan } from '../../shared/ipc'
 import type { PlanIntent, PlanTools } from '../../shared/plan'
+import type { HoldingGroup } from '../../shared/portfolio'
 import { handleMcpMessage, type McpHandlers } from './protocol'
 
 const ask = async (method: string, params?: unknown, id: unknown = 1) =>
@@ -126,13 +127,33 @@ describe('handleMcpMessage', () => {
   describe('get_portfolio', () => {
     const ID = 'a'.repeat(64)
     const HOLDING = { accountId: ID, onChain: true, available: '4.99', staked: '5', storage: '0.00182', pools: [{ poolId: 'one.poolv1.near', staked: '5', unstaked: '0' }], stakingComplete: true }
+    /** A portfolio with only NEAR read: no prices, no tokens, no Zerion key. */
+    const read = (near: typeof HOLDING) => ({ ok: true as const, near, nearPrice: null, tokens: [], zerion: 'off' as const, zerionVia: null, unread: [], unpriced: 0, totalUsd: null, readAt: 0, gaps: [] })
+    const token = (symbol: string, amount: string, usdValue: number, trust: 'reviewed' | 'unreviewed', options: { countedUsd?: number; network?: string; group?: HoldingGroup; native?: boolean } = {}) => {
+      const network = options.network ?? 'near'
+      const contract = options.native ? null : `${symbol.toLowerCase()}.${network === 'near' ? 'near' : 'example'}`
+      return {
+        id: `${network}:${contract ?? 'native'}`,
+        group: options.group ?? (network === 'near' ? 'near' : 'evm'),
+        network,
+        networkName: network === 'near' ? 'NEAR' : network.charAt(0).toUpperCase() + network.slice(1),
+        contract,
+        symbol,
+        decimals: 6,
+        amount,
+        price: { usd: 1, change24h: null },
+        usdValue,
+        countedUsd: options.countedUsd ?? (trust === 'reviewed' ? usdValue : 0),
+        trust,
+      }
+    }
     const portfolioOf = async (portfolio: McpHandlers['portfolio'], args: unknown = {}) => {
       const message = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_portfolio', arguments: args } }
       return ((await handleMcpMessage(message, '1', { portfolio })) as { result: { content: { text: string }[]; isError: boolean } }).result
     }
 
     it('gives the NEAR balance: available, staked by pool, and held for storage', async () => {
-      const answer = await portfolioOf(async () => ({ ok: true, near: HOLDING }))
+      const answer = await portfolioOf(async () => read(HOLDING))
       expect(answer).toEqual({
         content: [
           {
@@ -142,7 +163,8 @@ describe('handleMcpMessage', () => {
               '- Available to send: 4.99 NEAR',
               '- Staked: 5 NEAR (one.poolv1.near: 5 NEAR)',
               '- Held for storage: 0.00182 NEAR',
-              'Other chains’ balances aren’t read yet.',
+              'EVM and Solana balances need a Zerion API key. The person can add their own in Ink’s Settings, under Wallet.',
+              'Bitcoin, Sui and Aptos balances aren’t read yet.',
             ].join('\n'),
           },
         ],
@@ -150,16 +172,90 @@ describe('handleMcpMessage', () => {
       })
     })
 
+    it('puts dollars on everything, lists each token with its chain, and keeps unvouched ones apart from the total', async () => {
+      const answer = await portfolioOf(async () => ({
+        ...read(HOLDING),
+        nearPrice: { usd: 4, change24h: 0.0512 },
+        tokens: [
+          token('JAMBO', '200', 400, 'reviewed', { countedUsd: 200 }),
+          token('ETH', '0.5', 1000, 'reviewed', { network: 'base', native: true }),
+          token('USDC', '25', 25, 'reviewed'),
+          token('MEME', '4000', 0.004, 'unreviewed'),
+        ],
+        zerion: 'ok' as const,
+        unpriced: 3,
+        totalUsd: 1264.9672,
+      }))
+      expect(answer.content[0]!.text).toBe(
+        [
+          `NEAR account ${ID}:`,
+          '- Available to send: 4.99 NEAR ($19.96)',
+          '- Staked: 5 NEAR ($20.00) (one.poolv1.near: 5 NEAR)',
+          '- Held for storage: 0.00182 NEAR (under $0.01)',
+          'NEAR is $4.00, up 5.1% today.',
+          'Tokens:',
+          '- 200 JAMBO on NEAR ($400.00, counted as $200.00 since its market is too thin to sell this much near the price), contract jambo.near',
+          '- 0.5 ETH on Base ($1,000.00), Base’s own coin',
+          '- 25 USDC on NEAR ($25.00), contract usdc.near',
+          'Tokens nobody vouches for. They aren’t counted, and may be worth nothing or be fakes of real tokens:',
+          '- 4000 MEME on NEAR (under $0.01), contract meme.near',
+          '3 more tokens have no price or are marked as spam, so they aren’t listed.',
+          'Total: $1,264.97, counting NEAR (staked and storage included) and the tokens above. Prices from Intear and Zerion.',
+          'Bitcoin, Sui and Aptos balances aren’t read yet.',
+        ].join('\n'),
+      )
+    })
+
+    it('says what couldn’t be read, and lists at most twenty tokens', async () => {
+      const tokens = Array.from({ length: 23 }, (_, i) => ({ ...token(`T${i}`, '1', 1, 'reviewed'), decimals: 0 }))
+      const { content } = await portfolioOf(async () => ({ ...read(HOLDING), tokens, unpriced: 1, gaps: ['tokens', 'prices', 'reviews'] as const }))
+      const text = content[0]!.text
+      expect(text).toContain('- 1 T19 on NEAR')
+      expect(text).not.toContain('- 1 T20 on NEAR')
+      expect(text).toContain('- and 3 more')
+      expect(text).toContain('1 more token has no price or is marked as spam, so it isn’t listed.')
+      expect(text).toContain('tokens may be missing')
+      expect(text).toContain('there are no dollar values')
+      expect(text).toContain('couldn’t be checked with the price service')
+      expect(text).not.toContain('Total:')
+    })
+
+    it('lists the Intents balance with where each token came from, and narrows to it', async () => {
+      const eth = { ...token('ETH', '0.5', 1000, 'reviewed'), id: 'intents:nep141:eth.omft.near', group: 'intents' as const, network: 'intents', networkName: 'NEAR Intents', contract: 'nep141:eth.omft.near', origin: 'Ethereum' }
+      const portfolio = async () => ({ ...read(HOLDING), tokens: [eth] })
+      expect((await portfolioOf(portfolio)).content[0]!.text).toContain('- 0.5 ETH in the NEAR Intents balance, from Ethereum ($1,000.00), token nep141:eth.omft.near')
+      expect((await portfolioOf(portfolio, { chain: 'intents' })).content[0]!.text).toBe(['Tokens:', '- 0.5 ETH in the NEAR Intents balance, from Ethereum ($1,000.00), token nep141:eth.omft.near'].join('\n'))
+      expect((await portfolioOf(async () => read(HOLDING), { chain: 'intents' })).content[0]!.text).toBe('The NEAR Intents balance holds nothing with a price.')
+      expect((await portfolioOf(async () => ({ ...read(HOLDING), gaps: ['intents' as const] }), { chain: 'intents' })).content[0]!.text).toContain('couldn’t be read')
+    })
+
+    it('lists Tron’s tokens, and says when Tron couldn’t be read', async () => {
+      const usdt = { ...token('USDT', '25', 25, 'reviewed'), id: 'tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', group: 'tron' as const, network: 'tron', networkName: 'Tron', contract: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' }
+      expect((await portfolioOf(async () => ({ ...read(HOLDING), tokens: [usdt] }), { chain: 'tron' })).content[0]!.text).toBe(['Tokens:', '- 25 USDT on Tron ($25.00), contract TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'].join('\n'))
+      expect((await portfolioOf(async () => read(HOLDING), { chain: 'tron' })).content[0]!.text).toBe('The Tron account holds nothing with a price.')
+      expect((await portfolioOf(async () => ({ ...read(HOLDING), gaps: ['tron' as const] }))).content[0]!.text).toContain('The Tron account couldn’t be read')
+    })
+
+    it('says why Zerion’s chains are missing, and which account it couldn’t read', async () => {
+      for (const [zerion, says] of [
+        ['bad-key', 'turned down the person’s API key'],
+        ['rate-limited', 'limit is used up for now'],
+        ['unavailable', 'couldn’t be reached'],
+      ] as const)
+        expect((await portfolioOf(async () => ({ ...read(HOLDING), zerion }))).content[0]!.text).toContain(says)
+      expect((await portfolioOf(async () => ({ ...read(HOLDING), zerion: 'ok' as const, unread: ['tron' as const] }))).content[0]!.text).toContain('Zerion couldn’t read the Tron account')
+    })
+
     it('says what is waiting to be withdrawn, and when some pools couldn’t be read', async () => {
       const near = { ...HOLDING, pools: [{ poolId: 'one.poolv1.near', staked: '5', unstaked: '2' }], stakingComplete: false }
-      const { content } = await portfolioOf(async () => ({ ok: true, near }))
+      const { content } = await portfolioOf(async () => read(near))
       expect(content[0]!.text).toContain('one.poolv1.near: 5 NEAR, plus 2 NEAR unstaked and waiting to be withdrawn')
       expect(content[0]!.text).toContain('the staked amount may be higher')
     })
 
     it('explains an implicit account nothing was sent to yet', async () => {
-      const { content } = await portfolioOf(async () => ({ ok: true, near: { ...HOLDING, onChain: false, available: '0', staked: '0', storage: '0', pools: [] } }))
-      expect(content[0]!.text).toBe(`NEAR account ${ID} holds no NEAR yet. NEAR creates it with the first transfer into it, from any wallet or exchange. Other chains’ balances aren’t read yet.`)
+      const { content } = await portfolioOf(async () => read({ ...HOLDING, onChain: false, available: '0', staked: '0', storage: '0', pools: [] }))
+      expect(content[0]!.text).toContain(`NEAR account ${ID} holds no NEAR yet. NEAR creates it with the first transfer into it, from any wallet or exchange.`)
     })
 
     it('says so while locked, with no wallet, or when NEAR can’t be reached', async () => {
@@ -169,12 +265,23 @@ describe('handleMcpMessage', () => {
       expect((await portfolioOf(async () => Promise.reject(new Error('boom')))).content[0]!.text).toContain('couldn’t reach NEAR')
     })
 
-    it('reads nothing when asked about another chain', async () => {
+    it('narrows to one account or chain, and reads nothing for a chain Ink can’t read', async () => {
       let reads = 0
-      const read = async () => (reads++, { ok: true as const, near: HOLDING })
-      for (const chain of ['base', 'solana']) expect((await portfolioOf(read, { chain })).content[0]!.text).toBe('Ink can only read NEAR balances so far.')
-      expect((await portfolioOf(read, { chain: 'NEAR' })).content[0]!.text).toContain('Available to send')
-      expect(reads).toBe(1)
+      const tokens = [token('USDC', '25', 25, 'reviewed'), token('ETH', '0.5', 1000, 'reviewed', { network: 'base', native: true })]
+      const counted = async () => (reads++, { ...read(HOLDING), tokens, zerion: 'ok' as const })
+      for (const chain of ['bitcoin', 'sui', 'aptos']) expect((await portfolioOf(counted, { chain })).content[0]!.text).toMatch(/^Ink can’t read (Bitcoin|Sui|Aptos) balances yet\.$/)
+      expect(reads).toBe(0)
+
+      const near = (await portfolioOf(counted, { chain: 'NEAR' })).content[0]!.text
+      expect(near).toContain('Available to send')
+      expect(near).toContain('USDC on NEAR')
+      expect(near).not.toContain('ETH on Base')
+
+      const base = (await portfolioOf(counted, { chain: 'base' })).content[0]!.text
+      expect(base).toBe(['Tokens:', '- 0.5 ETH on Base ($1,000.00), Base’s own coin'].join('\n'))
+      expect((await portfolioOf(counted, { chain: 'evm' })).content[0]!.text).toContain('ETH on Base')
+      expect((await portfolioOf(counted, { chain: 'solana' })).content[0]!.text).toBe('Nothing with a price was found on solana.')
+      expect((await portfolioOf(async () => read(HOLDING), { chain: 'solana' })).content[0]!.text).toContain('need a Zerion API key')
     })
   })
 

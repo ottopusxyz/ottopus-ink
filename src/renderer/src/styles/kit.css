@@ -1261,3 +1261,23 @@ button.ink-connector { cursor: pointer; }
   cursor: pointer;
 }
 .ink-text-link:hover { text-decoration: underline; }
+
+/* Portfolio: placeholders shaped like the figures while the first read runs.
+   A soft sheen sweeps across them; with reduced motion they hold still. */
+.ink-skeleton {
+  display: block;
+  border-radius: 8px;
+  /* Tints of the text colour, so they read on light and dark cards alike. */
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ot-text) 7%, transparent) 25%, color-mix(in srgb, var(--ot-text) 14%, transparent) 50%, color-mix(in srgb, var(--ot-text) 7%, transparent) 75%);
+  background-size: 300% 100%;
+  animation: ink-skeleton 1.6s ease-in-out infinite;
+  animation-play-state: var(--ot-ambient-play);
+}
+.ink-skeleton--round { border-radius: 999px; }
+@keyframes ink-skeleton {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-skeleton { animation: none; }
+}

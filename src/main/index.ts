@@ -3,8 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentStatus, type AppInfo } from '../shared/ipc'
-import { formatNear } from '../shared/near/units'
+import { IPC, type AgentStatus, type AppInfo, type ZerionKeyStatus } from '../shared/ipc'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
 import { closeChat, killChats, sendToChat, startChat, stopChatTurn } from './agents/chats'
@@ -15,12 +14,16 @@ import { detectEntries } from './external/detect'
 import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
-import { nearBalance } from './near/balance'
 import { buildNearSend, isNearSend, nearSendFeeCeiling, nearTransferOf } from './near/build'
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { createPlanStore, type PlanView } from './plans/store'
+import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reader'
+import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
+import { installId, INK_SERVICE_URL } from './portfolio/service'
+import { checkZerionKey, type ZerionAccess } from './portfolio/zerion'
+import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
 import { describeForReview } from './review/describe'
 import { createReviewWindow } from './review/window'
@@ -164,34 +167,76 @@ const ownAccounts = async (): Promise<VaultResult<{ accounts: Account[] }>> => {
   return wallet.status().state === 'none' ? { ok: false, reason: 'no-vault' } : wallet.accounts()
 }
 
-/** What the wallet holds on NEAR, for get_portfolio. Public figures only, and only while unlocked, like the addresses. */
-const ownPortfolio = async (): Promise<PortfolioResult> => {
+let zerionKeys: ZerionKeyStore | null = null
+
+/** The person's own Zerion key, sealed by the OS keyring. Main alone reads it, to send to Zerion. */
+function getZerionKeys(): ZerionKeyStore {
+  zerionKeys ??= createZerionKeyStore({ file: join(app.getPath('userData'), 'zerion.bin'), box: osSecretBox })
+  return zerionKeys
+}
+
+let install: string | null = null
+
+/**
+ * How Ink reaches Zerion: the person's own key when they set one, otherwise Ottopus's
+ * service when this build has one, otherwise not at all.
+ */
+function zerionAccess(): ZerionAccess | null {
+  const key = getZerionKeys().get()
+  if (key) return { via: 'own-key', key }
+  if (!INK_SERVICE_URL) return null
+  install ??= installId(join(app.getPath('userData'), 'install-id'))
+  return { via: 'ottopus', url: `${INK_SERVICE_URL}/v1/zerion`, install }
+}
+
+/** Reads what the wallet holds, and keeps it a minute so the screen and the agent don't each ask again. */
+const portfolioReader = createPortfolioReader({ rpc: nearRpc, zerionAccess })
+
+/** What the wallet holds, for get_portfolio and the Portfolio screen. Public figures only, and only while unlocked, like the addresses. */
+let savedPortfolios: SavedPortfolios | null = null
+
+/** The last good read, sealed by the OS keyring, so the screens can show it at once and update behind it. */
+function getSavedPortfolios(): SavedPortfolios {
+  savedPortfolios ??= createSavedPortfolios({ file: join(app.getPath('userData'), 'portfolio.bin'), box: osSecretBox })
+  return savedPortfolios
+}
+
+/** The addresses the portfolio is read for, from the wallet's accounts. */
+function portfolioAccounts(accounts: Account[]): PortfolioAccounts | null {
+  const address = (chain: Account['chain']) => accounts.find((account) => account.chain === chain)?.address
+  const near = address('near')
+  return near ? { near, evm: address('evm'), solana: address('solana'), tron: address('tron') } : null
+}
+
+/** What the wallet holds, for get_portfolio and the Portfolio screen. Public figures only, and only while unlocked, like the addresses. */
+const ownPortfolio = async ({ fresh = false }: { fresh?: boolean } = {}): Promise<PortfolioResult> => {
   const wallet = getVault()
   if (wallet.status().state === 'none') return { ok: false, reason: 'no-vault' }
-  // The vault answers only if it stayed unlocked for the whole read, so a lock while NEAR answers holds the balance back.
+  // The vault answers only if it stayed unlocked for the whole read, so a lock while NEAR answers holds the figures back.
   const read = await wallet.withAccounts(async (accounts): Promise<PortfolioResult> => {
-    const accountId = accounts.find((account) => account.chain === 'near')?.address
-    if (!accountId) return { ok: false, reason: 'unavailable' }
+    const own = portfolioAccounts(accounts)
+    if (!own) return { ok: false, reason: 'unavailable' }
     try {
-      const balance = await nearBalance(accountId, { rpc: nearRpc })
-      return {
-        ok: true,
-        near: {
-          accountId,
-          onChain: balance.onChain,
-          available: formatNear(balance.available),
-          staked: formatNear(balance.staked),
-          storage: formatNear(balance.storage),
-          pools: balance.pools.map(({ poolId, staked, unstaked }) => ({ poolId, staked: formatNear(staked), unstaked: formatNear(unstaked) })),
-          stakingComplete: balance.stakingComplete,
-        },
-      }
+      const portfolio = await portfolioReader.read(own, { fresh })
+      getSavedPortfolios().save(walletKey(own), portfolio)
+      return { ok: true, ...portfolio }
     } catch {
       return { ok: false, reason: 'unavailable' }
     }
   })
   if (!read.ok) return { ok: false, reason: read.reason === 'locked' ? 'locked' : 'unavailable' }
   return read.value
+}
+
+/** The last good read of this wallet, without reading again. Only while unlocked; null when there's none. */
+const savedPortfolio = async (): Promise<PortfolioResult | null> => {
+  const wallet = getVault()
+  if (wallet.status().state === 'none') return null
+  const read = await wallet.withAccounts(async (accounts) => {
+    const own = portfolioAccounts(accounts)
+    return own ? getSavedPortfolios().get(walletKey(own)) : null
+  })
+  return read.ok && read.value ? { ok: true, ...read.value } : null
 }
 
 /** Started with the first chat, so the app opens no socket until something needs one. */
@@ -204,7 +249,7 @@ function getMcpBridge(): Promise<McpBridge> {
     version: app.getVersion(),
     // Public addresses only, and only while unlocked. The agent's tools get this function, never the vault.
     accounts: ownAccounts,
-    portfolio: ownPortfolio,
+    portfolio: () => ownPortfolio(),
     plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts }),
   }).catch((error: unknown) => {
     mcpBridge = null
@@ -401,6 +446,41 @@ function registerIpc(): void {
   ipcMain.handle(IPC.vaultAccounts, (event) => {
     assertAppFrame(event)
     return getVault().accounts()
+  })
+
+  ipcMain.handle(IPC.portfolio, (event, options: unknown) => {
+    assertAppFrame(event)
+    const fresh = typeof options === 'object' && options !== null && (options as { fresh?: unknown }).fresh === true
+    return ownPortfolio({ fresh })
+  })
+
+  ipcMain.handle(IPC.savedPortfolio, (event) => {
+    assertAppFrame(event)
+    return savedPortfolio()
+  })
+
+  ipcMain.handle(IPC.zerionKeyStatus, (event): ZerionKeyStatus => {
+    assertAppFrame(event)
+    const keys = getZerionKeys()
+    return { set: keys.get() !== null, kept: keys.kept(), shared: INK_SERVICE_URL !== null }
+  })
+
+  ipcMain.handle(IPC.saveZerionKey, async (event, key: unknown) => {
+    assertAppFrame(event)
+    const text = typeof key === 'string' ? key.trim() : ''
+    if (!isZerionKey(text)) return { ok: false, reason: 'invalid' } as const
+    // Checked before it's kept, so a mistyped key never sits there failing every read.
+    const checked = await checkZerionKey({ key: text })
+    if (checked !== 'ok') return { ok: false, reason: checked } as const
+    getZerionKeys().save(text)
+    portfolioReader.forget()
+    return { ok: true } as const
+  })
+
+  ipcMain.handle(IPC.removeZerionKey, (event) => {
+    assertAppFrame(event)
+    getZerionKeys().remove()
+    portfolioReader.forget()
   })
 
   ipcMain.handle(IPC.copyAddress, (event, chain: unknown) => {

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentId, AgentStatus, AppInfo, ExternalItem, SignerStatus } from '../../shared/ipc'
+import type { AccountChain } from '../../shared/accounts'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { ChatView } from '@/components/chat/chat-view'
 import { HomeView } from '@/components/home/home-view'
 import { PageView } from '@/components/pages/page-view'
+import { PortfolioView } from '@/components/portfolio/portfolio-view'
 import { SettingsDialog, type SettingsTab } from '@/components/settings/settings-dialog'
 import { AppShell } from '@/components/shell/app-shell'
 import { actionForShortcut, type View } from '@/components/shell/nav'
@@ -53,6 +55,8 @@ export function App() {
   // A wallet made or restored in this run gets the last setup step, Meet your
   // agent, before Home. Seen as the vault going from none to unlocked.
   const [meeting, setMeeting] = useState(false)
+  /** The chain Receive opens on, when a page asked for one. */
+  const [receiveChain, setReceiveChain] = useState<AccountChain | null>(null)
   const [seenState, setSeenState] = useState(vault?.state)
   if (vault?.state !== seenState) {
     setSeenState(vault?.state)
@@ -143,6 +147,18 @@ export function App() {
 
   const openChat = (chatId: string) => setView({ kind: 'chat', chatId })
 
+  const openReceive = (chain: AccountChain | null = null) => {
+    setReceiveChain(chain)
+    setView({ kind: 'page', page: 'receive' })
+  }
+
+  /** Home, with these words waiting in the composer for the person to send or change. */
+  const askOnHome = (text: string) => {
+    setDrafts((all) => withDraft(all, HOME_DRAFT, text))
+    setView({ kind: 'home' })
+    requestAnimationFrame(() => composerRef.current?.focus())
+  }
+
   const page = view.kind === 'page' ? view.page : null
   const agentPicker = <AgentPicker agents={agents} selected={selectedAgent} onSelect={setAgentPick} />
 
@@ -181,16 +197,18 @@ export function App() {
           searchRef={searchRef}
           onNewChat={newChat}
           onOpenChat={openChat}
-          onPage={(page) => setView({ kind: 'page', page })}
+          onPage={(page) => (page === 'receive' ? openReceive() : setView({ kind: 'page', page }))}
           onSettings={() => openSettings()}
           onLock={() => void window.ink.lockVault()}
         />
       }
     >
       {page === 'receive' ? (
-        <ReceiveView />
+        <ReceiveView key={receiveChain ?? 'any'} startChain={receiveChain} />
+      ) : page === 'portfolio' ? (
+        <PortfolioView onAsk={askOnHome} onReceive={(chain) => openReceive(chain)} onSettings={() => openSettings('wallet')} />
       ) : page ? (
-        <PageView page={page} onReceive={() => setView({ kind: 'page', page: 'receive' })} />
+        <PageView page={page} />
       ) : current ? (
         <ChatView
           chat={current}
@@ -230,7 +248,7 @@ export function App() {
         onSelectAgent={setAgentPick}
         onSeeAddresses={() => {
           setSettingsOpen(false)
-          setView({ kind: 'page', page: 'receive' })
+          openReceive()
         }}
         checking={checkingAgents}
         onCheckAgain={() => {

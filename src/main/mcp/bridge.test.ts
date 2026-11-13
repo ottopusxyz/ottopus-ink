@@ -120,7 +120,7 @@ describe('startMcpBridge accounts', () => {
   it('answers get_portfolio from what main passes in', async () => {
     bridge.close()
     const near = { accountId: 'b'.repeat(64), onChain: true, available: '1.25', staked: '0', storage: '0', pools: [], stakingComplete: true }
-    bridge = await startMcpBridge({ parentDir, version: '1', portfolio: async () => ({ ok: true, near }) })
+    bridge = await startMcpBridge({ parentDir, version: '1', portfolio: async () => ({ ok: true, near, nearPrice: null, tokens: [], zerion: 'off', zerionVia: null, unread: [], unpriced: 0, totalUsd: null, readAt: 0, gaps: [] }) })
     const session = bridge.addSession()
     const state = client()
     state.socket.write(`${hello(session.token)}${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_portfolio' } })}\n`)

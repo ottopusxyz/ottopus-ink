@@ -1,7 +1,8 @@
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { hexToBytes } from '@noble/hashes/utils.js'
 import { describe, expect, it } from 'vitest'
-import { decodeTransfer, nearPublicKey, nearTransferStep, transactionHash } from '../shared/near/transaction'
+import { nearCallStep } from '../shared/near/calls'
+import { decodeTransaction, decodeTransfer, nearPublicKey, nearTransferStep, transactionHash } from '../shared/near/transaction'
 import { signSteps, SignRefusal } from './sign'
 
 /** BIP-32 test vector 2's seed, as in near.test.ts. A published test seed, not a recovery phrase. */
@@ -24,6 +25,18 @@ describe('signing the steps of a plan', () => {
     for (const { signed: bytes } of signed) {
       expect(ed25519.verify(bytes.subarray(bytes.length - 64), transactionHash(unsigned(bytes)), hexToBytes(ID))).toBe(true)
     }
+  })
+
+  it('signs a step of contract calls as its own transaction', () => {
+    const calls = nearCallStep({ signerId: ID, publicKey: KEY, receiverId: 'wrap.near', calls: [{ method: 'near_deposit', amount: 5n }] })
+    const [signed] = signSteps(SEED, [calls], [live('8')])
+    expect(decodeTransaction(unsigned(signed!.signed))).toMatchObject({ receiverId: 'wrap.near', nonce: 8n, actions: [{ kind: 'FunctionCall', methodName: 'near_deposit', deposit: 5n }] })
+  })
+
+  it('refuses a call step that isn’t on the list, as a refusal and not a crash', () => {
+    const calls = nearCallStep({ signerId: ID, publicKey: KEY, receiverId: 'wrap.near', calls: [{ method: 'near_deposit', amount: 5n }] })
+    const changed = { ...calls, fields: { ...calls.fields, calls: '[{"method":"storage_withdraw"}]' } }
+    expect(() => signSteps(SEED, [changed], [live('8')])).toThrow(SignRefusal)
   })
 
   it('refuses a plan with no steps, or without live inputs for every step', () => {

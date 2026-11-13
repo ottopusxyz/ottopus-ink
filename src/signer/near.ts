@@ -1,6 +1,7 @@
 import { bytesToHex } from '@noble/hashes/utils.js'
 import { ACCOUNT_PATHS } from '../shared/accounts'
-import { decodeTransfer, encodeSignedTransaction, encodeTransfer, NearDecodeError, transactionHash, transactionId, transferOfStep } from '../shared/near/transaction'
+import { actionsOfCalls, callsOfStep, callsOfTransaction, sameCalls } from '../shared/near/calls'
+import { decodeTransaction, decodeTransfer, encodeSignedTransaction, encodeTransaction, encodeTransfer, NearDecodeError, transactionHash, transactionId, transferOfStep } from '../shared/near/transaction'
 import type { PlanStep } from '../shared/plan'
 import { ed25519PublicKey, ed25519Sign } from './slip10'
 
@@ -25,11 +26,7 @@ const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every(
  */
 export function signNearTransfer(seed: Uint8Array, step: PlanStep, live: { nonce: bigint; blockHash: Uint8Array }): SignedNearTransfer {
   const transfer = transferOfStep(step, live)
-  const path = ACCOUNT_PATHS.near
-  const ownKey = ed25519PublicKey(seed, path)
-  if (!same(transfer.publicKey, ownKey) || transfer.signerId !== bytesToHex(ownKey)) {
-    throw new NearDecodeError('the step spends from an account this seed does not hold')
-  }
+  const ownKey = ownNearKey(seed, transfer)
 
   const bytes = encodeTransfer(transfer)
   const read = decodeTransfer(bytes)
@@ -42,7 +39,41 @@ export function signNearTransfer(seed: Uint8Array, step: PlanStep, live: { nonce
     same(read.blockHash, transfer.blockHash)
   if (!agrees) throw new NearDecodeError('the encoded transaction does not read back as the step')
 
-  const { publicKey, signature } = ed25519Sign(seed, path, transactionHash(bytes))
+  return signBytes(seed, ownKey, bytes)
+}
+
+/** The seed's own NEAR key, refusing a step that spends from any other account or key. */
+function ownNearKey(seed: Uint8Array, { signerId, publicKey }: { signerId: string; publicKey: Uint8Array }): Uint8Array {
+  const ownKey = ed25519PublicKey(seed, ACCOUNT_PATHS.near)
+  if (!same(publicKey, ownKey) || signerId !== bytesToHex(ownKey)) throw new NearDecodeError('the step spends from an account this seed does not hold')
+  return ownKey
+}
+
+function signBytes(seed: Uint8Array, ownKey: Uint8Array, bytes: Uint8Array): SignedNearTransfer {
+  const { publicKey, signature } = ed25519Sign(seed, ACCOUNT_PATHS.near, transactionHash(bytes))
   if (!same(publicKey, ownKey)) throw new NearDecodeError('the signing key changed')
   return { signed: encodeSignedTransaction(bytes, signature), transactionId: transactionId(bytes) }
+}
+
+/**
+ * Signs a plan's step of NEAR contract calls with the seed's own NEAR key. Only calls
+ * on Ink's list go through: the signer writes each call's arguments, gas and deposit
+ * itself from the step, decodes its own bytes, reads the calls back from them alone,
+ * and refuses unless they say exactly what the step says, to the same contract, from
+ * this seed's own account.
+ */
+export function signNearCalls(seed: Uint8Array, step: PlanStep, live: { nonce: bigint; blockHash: Uint8Array }): SignedNearTransfer {
+  const { signerId, publicKey, receiverId, calls } = callsOfStep(step)
+  const ownKey = ownNearKey(seed, { signerId, publicKey })
+  const bytes = encodeTransaction({ signerId, publicKey, nonce: live.nonce, receiverId, blockHash: live.blockHash, actions: actionsOfCalls(calls) })
+  const read = decodeTransaction(bytes)
+  const agrees =
+    read.signerId === signerId &&
+    read.receiverId === receiverId &&
+    read.nonce === live.nonce &&
+    same(read.publicKey, publicKey) &&
+    same(read.blockHash, live.blockHash) &&
+    sameCalls(callsOfTransaction(read), calls)
+  if (!agrees) throw new NearDecodeError('the encoded transaction does not read back as the step')
+  return signBytes(seed, ownKey, bytes)
 }

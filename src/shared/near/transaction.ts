@@ -6,8 +6,9 @@ import { isNearAccountId } from './account-id'
 /**
  * NEAR transactions, written and read byte for byte in Borsh, the encoding NEAR
  * signs. Only what Ink sends is supported: a version 0 transaction from an
- * ed25519 key, holding exactly one Transfer. Anything else fails to decode, so
- * the signer can refuse whatever it couldn't read itself.
+ * ed25519 key, holding one Transfer, or up to four FunctionCalls to one
+ * contract. Anything else fails to decode, so the signer can refuse whatever it
+ * couldn't read itself.
  *
  * Shared by main, which shows the decoded transfer, and the signer, which
  * decodes again before it signs.
@@ -30,9 +31,40 @@ export interface NearTransfer {
   deposit: bigint
 }
 
+/** One action in a transaction: a plain transfer, or a call to the receiver's contract. */
+export type NearAction =
+  | { kind: 'Transfer'; deposit: bigint }
+  | {
+      kind: 'FunctionCall'
+      methodName: string
+      /** The call's arguments, as the contract reads them: JSON for every call Ink makes. */
+      args: Uint8Array
+      /** Gas attached for the call. What isn't used comes back. */
+      gas: bigint
+      /** yoctoNEAR attached to the call. */
+      deposit: bigint
+    }
+
+/** Every field NEAR signs, for a transaction of one or more actions to one receiver. */
+export interface NearTransaction {
+  signerId: string
+  publicKey: Uint8Array
+  nonce: bigint
+  receiverId: string
+  blockHash: Uint8Array
+  actions: NearAction[]
+}
+
 const KEY_ED25519 = 0
-/** The Transfer variant of nearcore's Action enum. */
+/** The FunctionCall and Transfer variants of nearcore's Action enum. */
+const ACTION_FUNCTION_CALL = 2
 const ACTION_TRANSFER = 3
+/** More than any transaction Ink builds needs. */
+export const MAX_ACTIONS = 4
+/** Longer than any call's arguments Ink writes. */
+export const MAX_ARGS_BYTES = 2048
+/** A contract method's name, as Rust and nearcore allow it. */
+const METHOD_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 const U64_MAX = (1n << 64n) - 1n
 const U128_MAX = (1n << 128n) - 1n
 
@@ -47,6 +79,10 @@ function writer() {
     u64: (value: bigint) => little(value, 8),
     u128: (value: bigint) => little(value, 16),
     fixed: (value: Uint8Array) => bytes.push(...value),
+    bytes(value: Uint8Array) {
+      little(BigInt(value.length), 4)
+      bytes.push(...value)
+    },
     string(value: string) {
       const utf8 = new TextEncoder().encode(value)
       little(BigInt(utf8.length), 4)
@@ -71,6 +107,11 @@ function reader(bytes: Uint8Array) {
     u64: () => little(8),
     u128: () => little(16),
     fixed: (size: number) => Uint8Array.from(take(size)),
+    bytes(max: number, what: string) {
+      const length = Number(little(4))
+      if (length > max) throw new NearDecodeError(`the ${what} is too long`)
+      return Uint8Array.from(take(length))
+    },
     accountId(what: string) {
       const length = Number(little(4))
       if (length > 64) throw new NearDecodeError(`the ${what} is too long to be an account id`)
@@ -127,6 +168,85 @@ export function decodeTransfer(bytes: Uint8Array): NearTransfer {
   const deposit = read.u128()
   read.end()
   return { signerId, publicKey, nonce, receiverId, blockHash, deposit }
+}
+
+function checkTransaction(transaction: NearTransaction): void {
+  const { actions } = transaction
+  checkTransfer({ ...transaction, deposit: 0n })
+  if (actions.length === 0 || actions.length > MAX_ACTIONS) throw new NearDecodeError(`a transaction holds one to ${MAX_ACTIONS} actions`)
+  const calls = actions.filter((action) => action.kind === 'FunctionCall')
+  // A transfer goes alone; calls go together, all to the receiver's contract.
+  if (calls.length !== actions.length && actions.length !== 1) throw new NearDecodeError('a transfer goes in a transaction of its own')
+  for (const action of actions) {
+    if (action.deposit < 0n || action.deposit > U128_MAX) throw new NearDecodeError('a deposit is out of range')
+    if (action.kind === 'FunctionCall') {
+      if (!METHOD_NAME.test(action.methodName)) throw new NearDecodeError('not a method name')
+      if (action.args.length > MAX_ARGS_BYTES) throw new NearDecodeError('the arguments are too long')
+      if (action.gas <= 0n || action.gas > U64_MAX) throw new NearDecodeError('the gas is out of range')
+    }
+  }
+}
+
+/** The bytes NEAR signs for a transaction of one transfer, or of calls to one contract. */
+export function encodeTransaction(transaction: NearTransaction): Uint8Array {
+  checkTransaction(transaction)
+  const out = writer()
+  out.string(transaction.signerId)
+  out.u8(KEY_ED25519)
+  out.fixed(transaction.publicKey)
+  out.u64(transaction.nonce)
+  out.string(transaction.receiverId)
+  out.fixed(transaction.blockHash)
+  out.u32(transaction.actions.length)
+  for (const action of transaction.actions) {
+    if (action.kind === 'Transfer') {
+      out.u8(ACTION_TRANSFER)
+      out.u128(action.deposit)
+    } else {
+      out.u8(ACTION_FUNCTION_CALL)
+      out.string(action.methodName)
+      out.bytes(action.args)
+      out.u64(action.gas)
+      out.u128(action.deposit)
+    }
+  }
+  return out.done()
+}
+
+/** Reads a transaction back, refusing any action but a Transfer or a FunctionCall, and anything after its end. */
+export function decodeTransaction(bytes: Uint8Array): NearTransaction {
+  const read = reader(bytes)
+  const signerId = read.accountId('signer')
+  if (read.u8() !== KEY_ED25519) throw new NearDecodeError('only ed25519 keys are supported')
+  const publicKey = read.fixed(32)
+  const nonce = read.u64()
+  const receiverId = read.accountId('receiver')
+  const blockHash = read.fixed(32)
+  const count = read.u32()
+  if (count === 0 || count > MAX_ACTIONS) throw new NearDecodeError(`a transaction holds one to ${MAX_ACTIONS} actions`)
+  const actions: NearAction[] = []
+  for (let i = 0; i < count; i++) {
+    const kind = read.u8()
+    if (kind === ACTION_TRANSFER) {
+      actions.push({ kind: 'Transfer', deposit: read.u128() })
+    } else if (kind === ACTION_FUNCTION_CALL) {
+      const name = read.bytes(64, 'method name')
+      let methodName: string
+      try {
+        methodName = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(name)
+      } catch {
+        throw new NearDecodeError('the method name is not UTF-8')
+      }
+      const args = read.bytes(MAX_ARGS_BYTES, 'arguments')
+      actions.push({ kind: 'FunctionCall', methodName, args, gas: read.u64(), deposit: read.u128() })
+    } else {
+      throw new NearDecodeError('only Transfer and FunctionCall actions can be read')
+    }
+  }
+  read.end()
+  const transaction = { signerId, publicKey, nonce, receiverId, blockHash, actions }
+  checkTransaction(transaction)
+  return transaction
 }
 
 /** What gets signed: the SHA-256 of the transaction's bytes. It is also the transaction's id. */

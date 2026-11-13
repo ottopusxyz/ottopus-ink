@@ -2,7 +2,7 @@ import { hexToBytes } from '@noble/hashes/utils.js'
 import { NearDecodeError } from '../shared/near/transaction'
 import type { PlanStep } from '../shared/plan'
 import type { LiveInputs, SignedStep } from '../shared/vault'
-import { signNearTransfer } from './near'
+import { signNearCalls, signNearTransfer } from './near'
 
 /** Thrown when the signer won't sign a step. It says why only to tests: the signer passes on no error text. */
 export class SignRefusal extends Error {}
@@ -27,9 +27,10 @@ function liveOf({ nonce, blockHash }: LiveInputs): { nonce: bigint; blockHash: U
 export function signSteps(seed: Uint8Array, steps: readonly PlanStep[], live: readonly LiveInputs[]): SignedStep[] {
   if (steps.length === 0 || steps.length !== live.length) throw new SignRefusal('each step needs its live inputs')
   return steps.map((step, i) => {
-    if (step.chain !== 'near' || step.action !== 'transfer') throw new SignRefusal('no signing half handles this step')
+    if (step.chain !== 'near' || (step.action !== 'transfer' && step.action !== 'call')) throw new SignRefusal('no signing half handles this step')
     try {
-      return signNearTransfer(seed, step, liveOf(live[i] as LiveInputs))
+      const inputs = liveOf(live[i] as LiveInputs)
+      return step.action === 'call' ? signNearCalls(seed, step, inputs) : signNearTransfer(seed, step, inputs)
     } catch (error) {
       if (error instanceof NearDecodeError) throw new SignRefusal(error.message)
       throw error

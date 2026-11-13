@@ -80,3 +80,43 @@ export async function zerionPositions(address: string, { key, fetch }: { key: st
   }
   return { kind: 'ok', data }
 }
+
+/** Tokens a search gives back, at most. Enough for a dropdown. */
+const MAX_FUNGIBLES = 20
+
+/**
+ * A token from Zerion's list cut down to what Ink shows: its symbol and name, whether
+ * Zerion verified it, and its address and decimals on the chain asked about. Icons,
+ * prices and the rest stay behind.
+ */
+export function trimFungible(item: unknown, chain: string): unknown {
+  if (!isRecord(item) || !isRecord(item.attributes)) return null
+  const attributes = item.attributes
+  const implementations = Array.isArray(attributes.implementations) ? attributes.implementations.filter((entry) => isRecord(entry) && entry.chain_id === chain).map((entry) => pick(entry, ['chain_id', 'address', 'decimals'])) : []
+  if (implementations.length === 0) return null
+  return { attributes: { symbol: attributes.symbol, name: attributes.name, flags: pick(attributes.flags, ['verified']), implementations } }
+}
+
+/** Tokens on one chain whose name or symbol matches, largest by market cap first, trimmed. */
+export async function zerionFungibles(query: string, chain: string, { key, fetch }: { key: string; fetch: typeof globalThis.fetch }): Promise<ZerionAnswer> {
+  const params = new URLSearchParams({ 'filter[search_query]': query, 'filter[implementation_chain_id]': chain, 'page[size]': String(MAX_FUNGIBLES), sort: '-market_data.market_cap', currency: 'usd' })
+  let response: Response
+  try {
+    response = await fetch(`${ZERION_URL}/fungibles/?${params.toString()}`, { headers: { authorization: `Basic ${btoa(`${key}:`)}`, accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+  } catch {
+    return { kind: 'unavailable' }
+  }
+  if (response.status === 429) {
+    const seconds = Number(response.headers.get('retry-after'))
+    return { kind: 'rate-limited', retryAfter: Number.isFinite(seconds) && seconds > 0 ? seconds : null }
+  }
+  if (!response.ok) return { kind: 'unavailable' }
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    return { kind: 'unavailable' }
+  }
+  if (!isRecord(body) || !Array.isArray(body.data)) return { kind: 'unavailable' }
+  return { kind: 'ok', data: body.data.map((item) => trimFungible(item, chain)).filter(Boolean).slice(0, MAX_FUNGIBLES) }
+}

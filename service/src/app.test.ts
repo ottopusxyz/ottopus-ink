@@ -133,3 +133,51 @@ describe('the Zerion route', () => {
     expect((await world().call('/')).status).toBe(404)
   })
 })
+
+describe('the token search route', () => {
+  const fungible = (symbol: string, chains: string[]) => ({
+    type: 'fungibles',
+    id: symbol.toLowerCase(),
+    attributes: {
+      name: `${symbol} token`,
+      symbol,
+      icon: { url: 'https://cdn.example.test/icon.png' },
+      flags: { verified: true },
+      market_data: { price: 1, market_cap: 1_000_000 },
+      implementations: chains.map((chain) => ({ chain_id: chain, address: `0x${'1'.repeat(40)}`, decimals: 6 })),
+    },
+  })
+  const search = (query: string, chain = 'base') => `/v1/zerion/fungibles?q=${encodeURIComponent(query)}&chain=${chain}`
+
+  it('searches Zerion’s tokens on one chain, largest first, trimmed to that chain', async () => {
+    const { call, asked } = world([{ body: { data: [fungible('USDC', ['base', 'ethereum']), fungible('NOPE', ['ethereum'])] } }])
+    const response = await call(search('usd'))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      data: [{ attributes: { symbol: 'USDC', name: 'USDC token', flags: { verified: true }, implementations: [{ chain_id: 'base', address: `0x${'1'.repeat(40)}`, decimals: 6 }] } }],
+    })
+    expect(asked[0]!.url).toBe('https://api.zerion.io/v1/fungibles/?filter%5Bsearch_query%5D=usd&filter%5Bimplementation_chain_id%5D=base&page%5Bsize%5D=20&sort=-market_data.market_cap&currency=usd')
+    expect(asked[0]!.authorization).toBe(`Basic ${btoa(`${KEY}:`)}`)
+  })
+
+  it('keeps a search’s answer a while, in any letter case', async () => {
+    const { call, asked } = world([{ body: { data: [fungible('USDC', ['base'])] } }])
+    expect((await call(search('USDC'))).headers.get('x-ink-cache')).toBe('miss')
+    expect((await call(search('usdc'))).headers.get('x-ink-cache')).toBe('hit')
+    expect(asked).toHaveLength(1)
+  })
+
+  it('takes a few letters on one named chain, and nothing else', async () => {
+    for (const path of [search(''), search('a'.repeat(33)), search('<script>'), search('usdc', 'Base'), '/v1/zerion/fungibles?q=usdc']) expect((await world().call(path)).status).toBe(400)
+  })
+
+  it('is limited like the holdings route, and off without a key', async () => {
+    const limited = world()
+    limited.limited.ip = true
+    expect((await limited.call(search('usdc'))).status).toBe(429)
+    expect((await world([{ status: 401 }]).call(search('usdc'))).status).toBe(503)
+    const off = world()
+    off.deps.zerionKey = undefined
+    expect((await off.call(search('usdc'))).status).toBe(503)
+  })
+})

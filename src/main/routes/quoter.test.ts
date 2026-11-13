@@ -45,7 +45,7 @@ const portfolio = (available: string, tokens: TokenHolding[] = []): PortfolioRes
   gaps: [],
 } satisfies Portfolio & { ok: true })
 
-const QUOTE: OneClickQuote = { amountIn: 0n, amountOut: 17_400_531n, minAmountOut: 17_226_525n, amountInUsd: 17.4, amountOutUsd: 17.39, seconds: 22, withdrawFee: 2400n, feeBps: 20, depositAddress: null, depositMemo: null }
+const QUOTE: OneClickQuote = { amountIn: 0n, amountOut: 17_400_531n, minAmountOut: 17_226_525n, amountInUsd: 17.4, amountOutUsd: 17.39, seconds: 22, withdrawFee: 2400n, feeBps: 20, depositAddress: null, depositMemo: null, deadline: null }
 
 function quoter(overrides: Partial<QuoterDeps> = {}, answer: (request: OneClickQuoteRequest) => OneClickQuoteResult = (request) => ({ ok: true, quote: { ...QUOTE, amountIn: request.amount } })) {
   const asked: OneClickQuoteRequest[] = []

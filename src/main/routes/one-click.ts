@@ -89,6 +89,8 @@ export interface OneClickQuote {
   /** Only on a quote that isn't dry. */
   depositAddress: string | null
   depositMemo: string | null
+  /** Only on a quote that isn't dry: after this the deposit address is dead, and funds sent to it may be lost. */
+  deadline: Date | null
 }
 
 /**
@@ -176,7 +178,8 @@ export async function oneClickQuote(request: OneClickQuoteRequest, { fetch = glo
   }, 0)
 
   const depositAddress = request.dry ? null : textOf(quote.depositAddress, /^[A-Za-z0-9._:-]{1,128}$/)
-  if (!request.dry && depositAddress === null) return { ok: false, reason: 'unavailable' }
+  const deadline = request.dry || typeof quote.deadline !== 'string' ? null : new Date(quote.deadline)
+  if (!request.dry && (depositAddress === null || deadline === null || Number.isNaN(deadline.getTime()))) return { ok: false, reason: 'unavailable' }
   return {
     ok: true,
     quote: {
@@ -190,6 +193,78 @@ export async function oneClickQuote(request: OneClickQuoteRequest, { fetch = glo
       feeBps,
       depositAddress,
       depositMemo: request.dry ? null : textOf(quote.depositMemo, /^[A-Za-z0-9._:-]{1,64}$/),
+      deadline,
     },
+  }
+}
+
+/** Where a swap stands, as 1Click reports it. */
+export type SwapStage = 'PENDING_DEPOSIT' | 'KNOWN_DEPOSIT_TX' | 'INCOMPLETE_DEPOSIT' | 'PROCESSING' | 'SUCCESS' | 'REFUNDED' | 'FAILED'
+const STAGES: readonly SwapStage[] = ['PENDING_DEPOSIT', 'KNOWN_DEPOSIT_TX', 'INCOMPLETE_DEPOSIT', 'PROCESSING', 'SUCCESS', 'REFUNDED', 'FAILED']
+
+export interface SwapReport {
+  stage: SwapStage
+  /** What was paid out, in the destination token's smallest unit, once known. */
+  amountOut: bigint | null
+  /** The payout's transaction on the destination chain, once there is one. */
+  payoutTx: { hash: string; explorerUrl: string | null } | null
+  /** What was refunded, in the origin token's smallest unit, once known. */
+  refunded: bigint | null
+}
+
+/** An explorer link 1Click gives, only when it's plain https. */
+const explorerOf = (value: unknown): string | null => {
+  if (typeof value !== 'string' || value.length > 300) return null
+  try {
+    return new URL(value).protocol === 'https:' ? value : null
+  } catch {
+    return null
+  }
+}
+
+function reportOf(body: unknown): SwapReport | null {
+  if (typeof body !== 'object' || body === null) return null
+  const { status, swapDetails } = body as { status?: unknown; swapDetails?: unknown }
+  if (typeof status !== 'string' || !(STAGES as readonly string[]).includes(status)) return null
+  const details = typeof swapDetails === 'object' && swapDetails !== null ? (swapDetails as Record<string, unknown>) : {}
+  const payouts = Array.isArray(details.destinationChainTxHashes) ? details.destinationChainTxHashes : []
+  const first = payouts[0] as { hash?: unknown; explorerUrl?: unknown } | undefined
+  const hash = textOf(first?.hash, /^[A-Za-z0-9:_-]{1,128}$/)
+  return {
+    stage: status as SwapStage,
+    amountOut: bigOf(details.amountOut),
+    payoutTx: hash ? { hash, explorerUrl: explorerOf(first?.explorerUrl) } : null,
+    refunded: bigOf(details.refundedAmount),
+  }
+}
+
+/**
+ * Tells 1Click the deposit's transaction, so it needn't wait to spot it. Only a speed-up:
+ * 1Click finds the deposit by itself too. Null when 1Click couldn't be told.
+ */
+export async function submitDeposit(
+  { txHash, depositAddress, nearSenderAccount }: { txHash: string; depositAddress: string; nearSenderAccount?: string },
+  { fetch = globalThis.fetch, url = ONE_CLICK_URL }: { fetch?: typeof globalThis.fetch; url?: string } = {},
+): Promise<SwapReport | null> {
+  try {
+    const response = await fetch(`${url}/v0/deposit/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ txHash, depositAddress, ...(nearSenderAccount ? { nearSenderAccount } : {}) }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    return response.ok ? reportOf(await response.json()) : null
+  } catch {
+    return null
+  }
+}
+
+/** Where the swap behind a deposit address stands now. Null when 1Click can't be read. */
+export async function swapStatus(depositAddress: string, { fetch = globalThis.fetch, url = ONE_CLICK_URL }: { fetch?: typeof globalThis.fetch; url?: string } = {}): Promise<SwapReport | null> {
+  try {
+    const response = await fetch(`${url}/v0/status?depositAddress=${encodeURIComponent(depositAddress)}`, { signal: AbortSignal.timeout(15_000) })
+    return response.ok ? reportOf(await response.json()) : null
+  } catch {
+    return null
   }
 }

@@ -39,7 +39,8 @@ export type QuoteOutcome =
       /** Most the network fee could be, in NEAR, or null when NEAR couldn't say. */
       fee: string | null
       held: QuoteAmount
-      enough: boolean
+      /** Null when the balances couldn't be read, so nothing was checked. */
+      enough: boolean | null
     }
   | {
       ok: true
@@ -57,7 +58,8 @@ export type QuoteOutcome =
       /** Whether the Ink signs on the token's own chain. */
       signsOrigin: boolean
       held: QuoteAmount
-      enough: boolean
+      /** Null when the balances couldn't be read, so nothing was checked. */
+      enough: boolean | null
       /** Both the wallet and the Intents balance were quoted, and this was the better. */
       compared: boolean
     }
@@ -114,7 +116,7 @@ export function createQuoter({ accounts, portfolio, tokens, quote, nearFee, now 
         send: amountOf(route.amount, route.asset, 'NEAR'),
         fee: fee === null ? null : formatUnits(fee, 24),
         held: amountOf(route.held, route.asset, 'NEAR'),
-        enough: route.held >= route.amount + (fee ?? 0n),
+        enough: read.ok ? route.held >= route.amount + (fee ?? 0n) : null,
       }
     }
 
@@ -164,7 +166,7 @@ export function createQuoter({ accounts, portfolio, tokens, quote, nearFee, now 
       paidTo,
       signsOrigin: SIGNS_ON.has(leg.from.blockchain),
       held: amountOf(leg.held, leg.from, nativeNear ? 'NEAR' : leg.from.symbol),
-      enough: leg.held >= leg.amount,
+      enough: read.ok ? leg.held >= leg.amount : null,
       compared: quoted.length > 1,
     }
   }

@@ -139,7 +139,7 @@ describe('quoting a payment', () => {
     const { quote } = quoter({ portfolio: async () => portfolio('2') })
     expect(await quote({ fromAsset: 'NEAR', toAsset: 'USDC', toChain: 'base', amount: '5' })).toMatchObject({ ok: true, enough: false, held: { amount: '2' } })
     const unread = quoter({ portfolio: async () => ({ ok: false, reason: 'unavailable' }) })
-    expect(await unread.quote({ fromAsset: 'NEAR', toAsset: 'USDC', toChain: 'base', amount: '5' })).toMatchObject({ ok: true, enough: false })
+    expect(await unread.quote({ fromAsset: 'NEAR', toAsset: 'USDC', toChain: 'base', amount: '5' })).toMatchObject({ ok: true, enough: null })
   })
 
   it('passes on why there is no route or quote', async () => {

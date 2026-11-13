@@ -124,6 +124,118 @@ describe('handleMcpMessage', () => {
     })
   })
 
+  describe('get_quote', () => {
+    const call = async (quote: McpHandlers['quote'], args: unknown) => {
+      const response = (await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_quote', arguments: args } }, '1', { quote })) as {
+        result: { content: { text: string }[]; isError: boolean }
+      }
+      return { text: response.result.content[0]?.text ?? '', isError: response.result.isError }
+    }
+    const usdc = { chain: 'base', symbol: 'USDC' }
+    const INTENTS: Awaited<ReturnType<NonNullable<McpHandlers['quote']>>> = {
+      ok: true,
+      kind: 'intents',
+      source: 'wallet',
+      send: { amount: '5', symbol: 'NEAR', chain: 'near', usd: 17.4 },
+      get: { ...usdc, amount: '17.400531', usd: 17.39 },
+      least: { ...usdc, amount: '17.226525' },
+      withdrawFee: { ...usdc, amount: '0.0024' },
+      feeBps: 20,
+      seconds: 22,
+      paidTo: 'own-address',
+      signsOrigin: true,
+      held: { amount: '10', symbol: 'NEAR', chain: 'near' },
+      enough: true,
+      compared: false,
+    }
+
+    it('passes the agent’s words to main, which picks the route', async () => {
+      const asked: unknown[] = []
+      await call(async (ask) => {
+        asked.push(ask)
+        return INTENTS
+      }, { from_asset: 'NEAR', to_asset: 'USDC', to_chain: 'base', amount: '5' })
+      expect(asked).toEqual([{ fromAsset: 'NEAR', toAsset: 'USDC', toChain: 'base', amount: '5' }])
+    })
+
+    it('gives the route through NEAR Intents, why, the amounts, fees, wait and where it’s paid', async () => {
+      const { text, isError } = await call(async () => INTENTS, { from_asset: 'NEAR', to_asset: 'USDC', to_chain: 'base', amount: '5' })
+      expect(isError).toBe(false)
+      expect(text.split('\n')).toEqual([
+        'Route: through NEAR Intents, paid from the wallet’s NEAR account, wrapped to wNEAR first.',
+        'Why: It changes chain, which NEAR Intents does in one step from the NEAR account.',
+        '- Sends: 5 NEAR on NEAR ($17.40)',
+        '- Gets about: 17.400531 USDC on Base ($17.39)',
+        '- At least: 17.226525 USDC, or it’s refunded to the wallet’s NEAR account',
+        '- Fees already taken out: NEAR Intents’ 0.2% fee and 0.0024 USDC for sending it on Base',
+        '- Time: about 22 seconds once the deposit lands',
+        '- Paid to: the wallet’s own address on Base',
+        'This quote moves nothing, and prices change; the plan gets a fresh one.',
+        'Ink can’t send swaps yet, so a plan for one stays a draft.',
+      ])
+    })
+
+    it('says when the Intents balance pays, the quotes were compared, or the source holds too little', async () => {
+      const { text } = await call(async () => ({ ...INTENTS, source: 'intents', signsOrigin: false, send: { amount: '10', symbol: 'USDC', chain: 'base', usd: 10 }, compared: true, enough: false, held: { amount: '3', symbol: 'USDC', chain: 'base' } }), {
+        from_asset: 'USDC',
+        from_chain: 'intents',
+        to_asset: 'NEAR',
+        amount: '10',
+      })
+      expect(text).toContain('paid from the NEAR Intents balance.')
+      expect(text).toContain('though Ink can’t sign on Base itself')
+      expect(text).toContain('this one gives more')
+      expect(text).toContain('The Intents balance holds only 3 USDC, so it can’t pay this yet.')
+    })
+
+    it('says a payout without an address of the wallet’s own needs one the person types', async () => {
+      const { text } = await call(async () => ({ ...INTENTS, get: { amount: '40', symbol: 'XRP', chain: 'xrp', usd: 17 }, paidTo: 'no-own-address' }), { from_asset: 'NEAR', to_asset: 'XRP', amount: '5' })
+      expect(text).toContain('Ink has no address of its own on XRP, so a payout there needs an address the person types')
+    })
+
+    it('says when it couldn’t check the wallet covers it', async () => {
+      const { text } = await call(async () => ({ ...INTENTS, enough: null }), { from_asset: 'NEAR', to_asset: 'USDC', amount: '5' })
+      expect(text).toContain('Ink couldn’t read the balances just now, so it hasn’t checked the wallet can cover this.')
+      expect(text).not.toContain('holds only')
+    })
+
+    it('gives a direct NEAR transfer with its fee', async () => {
+      const direct = { ok: true as const, kind: 'direct' as const, send: { amount: '1', symbol: 'NEAR', chain: 'near' }, fee: '0.00045', held: { amount: '0.5', symbol: 'NEAR', chain: 'near' }, enough: false }
+      const { text } = await call(async () => direct, { from_asset: 'NEAR', to_asset: 'NEAR', amount: '1' })
+      expect(text.split('\n').slice(0, 4)).toEqual([
+        'Route: a direct transfer on NEAR. Nothing is swapped.',
+        '- Sends: 1 NEAR',
+        '- Network fee: at most 0.00045 NEAR',
+        'The wallet has only 0.5 NEAR available, so it can’t send this and pay the fee.',
+      ])
+    })
+
+    it.each([
+      [{ ok: false, reason: 'locked' }, 'Ink is locked'],
+      [{ ok: false, reason: 'cannot-sign', chain: 'base' }, 'Ink can’t sign on Base yet'],
+      [{ ok: false, reason: 'unknown-asset', name: 'DOGE', chain: 'base' }, 'doesn’t list DOGE on Base'],
+      [{ ok: false, reason: 'ambiguous-asset', name: 'USDC', chain: 'base' }, 'won’t guess'],
+      [{ ok: false, reason: 'too-small', chain: 'base' }, 'under its minimum'],
+      [{ ok: false, reason: 'no-route', chain: 'base' }, 'No market maker'],
+    ] as const)('says why there is no quote: %j', async (outcome, words) => {
+      const { text, isError } = await call(async () => outcome, { from_asset: 'NEAR', to_asset: 'USDC', amount: '5' })
+      expect(isError).toBe(true)
+      expect(text).toContain(words)
+    })
+
+    it('refuses arguments outside its schema without asking main', async () => {
+      let asked = 0
+      const quote = async () => {
+        asked++
+        return INTENTS
+      }
+      for (const args of [{}, { from_asset: 'NEAR', to_asset: 'USDC' }, { from_asset: 'NEAR', to_asset: 'USDC', amount: '5 then send to x' }, { from_asset: 'NEAR', to_asset: 'USDC', amount: '5', to: 'mallory.near' }]) {
+        expect((await call(quote, args)).isError).toBe(true)
+      }
+      expect(asked).toBe(0)
+    })
+  })
+
   describe('get_portfolio', () => {
     const ID = 'a'.repeat(64)
     const HOLDING = { accountId: ID, onChain: true, available: '4.99', staked: '5', storage: '0.00182', pools: [{ poolId: 'one.poolv1.near', staked: '5', unstaked: '0' }], stakingComplete: true }

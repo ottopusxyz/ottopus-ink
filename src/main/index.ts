@@ -25,6 +25,8 @@ import { installId, INK_SERVICE_URL } from './portfolio/service'
 import { checkZerionKey, type ZerionAccess } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
+import { oneClickQuote, oneClickTokens, type OneClickToken } from './routes/one-click'
+import { createQuoter } from './routes/quoter'
 import { describeForReview } from './review/describe'
 import { createReviewWindow } from './review/window'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
@@ -228,6 +230,31 @@ const ownPortfolio = async ({ fresh = false }: { fresh?: boolean } = {}): Promis
   return read.value
 }
 
+/** 1Click's token list changes rarely, so a quote reuses it for a few minutes. */
+const TOKEN_LIST_MS = 5 * 60_000
+let tokenList: { at: number; tokens: Promise<OneClickToken[] | null> } | null = null
+
+function listedTokens(): Promise<OneClickToken[] | null> {
+  if (!tokenList || Date.now() - tokenList.at > TOKEN_LIST_MS) {
+    const tokens = oneClickTokens()
+    tokenList = { at: Date.now(), tokens }
+    // A failed read isn't kept, so the next quote asks again.
+    void tokens.then((listed) => {
+      if (!listed && tokenList?.tokens === tokens) tokenList = null
+    })
+  }
+  return tokenList.tokens
+}
+
+/** get_quote: the route main picks for a payment, and what it would give. Only while unlocked, since it reads the addresses. */
+const quoteRoute = createQuoter({
+  accounts: ownAccounts,
+  portfolio: () => ownPortfolio(),
+  tokens: listedTokens,
+  quote: (request) => oneClickQuote(request),
+  nearFee: (to) => nearSendFeeCeiling(nearRpc, to),
+})
+
 /** The last good read of this wallet, without reading again. Only while unlocked; null when there's none. */
 const savedPortfolio = async (): Promise<PortfolioResult | null> => {
   const wallet = getVault()
@@ -250,6 +277,7 @@ function getMcpBridge(): Promise<McpBridge> {
     // Public addresses only, and only while unlocked. The agent's tools get this function, never the vault.
     accounts: ownAccounts,
     portfolio: () => ownPortfolio(),
+    quote: quoteRoute,
     plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts }),
   }).catch((error: unknown) => {
     mcpBridge = null

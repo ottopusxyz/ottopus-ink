@@ -1,10 +1,11 @@
 import type { ChatPlan } from '../../../../shared/ipc'
 import { Ring } from '@/components/motion/ring'
-import { CheckIcon, ChevronDownIcon, CloseIcon, ExternalIcon } from '@/components/shell/icons'
-import { TokenLogo } from '@/components/ui'
+import { ArrowRightIcon, CheckIcon, ChevronDownIcon, CloseIcon, ExternalIcon, EyeIcon, KeyIcon, SwapIcon } from '@/components/shell/icons'
+import { ChainLogo, TokenLogo } from '@/components/ui'
+import { isChainId } from '@/lib/logos'
 import { StatusChip } from '@/components/ui/status-chip'
 import { planHeadline } from '@/lib/chats'
-import { trackerSteps, trackerSummary, type TrackerStep } from '@/lib/plan-tracker'
+import { trackerSteps, trackerSummary, type TrackerIcon, type TrackerStep } from '@/lib/plan-tracker'
 import { cn } from '@/lib/cn'
 
 const DOT: Record<TrackerStep['state'], string> = {
@@ -22,6 +23,25 @@ function StepDot({ state }: { state: TrackerStep['state'] }) {
   )
 }
 
+/** A step's own icon: Ink's glyph for its steps, or the chain or token it lands on. */
+function StepIcon({ icon }: { icon: TrackerIcon }) {
+  switch (icon.kind) {
+    case 'review':
+      return <EyeIcon size={14} className="flex-none text-[var(--ot-text-2)]" />
+    case 'sign':
+      return <KeyIcon size={14} className="flex-none text-[var(--ot-text-2)]" />
+    case 'swap':
+      return <SwapIcon size={14} className="flex-none text-[var(--ot-text-2)]" />
+    case 'chain': {
+      const chain = icon.chain.toLowerCase()
+      return isChainId(chain) ? <ChainLogo chain={chain} size="xs" /> : null
+    }
+    case 'token':
+      // The label names the chain: at this size its badge would cover the token's own mark.
+      return <TokenLogo symbol={icon.symbol} size="xs" />
+  }
+}
+
 /**
  * Where this chat's plan stands, pinned above the conversation: each step from review
  * through signing and NEAR to, for a swap, NEAR Intents' payout, with explorer links as
@@ -33,7 +53,15 @@ export function PlanTracker({ plan, earlier }: { plan: ChatPlan; earlier: readon
   return (
     <section className="ink-review-card relative mx-auto mt-3 flex w-[calc(100%-48px)] max-w-[760px] flex-col gap-3 py-3" aria-label="Where this plan stands">
       <div className="flex items-center gap-2.5">
-        <TokenLogo symbol={plan.asset} chain={plan.chain} size="md" />
+        <span className="flex flex-none items-center gap-1" aria-hidden>
+          <TokenLogo symbol={plan.asset} chain={plan.chain} size="md" />
+          {plan.outcome === 'swap' && plan.toAsset ? (
+            <>
+              <ArrowRightIcon size={13} className="text-[var(--ot-text-3)]" />
+              <TokenLogo symbol={plan.toAsset} chain={plan.toChain} size="md" />
+            </>
+          ) : null}
+        </span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[14px] font-bold">{planHeadline(plan)}</span>
           <span className="text-[12px] text-[var(--ot-text-2)]" role="status">
@@ -47,7 +75,10 @@ export function PlanTracker({ plan, earlier }: { plan: ChatPlan; earlier: readon
           <li key={step.label} className="flex min-w-[96px] flex-1 items-start gap-1.5">
             <StepDot state={step.state} />
             <span className="flex min-w-0 flex-col">
-              <span className={cn('text-[12.5px] font-semibold', step.state === 'pending' && 'text-[var(--ot-text-3)]')}>{step.label}</span>
+              <span className={cn('flex items-center gap-1 text-[12.5px] font-semibold', step.state === 'pending' && 'text-[var(--ot-text-3)]')}>
+                <StepIcon icon={step.icon} />
+                {step.label}
+              </span>
               {step.detail ? <span className="selectable text-[11.5px] text-[var(--ot-text-2)] [overflow-wrap:anywhere]">{step.detail}</span> : null}
               {step.link ? (
                 <a className="flex items-center gap-1 text-[11.5px] underline" href={step.link.url} target="_blank" rel="noreferrer">

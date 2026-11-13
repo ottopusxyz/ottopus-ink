@@ -1,8 +1,12 @@
 import type { ChatPlan } from '../../../shared/ipc'
 
+/** What a step's icon shows: a glyph for Ink's own steps, or the chain or token it lands on. */
+export type TrackerIcon = { kind: 'review' } | { kind: 'sign' } | { kind: 'swap' } | { kind: 'chain'; chain: string } | { kind: 'token'; symbol: string; chain: string | null }
+
 /** One step of a plan's way through Ink, as the tracker strip draws it. */
 export interface TrackerStep {
   label: string
+  icon: TrackerIcon
   /** A few words on where this step stands, when there's more to say than its label. */
   detail: string | null
   state: 'done' | 'active' | 'pending' | 'failed'
@@ -32,9 +36,24 @@ const titled = (word: string) => word.slice(0, 1).toUpperCase() + word.slice(1)
  * comes from main's events: the status, the NEAR transaction and the swap's progress.
  */
 export function trackerSteps(plan: ChatPlan): TrackerStep[] {
+  return stepsOf(plan).map((step) => ({ ...step, icon: iconOf(step.label, plan) }))
+}
+
+/** Each step's icon: review and signing are Ink's own, NEAR runs the transaction, and a swap pays out its token on its chain. */
+function iconOf(label: string, plan: ChatPlan): TrackerIcon {
+  if (label === 'Review') return { kind: 'review' }
+  if (label === 'Sign') return { kind: 'sign' }
+  if (label === 'On NEAR') return { kind: 'chain', chain: 'near' }
+  if (label === 'Swap') return { kind: 'swap' }
+  return plan.toAsset ? { kind: 'token', symbol: plan.toAsset, chain: plan.toChain } : { kind: 'chain', chain: plan.toChain ?? 'near' }
+}
+
+type Step = Omit<TrackerStep, 'icon'>
+
+function stepsOf(plan: ChatPlan): Step[] {
   const reached = REACHED[plan.status]
   const tx = plan.transactionId ? { label: 'nearblocks', url: `https://nearblocks.io/txns/${encodeURIComponent(plan.transactionId)}` } : null
-  const step = (label: string, state: TrackerStep['state'], detail: string | null = null, link: TrackerStep['link'] = null): TrackerStep => ({ label, detail, state, link })
+  const step = (label: string, state: TrackerStep['state'], detail: string | null = null, link: TrackerStep['link'] = null): Step => ({ label, detail, state, link })
 
   // Stopped before anything was signed.
   if (plan.status === 'cancelled' || plan.status === 'expired' || plan.status === 'blocked' || plan.status === 'draft') {
@@ -60,7 +79,7 @@ export function trackerSteps(plan: ChatPlan): TrackerStep[] {
 }
 
 /** A swap's own steps once its deposit landed: NEAR Intents swapping it, then the payout. */
-function swapSteps(plan: ChatPlan, from: TrackerStep['state']): TrackerStep[] {
+function swapSteps(plan: ChatPlan, from: TrackerStep['state']): Step[] {
   const where = plan.toChain ? `Paid out on ${titled(plan.toChain)}` : 'Paid out'
   const swap = plan.swap
   if (!swap || from === 'pending') {

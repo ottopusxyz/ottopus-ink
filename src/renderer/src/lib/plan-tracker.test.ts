@@ -49,4 +49,15 @@ describe('the plan tracker', () => {
     expect(isUnderWay({ ...SWAP, status: 'confirmed', swap: swap('swapping') })).toBe(true)
     for (const stage of ['done', 'refunded', 'failed', 'unknown'] as const) expect(isUnderWay({ ...SWAP, status: 'confirmed', swap: swap(stage) }), stage).toBe(false)
   })
+
+  it('gives each step an icon: Ink’s own glyphs, NEAR, and the token the swap pays out on its chain', () => {
+    expect(trackerSteps(SWAP).map((step) => step.icon)).toEqual([
+      { kind: 'review' },
+      { kind: 'sign' },
+      { kind: 'chain', chain: 'near' },
+      { kind: 'swap' },
+      { kind: 'token', symbol: 'USDC', chain: 'base' },
+    ])
+    expect(trackerSteps(SEND).map((step) => step.icon.kind)).toEqual(['review', 'sign', 'chain'])
+  })
 })

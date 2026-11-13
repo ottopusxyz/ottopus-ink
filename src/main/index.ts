@@ -43,6 +43,7 @@ import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfo
 import { createReviewBroker } from './review/broker'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
 import { buildOneClickSwap } from './routes/swap-plan'
+import { buildPayment, legsOfStep, paymentProgress } from './routes/pay-plan'
 import { swapSent } from './routes/swap-terms'
 import { createSwapJournal, type SwapJournal } from './routes/swap-journal'
 import { createSwapTracker } from './routes/swap-tracker'
@@ -165,6 +166,18 @@ const plans = createPlanStore({
   buildSteps: async (intent, own) => {
     if (isNearSend(intent)) return buildNearSend(intent, own, nearRpc)
     if (isEvmSend(intent)) return buildEvmSend(intent, own, { rpcFor: evmRpcFor, tokens: listedTokens })
+    if (intent.outcome === 'pay') {
+      return buildPayment(intent, own, {
+        tokens: listedTokens,
+        evmRpc: evmRpcFor,
+        held: async () => {
+          const read = await ownPortfolio({ fresh: true })
+          return read.ok ? holdingsOf(read, (await listedTokens()) ?? []) : null
+        },
+        quote: (request) => oneClickQuote(request),
+        fits: (from, deposit, gas, calls) => nearCallsFit(nearRpc, from, deposit, gas, calls),
+      })
+    }
     if (intent.outcome === 'swap') {
       return buildOneClickSwap(intent, own, {
         tokens: listedTokens,
@@ -195,11 +208,17 @@ const followed = new Map<string, Followed>()
 const MAX_FOLLOWED = 500
 
 /** Tells the plan's chat how it ended, once it has, with Ink's note and the facts for the agent. Only once per plan. */
+/** Where a plan's swap stands: its one swap's, or all of a payment's legs together. */
+function swapStateOf(planId: string, core: PlanView['core']): ChatSwap | null {
+  if (!core.swaps) return swapTracker.get(planId)
+  return paymentProgress(core.swaps, core.swaps.map((_, leg) => swapTracker.get(`${planId}#${leg}`)))
+}
+
 function endingOf(planId: string): void {
   const follow = followed.get(planId)
   const plan = follow && !follow.ended ? plans.get(planId, follow.owner) : null
   if (!follow || !plan) return
-  const outcome = planOutcome(planId, plan.core, plan.status, follow.transactionId, swapTracker.get(planId))
+  const outcome = planOutcome(planId, plan.core, plan.status, follow.transactionId, swapStateOf(planId, plan.core))
   if (!outcome) return
   follow.ended = true
   follow.ending(outcome)
@@ -217,8 +236,16 @@ function getSwapJournal(): SwapJournal {
 const swapTracker = createSwapTracker({
   submit: (deposit) => submitDeposit(deposit),
   status: (depositAddress) => swapStatus(depositAddress),
-  onUpdate: (planId, swap) => {
-    followed.get(planId)?.swap(swap)
+  onUpdate: (followedId, swap) => {
+    // A payment's legs are followed as `<plan>#<leg>`; its chat hears them together.
+    const [planId = followedId] = followedId.split('#')
+    const follow = followed.get(planId)
+    if (planId === followedId) follow?.swap(swap)
+    else if (follow) {
+      const plan = plans.get(planId, follow.owner)
+      const together = plan ? swapStateOf(planId, plan.core) : null
+      if (together) follow.swap(together)
+    }
     endingOf(planId)
     sendToWindows(IPC.swapsChanged)
   },
@@ -395,6 +422,25 @@ const reviewWindow = createReviewWindow({
 
 /** What the review window shows for a plan: its own step decoded, and today's fee ceiling if NEAR answers. */
 async function describePlan(plan: PlanView) {
+  // A payment's steps each have their own fee, in their own chain's coin.
+  if (plan.core.swaps) {
+    const fees = await Promise.all(
+      plan.core.steps.map(async (step) => {
+        try {
+          if (step.chain === 'evm') {
+            const transfer = evmTransferOfStep(step)
+            const chain = evmChainById(transfer.chainId)
+            return chain ? await evmFeeCeiling(evmRpcFor(chain), transfer.gas) : null
+          }
+          const { calls } = callsOfStep(step)
+          return callsFeeCeiling(await nearRpc.gasPrice(), callsGas(calls), calls.length)
+        } catch {
+          return null
+        }
+      }),
+    )
+    return describeForReview(plan, '', null, fees)
+  }
   const [first] = plan.core.steps
   if (first?.chain === 'evm') {
     let fee: bigint | null = null
@@ -440,6 +486,13 @@ const reviews = createReviewBroker({
     evmRpc: evmRpcFor,
     onConfirmed: (plan, transactionId) => {
       if (plan.core.swap) void swapTracker.follow(plan.id, plan.core.swap, transactionId)
+    },
+    // Each leg a payment's step paid is followed from that step's transaction.
+    onStepConfirmed: (plan, step, transactionId) => {
+      for (const leg of legsOfStep(plan.core, step)) {
+        const swap = plan.core.swaps?.[leg]
+        if (swap) void swapTracker.follow(`${plan.id}#${leg}`, swap, transactionId)
+      }
     },
   }),
   describe: describePlan,

@@ -1,6 +1,6 @@
 import type { ChatSwap, InkNote } from '../../shared/ipc'
 import { formatNear } from '../../shared/near/units'
-import type { PlanCore, PlanStatus } from '../../shared/plan'
+import type { PlanCore, PlanStatus, PlanSwap } from '../../shared/plan'
 import { nearTransferOf } from '../near/build'
 import { chainName } from '../routes/route'
 import { refundPlace, swapSent } from '../routes/swap-terms'
@@ -45,6 +45,7 @@ export function planOutcome(planId: string, core: PlanCore, status: PlanStatus, 
   const evm = evmOf(core)
   const ranOn = evm?.chain.name ?? 'NEAR'
   const links = !transactionId ? [] : evm ? [{ label: `${evm.chain.name} transaction`, url: `${evm.chain.explorer.tx}${transactionId}` }] : [nearblocks(transactionId)]
+  if (core.swaps) return paymentOutcome(planId, core.swaps, status, transactionId, swap)
   const terms = core.swap
   if (!terms && evm) {
     const sent = `${formatUnits(evm.transfer.amount, evm.transfer.decimals)} ${evm.transfer.symbol} to ${evm.transfer.to} on ${evm.chain.name}`
@@ -105,6 +106,44 @@ export function planOutcome(planId: string, core: PlanCore, status: PlanStatus, 
       return {
         note: { tone: 'info', title: 'Swap still open', lines: [`Ink stopped checking the swap of ${amountIn} to ${terms.getSymbol}. NEAR Intents still pays it out or refunds it on its own.`], links },
         forAgent: toAgent(planId, `Ink stopped checking the swap of ${amountIn} to ${terms.getSymbol}; NEAR Intents still pays it out or refunds it on its own.`),
+      }
+    default:
+      return null
+  }
+}
+
+/**
+ * How a payment ended: once a step failed (the rest were never sent), or once every leg was
+ * paid out, or any was refunded or lost track of. `swap` is all its legs together.
+ */
+function paymentOutcome(planId: string, legs: readonly PlanSwap[], status: PlanStatus, transactionId: string | null, swap: ChatSwap | null): PlanOutcome | null {
+  const [first] = legs
+  if (!first) return null
+  const total = `${formatUnits(legs.reduce((sum, leg) => sum + BigInt(leg.amountOut), 0n), Number(first.getDecimals))} ${first.getSymbol}`
+  const to = `${first.recipient} on ${chainName(first.getChain)}`
+  const parts = legs.map((leg) => `${swapSent(leg) ?? leg.sendSymbol} from ${leg.payFrom === 'evm' ? 'your wallet on its chain' : 'your NEAR Intents balance'}`).join(', ')
+  if (status === 'failed') {
+    const why = 'A step failed on chain, and the steps after it weren’t sent. Anything already deposited, NEAR Intents pays out or refunds on its own.'
+    return { note: { tone: 'block', title: 'Payment not finished', lines: [`${total} to ${to}: ${why}`], links: [] }, forAgent: toAgent(planId, `The payment of ${total} to ${to} failed. ${why}`) }
+  }
+  if (status !== 'confirmed' || !swap) return null
+  const payout = swap.link ? [{ label: 'Payout', url: swap.link }] : []
+  switch (swap.stage) {
+    case 'done':
+      return {
+        note: { tone: 'ok', title: 'Paid', lines: [`${total} paid to ${to}, from ${parts}.`], links: payout },
+        forAgent: toAgent(planId, `NEAR Intents finished the payment: exactly ${total} paid to ${to}, from ${parts}.${transactionId ? ` Last transaction ${transactionId}.` : ''}`),
+      }
+    case 'refunded':
+    case 'failed':
+      return {
+        note: { tone: 'block', title: 'Payment not completed', lines: [`NEAR Intents couldn’t pay all of ${total} to ${to}. ${swap.refunded ? `Refunded: ${swap.refunded}, each back where it came from.` : 'Any refund goes back where each part came from.'}`], links: payout },
+        forAgent: toAgent(planId, `NEAR Intents couldn’t pay all of ${total} to ${to}; ${swap.refunded ? `refunded ${swap.refunded}` : 'any refund goes back where each part came from'}.`),
+      }
+    case 'unknown':
+      return {
+        note: { tone: 'info', title: 'Payment still open', lines: [`Ink stopped checking the payment of ${total} to ${to}. NEAR Intents still pays out or refunds each part on its own.`], links: payout },
+        forAgent: toAgent(planId, `Ink stopped checking the payment of ${total} to ${to}; NEAR Intents still pays out or refunds each part on its own.`),
       }
     default:
       return null

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import type { ReviewFailure, ReviewPlan, ReviewState, ReviewSwap } from '../../../shared/review'
+import type { ReviewFailure, ReviewLeg, ReviewPlan, ReviewState, ReviewSwap } from '../../../shared/review'
 import { Otto, type PoseName } from '@/components/brand/otto'
 import { InkHold, StepList } from '@/components/motion/loaders'
 import { ArrowRightIcon, CheckIcon, ClockIcon, ExternalIcon } from '@/components/shell/icons'
@@ -101,7 +101,7 @@ export function ReviewApp() {
           <Otto pose={otto.pose} size={64} animated={otto.moving} />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="ink-eyebrow">Your agent asks to</span>
-            <h1 className="m-0 font-display text-[24px] font-bold tracking-[-0.02em]">{plan.swap ? `Swap ${plan.swap.send}` : `Send ${plan.amount} ${plan.asset}`}</h1>
+            <h1 className="m-0 font-display text-[24px] font-bold tracking-[-0.02em]">{plan.kind === 'pay' ? `Pay ${plan.amount} ${plan.asset}` : plan.swap ? `Swap ${plan.swap.send}` : `Send ${plan.amount} ${plan.asset}`}</h1>
           </div>
           {outcome ? null : (
             <div className="flex flex-none flex-col items-end gap-1.5">
@@ -138,8 +138,13 @@ export function ReviewApp() {
             <span className="ink-status-dot" aria-hidden />
             Confirmed
           </Badge>
-          <h1 className="m-0 font-display text-[34px] font-bold">{plan.swap ? 'Deposit sent!' : 'Sent!'}</h1>
-          {plan.swap ? (
+          <h1 className="m-0 font-display text-[34px] font-bold">{plan.swap || plan.kind === 'pay' ? 'Deposit sent!' : 'Sent!'}</h1>
+          {plan.kind === 'pay' && plan.payChain ? (
+            <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
+              {plan.chain} ran every part. NEAR Intents pays exactly <span className="selectable font-mono">{plan.amount} {plan.asset}</span> to{' '}
+              <span className="selectable font-mono">{plan.to}</span> on {plan.payChain.name}. Your chat shows when it lands.
+            </p>
+          ) : plan.swap ? (
             <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
               {plan.chain} ran the deposit. NEAR Intents swaps it for about <span className="selectable font-mono">{plan.swap.get}</span> {landsIn(plan.swap)}, usually within{' '}
               {plan.swap.seconds} seconds. Your chat shows when it lands.
@@ -205,15 +210,28 @@ export function ReviewApp() {
         </Section>
         )}
 
+        {plan.legs ? <PayTerms legs={plan.legs} /> : null}
         <Section label="Amount" card>
           <p className="selectable m-0 flex items-center gap-2.5">
-            <TokenLogo symbol={plan.asset} chain={plan.chainMark} size="lg" />
+            <TokenLogo symbol={plan.asset} chain={plan.payChain?.mark ?? plan.chainMark} size="lg" />
             <span className="font-display text-[32px] leading-none font-bold tracking-[-0.02em]">
               {plan.amount} {plan.asset}
             </span>
           </p>
           {plan.swap?.from === 'intents' ? <p className="m-0 text-[13px] font-semibold text-[var(--ot-text-2)]">From your NEAR Intents balance</p> : null}
-          <p className="m-0 text-[13px] text-[var(--ot-text-2)]">
+          {plan.kind === 'pay' && plan.payChain ? <p className="m-0 text-[13px] font-semibold text-[var(--ot-text-2)]">Exactly this, paid on {plan.payChain.name}</p> : null}
+          {plan.stepFees ? (
+            <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 border-t border-dashed border-[var(--ot-border)] pt-2 text-[11.5px]">
+              {plan.stepFees.map((fee, index) => (
+                <div key={index} className="contents">
+                  <dt className="text-[var(--ot-text-3)]">Network fee on {fee.chain}, at most</dt>
+                  <dd className="selectable m-0 text-right font-mono">{fee.maxFee ? `${fee.maxFee} ${fee.feeAsset}` : 'not read yet'}</dd>
+                </div>
+              ))}
+              <dd className="col-span-2 m-0 text-[var(--ot-text-3)]">Each part’s fee comes from the account that sends it. Most of each comes back.</dd>
+            </dl>
+          ) : null}
+          <p className="m-0 text-[13px] text-[var(--ot-text-2)]" hidden={Boolean(plan.stepFees)}>
             {plan.maxFee ? (
               <>
                 + up to <strong className="selectable">
@@ -357,6 +375,32 @@ export function ReviewApp() {
         )}
       </footer>
     </Shell>
+  )
+}
+
+/**
+ * A payment's parts, as NEAR Intents' quotes fixed them: what each sends and from where,
+ * and exactly what each pays out. Together they pay the amount below, to one address.
+ */
+function PayTerms({ legs }: { legs: readonly ReviewLeg[] }) {
+  return (
+    <Section label={`Paid in ${legs.length} part${legs.length === 1 ? '' : 's'} through NEAR Intents`} card>
+      <ol className="m-0 flex list-none flex-col gap-2.5 p-0">
+        {legs.map((leg, index) => (
+          <li key={index} className="flex flex-col gap-1 border-b border-dashed border-[var(--ot-border)] pb-2.5 last:border-b-0 last:pb-0">
+            <span className="text-[13.5px]">
+              <strong className="selectable font-mono">{leg.send}</strong> <span className="text-[var(--ot-text-2)]">from {leg.fromPlace}</span>
+              <span className="text-[var(--ot-text-3)]"> → exactly </span>
+              <strong className="selectable font-mono">{leg.get}</strong>
+            </span>
+            <span className="text-[12px] text-[var(--ot-text-3)]">
+              NEAR Intents’ {leg.fee} fee is included. Anything it doesn’t need goes back {leg.from === 'intents' ? 'into your NEAR Intents balance' : `to ${leg.refundTo}`}.
+            </span>
+            <Address value={leg.depositAddress} small />
+          </li>
+        ))}
+      </ol>
+    </Section>
   )
 }
 

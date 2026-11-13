@@ -220,13 +220,15 @@ export function createReviewBroker({ store, sender, describe, unlocked, onState,
         return refuse('locked')
       }
       // The person approves the most the fees can cost, so a plan shown without one gets it first.
-      if (offer.plan.maxFeeYocto === null) {
+      const feesKnown = (plan: typeof offer.plan) => plan.maxFeeYocto !== null && (plan.stepFees ?? []).every((fee) => fee.maxFeeYocto !== null)
+      if (!feesKnown(offer.plan)) {
         await describeAgain(offer)
-        offer.failure = offer.plan.maxFeeYocto === null ? 'chain-unavailable' : 'fee-changed'
+        offer.failure = !feesKnown(offer.plan) ? 'chain-unavailable' : 'fee-changed'
         refresh()
         return refuse(offer.failure)
       }
-      const maxFee = BigInt(offer.plan.maxFeeYocto)
+      // A payment's steps each have their own limit, in their own chain's coin.
+      const maxFee = offer.plan.stepFees ? offer.plan.stepFees.map((fee) => BigInt(fee.maxFeeYocto as string)) : BigInt(offer.plan.maxFeeYocto as string)
       // A plan approved before, whose send stopped short of signing, is sent again as it was approved.
       if (status === 'awaiting_review' && !store.move(id, offer.owner, 'approved').ok) return refuse('cannot-move')
       sending = true

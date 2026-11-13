@@ -68,6 +68,9 @@ const ONE_CLICK_CHAINS: Record<string, string> = {
   starknet: 'starknet',
 }
 
+/** Ink's name for a chain as 1Click names it (`sol` is `solana`), or null for one Ink doesn't name. */
+export const inkChainOf = (code: string): string | null => ONE_CLICK_CHAINS[code] ?? null
+
 /** A transaction's page on the explorer of a chain as 1Click names it (`bsc`, `sol`), or null. */
 export const oneClickTxPage = (chain: string, tx: string): { name: string; url: string } | null => {
   const ink = ONE_CLICK_CHAINS[chain]

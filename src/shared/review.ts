@@ -9,10 +9,18 @@ import type { PlanStatus } from './plan'
 /** One plan as the review window draws it. Amounts are NEAR decimals, written by main. */
 export interface ReviewPlan {
   id: string
-  /** A plain NEAR send, or a swap through NEAR Intents. */
-  kind: 'send' | 'swap'
+  /** A plain send, a swap through NEAR Intents, or a payment of an exact amount made of several swaps. */
+  kind: 'send' | 'swap' | 'pay'
   /** What a swap's quote promised, for a swap. Null for a send. */
   swap: ReviewSwap | null
+  /** A payment's legs, each an exact swap paying part of it. Absent from anything else. */
+  legs?: ReviewLeg[]
+  /**
+   * For a payment, whose steps run on more than one chain: each step's chain and the most
+   * its fees could take, in its own coin. Main sends only while no step's fees can cost
+   * more than its own. Absent from anything else, which has one fee, `maxFee`.
+   */
+  stepFees?: { chain: string; feeAsset: string; maxFee: string | null; maxFeeYocto: string | null }[]
   /** The hash the person approves. The signer signs only a plan that hashes to it. */
   hash: string
   /** The network banner, such as `NEAR mainnet` or `Base mainnet`. */
@@ -23,6 +31,8 @@ export interface ReviewPlan {
   feeAsset: string
   /** Ink's name for the chain, for its logo: `near`, `base`, `bsc`. */
   chainMark: string
+  /** For a payment: Ink's name for the chain it pays out on, for the amount's badge, and that chain as people say it. */
+  payChain?: { mark: string; name: string }
   /** Where the chain shows a transaction: the explorer's name, and the page a transaction id is added to. */
   explorer: { name: string; tx: string }
   /** The account that pays: the person's own. */
@@ -65,6 +75,22 @@ export interface ReviewAction {
   method: string | null
   /** What it does, in plain words, written by main from the decoded action. */
   summary: string
+}
+
+/** One leg of a payment: what pays, from where, and exactly what it pays out. */
+export interface ReviewLeg {
+  /** "10 USDC". */
+  send: string
+  from: 'evm' | 'intents'
+  /** Where it pays from, as a person reads it: "Base", "your NEAR Intents balance". */
+  fromPlace: string
+  /** Exactly what it pays out: "9.7 USDC". */
+  get: string
+  depositAddress: string
+  /** Where a refund of anything unswapped goes. */
+  refundTo: string
+  fee: string
+  seconds: number
 }
 
 /** A swap through NEAR Intents, as main read it from the plan's fixed terms. */

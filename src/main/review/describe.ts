@@ -9,6 +9,8 @@ import { nearTransferOf } from '../near/build'
 import type { PlanView } from '../plans/store'
 import { chainName } from '../routes/route'
 import { swapSent } from '../routes/swap-terms'
+import { inkChainOf } from '../intents/explorers'
+import { legsOfStep } from '../routes/pay-plan'
 import { evmChainById, type EvmChain } from '../../shared/evm/chains'
 import { EvmDecodeError, evmTransferOfStep } from '../../shared/evm/transaction'
 
@@ -27,7 +29,8 @@ const explorerOf = (chain: EvmChain) => ({ name: new URL(chain.explorer.tx).host
  * couldn't be asked. It's only shown: the sender checks the balance against it
  * again just before signing.
  */
-export function describeForReview(plan: PlanView, network: string, maxFee: bigint | null): ReviewPlan | null {
+export function describeForReview(plan: PlanView, network: string, maxFee: bigint | null, stepFees?: readonly (bigint | null)[]): ReviewPlan | null {
+  if (plan.core.swaps) return describePayment(plan, stepFees ?? [])
   if (plan.core.steps[0]?.chain === 'evm') return plan.core.swap ? describeEvmSwap(plan, maxFee) : describeEvmSend(plan, maxFee)
   if (plan.core.swap) return describeSwap(plan, network, maxFee)
   const transfer = nearTransferOf(plan.core)
@@ -284,6 +287,113 @@ function describeEvmSwap(plan: PlanView, maxFee: bigint | null): ReviewPlan | nu
         ? { kind: 'Transfer', amount, method: null, summary: `Send ${amount} ${chain.symbol} to NEAR Intents’ deposit address ${transfer.to} on ${chain.name}` }
         : { kind: 'FunctionCall', amount: '0', method: 'transfer', summary: `Send ${amount} ${transfer.symbol} to NEAR Intents’ deposit address ${transfer.to} on ${chain.name}, through the token’s contract ${transfer.token}` },
     ],
+    expiresAt: plan.core.expiresAt,
+  }
+}
+
+/**
+ * A payment's review, from its steps and each leg's terms. Shown only when they agree
+ * exactly: each Intents leg's mt_transfer in the one NEAR step, and each EVM leg's transfer
+ * in its own step, moves exactly that leg's token and amount to its deposit address, every
+ * step pays a leg and every leg is paid once; every leg pays exactly its amount, of the
+ * same token on the same chain, to the plan's own recipient.
+ */
+function describePayment(plan: PlanView, stepFees: readonly (bigint | null)[]): ReviewPlan | null {
+  const legs = plan.core.swaps ?? []
+  const recipient = plan.core.recipient
+  const [first] = legs
+  if (!first || !recipient || plan.core.steps.length === 0 || plan.core.swap) return null
+  const sameTarget = legs.every((leg) => leg.recipient === recipient.address && leg.destinationAsset === first.destinationAsset && leg.getChain === first.getChain && leg.getDecimals === first.getDecimals && leg.amountOut === leg.minAmountOut && /^[1-9][0-9]*$/.test(leg.amountOut))
+  if (!sameTarget) return null
+
+  const paid = new Set<number>()
+  // Each step must pay exactly the legs its place says, since that's how each leg is followed once it's sent.
+  let stepIndex = 0
+  let stepPays: number[] = []
+  const payOnce = (index: number) => (index < 0 || paid.has(index) ? false : (paid.add(index), stepPays.push(index), true))
+  const inPlace = () => {
+    const expected = legsOfStep(plan.core, stepIndex++)
+    const ok = expected.length === stepPays.length && expected.every((leg, i) => leg === stepPays[i])
+    stepPays = []
+    return ok
+  }
+  const actions: ReviewPlan['actions'] = []
+  const chains: { name: string; mark: string; symbol: string; explorer: { name: string; tx: string } }[] = []
+  for (const step of plan.core.steps) {
+    try {
+      if (step.chain === 'evm') {
+        const transfer = evmTransferOfStep(step)
+        const chain = evmChainById(transfer.chainId)
+        if (!chain) return null
+        const index = legs.findIndex((leg, i) => !paid.has(i) && leg.payFrom === 'evm' && leg.sendChainId === String(transfer.chainId) && leg.sendToken === transfer.token && leg.depositAddress.toLowerCase() === transfer.to.toLowerCase() && leg.amountIn === transfer.amount.toString() && leg.refundTo.toLowerCase() === transfer.from.toLowerCase() && leg.sendDecimals === String(transfer.decimals))
+        if (!payOnce(index)) return null
+        const amount = formatUnits(transfer.amount, transfer.decimals)
+        actions.push({ kind: 'FunctionCall', amount: '0', method: 'transfer', summary: `Send ${amount} ${transfer.symbol} to NEAR Intents’ deposit address ${transfer.to} on ${chain.name}, through the token’s contract ${transfer.token}` })
+        chains.push({ name: chain.name, mark: chain.id, symbol: chain.symbol, explorer: explorerOf(chain) })
+        if (!inPlace()) return null
+      } else {
+        const read = callsOfStep(step)
+        if (read.receiverId !== INTENTS_NEAR) return null
+        for (const call of read.calls) {
+          if (call.method !== 'mt_transfer') return null
+          const index = legs.findIndex((leg, i) => !paid.has(i) && leg.payFrom === 'intents' && leg.depositAddress === call.receiverId && leg.originAsset === call.tokenId && leg.amountIn === call.amount.toString() && leg.refundTo === read.signerId)
+          if (!payOnce(index)) return null
+          const sent = swapSent(legs[index] as PlanSwap)
+          actions.push({ kind: 'FunctionCall', amount: formatNear(CALL_RULES[call.method].deposit(call)), method: call.method, summary: `Move ${sent} from your NEAR Intents balance to NEAR Intents’ deposit address ${call.receiverId}` })
+        }
+        chains.push({ name: 'NEAR', mark: 'near', symbol: 'NEAR', explorer: NEARBLOCKS })
+        if (!inPlace()) return null
+      }
+    } catch (error) {
+      if (error instanceof EvmDecodeError || error instanceof NearDecodeError) return null
+      throw error
+    }
+  }
+  if (paid.size !== legs.length) return null
+
+  const reviewLegs = legs.map((leg) => {
+    const chain = leg.payFrom === 'evm' ? evmChainById(Number(leg.sendChainId)) : null
+    return {
+      send: swapSent(leg) ?? leg.sendSymbol,
+      from: leg.payFrom === 'evm' ? ('evm' as const) : ('intents' as const),
+      fromPlace: chain ? chain.name : 'your NEAR Intents balance',
+      get: tokenAmount(leg.amountOut, leg.getDecimals, leg.getSymbol) ?? leg.getSymbol,
+      depositAddress: leg.depositAddress,
+      refundTo: leg.refundTo,
+      fee: `${(Number(leg.feeBps) / 100).toFixed(2).replace(/\.?0+$/, '')}%`,
+      seconds: Number(leg.seconds),
+    }
+  })
+  const total = legs.reduce((sum, leg) => sum + BigInt(leg.amountOut), 0n)
+  const last = chains.at(-1) as (typeof chains)[number]
+  return {
+    id: plan.id,
+    kind: 'pay',
+    swap: null,
+    legs: reviewLegs,
+    payChain: { mark: inkChainOf(first.getChain) ?? first.getChain, name: chainName(first.getChain) },
+    stepFees: chains.map((chain, i) => {
+      const fee = stepFees[i] ?? null
+      return { chain: chain.name, feeAsset: chain.symbol, maxFee: fee === null ? null : formatUnits(fee, chain.symbol === 'NEAR' ? 24 : 18), maxFeeYocto: fee === null ? null : fee.toString() }
+    }),
+    hash: plan.hash,
+    network: [...new Set(chains.map((chain) => `${chain.name} mainnet`))].join(' + '),
+    chain: [...new Set(chains.map((chain) => chain.name))].join(' and '),
+    feeAsset: last.symbol,
+    chainMark: last.mark,
+    explorer: last.explorer,
+    from: legs.map((leg) => leg.refundTo).filter((address, i, all) => all.indexOf(address) === i).join(', '),
+    publicKey: chains.map((chain) => (chain.symbol === 'NEAR' ? 'ed25519' : 'secp256k1')).filter((key, i, all) => all.indexOf(key) === i).join(' + '),
+    to: recipient.address,
+    toKind: first.getChain === 'intents' ? 'implicit' : 'other-chain',
+    toWhy: recipient.why,
+    amount: formatUnits(total, Number(first.getDecimals)),
+    amountYocto: total.toString(),
+    asset: first.getSymbol,
+    maxFee: null,
+    maxFeeYocto: stepFees.every((fee) => fee !== null) && stepFees.length === chains.length ? '0' : null,
+    maxTotal: null,
+    actions,
     expiresAt: plan.core.expiresAt,
   }
 }

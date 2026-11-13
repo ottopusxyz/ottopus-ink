@@ -1,6 +1,6 @@
 import { bytesToHex } from '@noble/hashes/utils.js'
 import type { PlanFailure, PlanStatus } from '../../shared/plan'
-import type { VaultFailure } from '../../shared/vault'
+import type { LiveInputs, SignedStep, VaultFailure } from '../../shared/vault'
 import { callsDeposit, callsGas, callsOfStep } from '../../shared/near/calls'
 import { NearDecodeError } from '../../shared/near/transaction'
 import type { PlanCore } from '../../shared/plan'
@@ -44,6 +44,8 @@ export interface PlanSenderOptions {
   evmRpc?: (chain: EvmChain) => EvmRpc
   /** Told of each plan its chain ran, with its transaction, so a swap can be followed from there. */
   onConfirmed?: (plan: PlanView, transactionId: string) => void
+  /** Told of each step of a payment its chain ran, with its transaction, so its legs can be followed. */
+  onStepConfirmed?: (plan: PlanView, step: number, transactionId: string) => void
   now?: () => number
   wait?: (ms: number) => Promise<void>
 }
@@ -100,7 +102,7 @@ export const TRANSACTION_VALIDITY_BLOCKS = 86_400n
  * nothing else, so a later send can't overtake it. One plan at a time, each
  * signed above every nonce already signed with its key, so no two share one.
  */
-export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, now = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: PlanSenderOptions) {
+export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onStepConfirmed, now = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: PlanSenderOptions) {
   let sending = false
   /**
    * The highest nonce signed with each key. A send that got no answer, or that
@@ -117,10 +119,13 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, now =
     return { ok: false, reason, status: moved.ok ? moved.plan.status : undefined }
   }
 
-  async function run(id: string, owner: string, maxFee: bigint): Promise<SendResult> {
+  async function run(id: string, owner: string, maxFee: bigint | readonly bigint[]): Promise<SendResult> {
     const plan = store.get(id, owner)
     if (!plan) return { ok: false, reason: 'not-found' }
     if (plan.status !== 'approved') return { ok: false, reason: 'cannot-move', status: plan.status }
+    // A payment has a fee limit for each step; anything else one.
+    if (plan.core.swaps) return typeof maxFee === 'bigint' ? { ok: false, reason: 'bad-request', status: plan.status } : runPayment(plan, owner, maxFee)
+    if (typeof maxFee !== 'bigint') return { ok: false, reason: 'bad-request', status: plan.status }
     // A swap's deposit address must still be alive when the deposit lands, with time to spare.
     const swap = plan.core.swap
     if (swap && !(now() < Date.parse(swap.deadline) - SWAP_SEND_MARGIN_MS)) return { ok: false, reason: 'cannot-move', status: plan.status }
@@ -189,6 +194,144 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, now =
 
   /** The highest nonce signed on each EVM chain for each address, so two plans never share one. */
   const evmNonces = new Map<string, bigint>()
+
+  /** One step of a payment, read and checked: what it needs from its chain before signing, and how it's sent. */
+  interface PaymentStep {
+    live: LiveInputs
+    keyId: string
+    nonce: bigint
+    /** Sends the signed step and waits for its chain's answer: true once it ran, false if it failed, null if no answer yet. */
+    send: (signed: Uint8Array, transactionId: string) => Promise<boolean | null>
+  }
+
+  /** Reads a payment's step: checks its chain, balance and fees against its own limit, and takes its nonce. */
+  async function paymentStep(step: PlanCore['steps'][number], maxFee: bigint, nonceAfter: Map<string, bigint>): Promise<PaymentStep | SendFailure> {
+    if (step.chain === 'evm') {
+      const transfer = evmTransferOfStep(step)
+      const chain = evmChainById(transfer.chainId)
+      if (!chain || !evmRpc) return 'chain-unavailable'
+      const chainRpc = evmRpc(chain)
+      const keyId = `evm ${chain.chainId} ${transfer.from.toLowerCase()}`
+      const fees = await evmSendFees(chainRpc, transfer.gas)
+      const unfit = await evmSendFits(chainRpc, transfer, fees.ceiling, maxFee)
+      if (unfit) return unfit
+      const pending = await chainRpc.nonce(transfer.from)
+      const lastSigned = evmNonces.get(keyId)
+      if (lastSigned !== undefined && lastSigned >= pending) return 'earlier-pending'
+      const before = nonceAfter.get(keyId)
+      const nonce = before !== undefined && before >= pending ? before + 1n : pending
+      nonceAfter.set(keyId, nonce)
+      return {
+        live: { nonce: nonce.toString(), maxFeePerGas: fees.maxFeePerGas.toString(), maxPriorityFeePerGas: fees.maxPriorityFeePerGas.toString() },
+        keyId,
+        nonce,
+        send: async (signed, hash) => {
+          try {
+            await chainRpc.send(signed)
+          } catch (error) {
+            if (error instanceof EvmRpcError && error.reason === 'rejected') return false
+            if (error instanceof EvmRpcError) return null
+            throw error
+          }
+          for (const started = now(); now() - started < EVM_RECEIPT_WAIT_MS; ) {
+            const receipt = await chainRpc.receipt(hash).catch(() => null)
+            if (receipt) return receipt.ok
+            await wait(EVM_RECEIPT_POLL_MS)
+          }
+          return null
+        },
+      }
+    }
+    const { signerId, calls } = callsOfStep(step)
+    const publicKey = step.fields.publicKey as string
+    const keyId = `${signerId} ${publicKey}`
+    if ((await rpc.chainId()) !== NEAR_NETWORK) return 'wrong-network'
+    const unfit = await nearCallsFit(rpc, signerId, callsDeposit(calls), callsGas(calls), calls.length, maxFee)
+    if (unfit) return unfit
+    const key = await rpc.viewAccessKey(signerId, publicKey)
+    if (!key) return 'insufficient-funds'
+    if (unanswered.has(keyId)) return 'earlier-pending'
+    const lastSigned = signedNonces.get(keyId) ?? 0n
+    const before = nonceAfter.get(keyId) ?? 0n
+    const floor = [key.nonce, lastSigned, before].reduce((top, value) => (value > top ? value : top), 0n)
+    const nonce = floor + 1n
+    nonceAfter.set(keyId, nonce)
+    return {
+      live: { nonce: nonce.toString(), blockHash: bytesToHex(key.blockHash) },
+      keyId,
+      nonce,
+      send: async (signed) => {
+        try {
+          return (await rpc.sendTransaction(signed)).ok
+        } catch (error) {
+          if (error instanceof NearRpcError && error.reason === 'rejected') return false
+          if (error instanceof NearRpcError) {
+            unanswered.set(keyId, { nonce, blockHeight: key.blockHeight })
+            return null
+          }
+          throw error
+        }
+      },
+    }
+  }
+
+  /**
+   * A payment's steps, each on its own chain: every one is checked against its own fee
+   * limit, and given its nonce, before any is signed; the signer signs them together under
+   * the approved hash; then they're sent in order, each waiting for its chain's answer. A
+   * step that fails stops the rest, which are never sent. A step with no answer yet leaves
+   * the plan submitted, with the rest unsent.
+   */
+  async function runPayment(plan: PlanView, owner: string, maxFees: readonly bigint[]): Promise<SendResult> {
+    const id = plan.id
+    const steps = plan.core.steps
+    if (maxFees.length !== steps.length) return { ok: false, reason: 'bad-request', status: plan.status }
+    if ((plan.core.swaps ?? []).some((leg) => !(now() < Date.parse(leg.deadline) - SWAP_SEND_MARGIN_MS))) return { ok: false, reason: 'cannot-move', status: plan.status }
+    const read: PaymentStep[] = []
+    const nonceAfter = new Map<string, bigint>()
+    try {
+      for (const [index, step] of steps.entries()) {
+        const one = await paymentStep(step, maxFees[index] as bigint, nonceAfter)
+        if (typeof one === 'string') return { ok: false, reason: one, status: plan.status }
+        read.push(one)
+      }
+    } catch (error) {
+      if (error instanceof EvmRpcError || error instanceof NearRpcError) return { ok: false, reason: 'chain-unavailable', status: plan.status }
+      if (error instanceof EvmDecodeError || error instanceof NearDecodeError) return { ok: false, reason: 'bad-request', status: plan.status }
+      throw error
+    }
+
+    const signing = store.move(id, owner, 'signing')
+    if (!signing.ok) return signing
+    const signed = await vault.sign(plan.core, plan.hash, read.map((step) => step.live))
+    if (!signed.ok) {
+      const reason = signed.reason === 'locked' || signed.reason === 'plan-mismatch' || signed.reason === 'refused' || signed.reason === 'signer-stopped' ? signed.reason : 'refused'
+      return fail(id, owner, reason)
+    }
+    if (signed.signed.length !== steps.length) return fail(id, owner, 'refused')
+    for (const step of read) {
+      if (step.keyId.startsWith('evm ')) evmNonces.set(step.keyId, step.nonce)
+      else signedNonces.set(step.keyId, step.nonce)
+    }
+
+    const submitted = store.move(id, owner, 'submitted')
+    if (!submitted.ok) return submitted
+    let last = ''
+    for (const [index, step] of read.entries()) {
+      const { signed: bytes, transactionId } = signed.signed[index] as SignedStep
+      last = transactionId
+      const ran = await step.send(bytes, transactionId)
+      if (ran === null) return { ok: true, plan: submitted.plan, transactionId }
+      if (!ran) {
+        const failed = store.move(id, owner, 'failed')
+        return failed.ok ? { ok: true, plan: failed.plan, transactionId } : failed
+      }
+      onStepConfirmed?.(plan, index, transactionId)
+    }
+    const done = store.move(id, owner, 'confirmed')
+    if (done.ok) onConfirmed?.(done.plan, last)
+    return done.ok ? { ok: true, plan: done.plan, transactionId: last } : done
+  }
 
   /**
    * An EVM plan's one transfer, the same way: checks the chain, the balance and today's fees
@@ -269,7 +412,7 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, now =
      * Sends the plan, if the fees can't cost more than `maxFee`, the most the person was shown
      * when they approved: in yoctoNEAR for NEAR, in the chain's wei for an EVM chain.
      */
-    async send(id: string, owner: string, maxFee: bigint): Promise<SendResult> {
+    async send(id: string, owner: string, maxFee: bigint | readonly bigint[]): Promise<SendResult> {
       if (sending) return { ok: false, reason: 'busy' }
       sending = true
       try {

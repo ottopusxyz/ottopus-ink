@@ -13,6 +13,7 @@ import { Composer, toolsChip } from './composer'
 import { InkNoteCard } from './ink-note'
 import { Markdown } from './markdown'
 import { PlanCard } from './plan-card'
+import { PlanTracker } from './plan-tracker'
 import { ToolCall } from './tool-call'
 
 export interface ChatViewProps {
@@ -57,6 +58,11 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onTool
   const turns = useMemo(() => chatTurns(chat.items), [chat.items])
   const lastTurn = turns.at(-1)
   const kept = trimmedPlan(chat)
+  // The chat's other plans, newest first, for the tracker's fold.
+  const earlier = useMemo(
+    () => chat.items.flatMap((item) => (item.kind === 'plan' && item.plan.id !== chat.plan?.id ? [item.plan] : [])).reverse(),
+    [chat.items, chat.plan?.id],
+  )
   const thinking = working ? <AgentThinking className="ink-thinking" variant="infinity" label={working} shimmer={false} /> : null
 
   // Opening a chat starts at its end, ready for a reply.
@@ -90,6 +96,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onTool
         </Tooltip>
         <ChatMenu canEnd={chat.phase !== 'ended' && Boolean(chat.sessionId)} onEnd={onEnd} />
       </div>
+      {chat.plan ? <PlanTracker plan={chat.plan} earlier={earlier} /> : null}
 
       <div
         ref={scroller}

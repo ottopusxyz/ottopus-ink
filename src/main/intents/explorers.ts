@@ -37,3 +37,39 @@ export function txPage(chain: string, tx: string): { name: string; url: string }
   if (!page || !/^[A-Za-z0-9_-]{8,128}$/.test(tx)) return null
   return { name: page.name, url: page.url(tx) }
 }
+
+/** 1Click's short names for chains, as Ink names them in the table above. The Intents balance lives on NEAR. */
+const ONE_CLICK_CHAINS: Record<string, string> = {
+  near: 'near',
+  intents: 'near',
+  eth: 'ethereum',
+  base: 'base',
+  arb: 'arbitrum',
+  op: 'optimism',
+  pol: 'polygon',
+  bsc: 'bsc',
+  avax: 'avalanche',
+  gnosis: 'gnosis',
+  bera: 'berachain',
+  scroll: 'scroll',
+  sol: 'solana',
+  btc: 'bitcoin',
+  tron: 'tron',
+  sui: 'sui',
+  aptos: 'aptos',
+  ton: 'ton',
+  xrp: 'xrp',
+  stellar: 'stellar',
+  doge: 'dogecoin',
+  ltc: 'litecoin',
+  bch: 'bitcoin-cash',
+  zec: 'zcash',
+  cardano: 'cardano',
+  starknet: 'starknet',
+}
+
+/** A transaction's page on the explorer of a chain as 1Click names it (`bsc`, `sol`), or null. */
+export const oneClickTxPage = (chain: string, tx: string): { name: string; url: string } | null => {
+  const ink = ONE_CLICK_CHAINS[chain]
+  return ink ? txPage(ink, tx) : null
+}

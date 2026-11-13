@@ -2,11 +2,12 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js'
 import { describe, expect, it, vi } from 'vitest'
 import type { Account } from '../../shared/accounts'
 import { encodeSignedTransaction, encodeTransfer, nearPublicKey, nearTransferStep, transactionId } from '../../shared/near/transaction'
-import type { PlanIntent, PlanStatus, PlanStep } from '../../shared/plan'
+import { nearCallStep, type NearCall } from '../../shared/near/calls'
+import type { PlanIntent, PlanStatus, PlanStep, PlanSwap } from '../../shared/plan'
 import type { LiveInputs, SignedStep, VaultResult } from '../../shared/vault'
 import { createNearRpc, NearRpcError, type NearRpc } from '../near/rpc'
-import { createPlanStore } from '../plans/store'
-import { createPlanSender, TRANSACTION_VALIDITY_BLOCKS } from './send-plan'
+import { createPlanStore, PLAN_TTL_MS } from '../plans/store'
+import { createPlanSender, SWAP_SEND_MARGIN_MS, TRANSACTION_VALIDITY_BLOCKS } from './send-plan'
 
 const FROM = 'a'.repeat(64)
 const KEY = nearPublicKey(hexToBytes(FROM))
@@ -307,5 +308,86 @@ describe('sending an approved plan', () => {
     expect((await first).ok).toBe(true)
     // Once the first is done, the next may go.
     expect((await sender.send(second.plan.id, OWNER, MAX_FEE)).ok).toBe(true)
+  })
+})
+
+describe('sending a swap’s deposit', () => {
+  const DEPOSIT = 'd'.repeat(64)
+  const EVM = '0x1111111111111111111111111111111111111111'
+  const START = Date.parse('2026-11-13T12:00:00Z')
+  const DEADLINE = START + PLAN_TTL_MS + 30 * 60_000
+  const CALLS: NearCall[] = [
+    { method: 'storage_deposit', accountId: FROM },
+    { method: 'storage_deposit', accountId: DEPOSIT },
+    { method: 'near_deposit', amount: 10n ** 24n },
+    { method: 'ft_transfer', receiverId: DEPOSIT, amount: 10n ** 24n },
+  ]
+  const TERMS: PlanSwap = {
+    via: '1click',
+    depositAddress: DEPOSIT,
+    deadline: new Date(DEADLINE).toISOString(),
+    originAsset: 'nep141:wrap.near',
+    destinationAsset: 'nep141:base-usdc.omft.near',
+    amountIn: (10n ** 24n).toString(),
+    amountOut: '3480000',
+    minAmountOut: '3445200',
+    sendSymbol: 'NEAR',
+    getSymbol: 'USDC',
+    getDecimals: '6',
+    getChain: 'base',
+    recipient: EVM,
+    refundTo: FROM,
+    feeBps: '20',
+    seconds: '22',
+  }
+
+  async function swapSetup({ now = START, balance, ...change }: { now?: number; balance?: bigint } & Partial<Record<keyof NearRpc, unknown>> = {}) {
+    const rpc = fakeRpc({ ...(balance === undefined ? {} : { viewAccount: vi.fn(async () => ({ amount: balance, locked: 0n, storageUsage: 100n })) }), ...change })
+    const store = createPlanStore({
+      now: () => new Date(START),
+      buildSteps: async () => ({ ok: true, steps: [nearCallStep({ signerId: FROM, publicKey: KEY, receiverId: 'wrap.near', calls: CALLS })], swap: TERMS, payout: { address: EVM, chain: 'evm' } }),
+    })
+    const own: Account[] = [...OWN, { chain: 'evm', path: "m/44'/60'/0'/0/0", address: EVM }]
+    const made = await store.create({ intent: { outcome: 'swap', asset: 'NEAR', amount: '1', chain: 'near', to: null, toAsset: 'USDC', toChain: 'base' }, createdBy: 'agent', owner: OWNER, own, typed: [] })
+    if (!made.ok) throw new Error(made.reason)
+    store.move(made.plan.id, OWNER, 'awaiting_review')
+    store.move(made.plan.id, OWNER, 'approved')
+    const vault = fakeVault()
+    const confirmed: unknown[] = []
+    const sender = createPlanSender({ store, vault, rpc, now: () => now, onConfirmed: (plan, transactionId) => confirmed.push([plan.id, transactionId]) })
+    return { store, id: made.plan.id, rpc, vault, sender, confirmed }
+  }
+
+  it('signs the one wrap.near transaction with the key’s next nonce, sends it, and passes it on to be followed', async () => {
+    const { id, rpc, vault, sender, confirmed } = await swapSetup()
+    expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: true, plan: { status: 'confirmed' } })
+    expect(vault.sign).toHaveBeenCalledWith(expect.objectContaining({ swap: TERMS }), expect.any(String), [{ nonce: (NONCE + 1n).toString(), blockHash: bytesToHex(BLOCK) }])
+    expect(rpc.viewAccessKey).toHaveBeenCalledWith(FROM, KEY)
+    expect(confirmed).toEqual([[id, SIGNED.transactionId]])
+  })
+
+  it('leaves it approved when the account can’t cover the deposits and the most the fees could take', async () => {
+    const { id, vault, sender, confirmed } = await swapSetup({ balance: 10n ** 24n })
+    expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: false, reason: 'insufficient-funds', status: 'approved' })
+    expect(vault.sign).not.toHaveBeenCalled()
+    expect(confirmed).toEqual([])
+  })
+
+  it('signs nothing when the fees could now cost more than the person was shown', async () => {
+    const { id, vault, sender } = await swapSetup()
+    expect(await sender.send(id, OWNER, 1n)).toMatchObject({ ok: false, reason: 'fee-rose', status: 'approved' })
+    expect(vault.sign).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing to a deposit address about to die', async () => {
+    const { id, vault, sender } = await swapSetup({ now: DEADLINE - SWAP_SEND_MARGIN_MS })
+    expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: false, reason: 'cannot-move', status: 'approved' })
+    expect(vault.sign).not.toHaveBeenCalled()
+  })
+
+  it('passes on nothing to follow when NEAR ran the deposit and it failed', async () => {
+    const { id, sender, confirmed } = await swapSetup({ sendTransaction: vi.fn(async () => ({ transactionId: SIGNED.transactionId, ok: false, failure: 'ActionError' })) })
+    expect(await sender.send(id, OWNER, MAX_FEE)).toMatchObject({ ok: true, plan: { status: 'failed' } })
+    expect(confirmed).toEqual([])
   })
 })

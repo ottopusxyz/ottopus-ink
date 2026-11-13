@@ -182,8 +182,10 @@ export function pickRoute(ask: RouteAsk, tokens: readonly OneClickToken[], held:
   const toLookup = toIntents ? 'near' : toChain
   let to = tokenOn(ask.toAsset, toLookup, tokens)
   if (!to && !toChainAsked) {
-    // No chain named and none on the one it's on: the token's own chain, if it lives on only one ("NEAR to BTC").
-    const homes = new Set(tokens.filter((token) => token.symbol.toLowerCase() === ask.toAsset.trim().toLowerCase()).map((token) => token.blockchain))
+    // No chain named and none on the one it's on: the chain whose own coin it is ("NEAR to SOL"), or the one chain it lives on.
+    const named = tokens.filter((token) => token.symbol.toLowerCase() === ask.toAsset.trim().toLowerCase())
+    const natives = named.filter((token) => token.contract === null)
+    const homes = new Set((natives.length > 0 ? natives : named).map((token) => token.blockchain))
     const [home] = homes
     if (homes.size === 1 && home) to = tokenOn(ask.toAsset, home, tokens)
   }

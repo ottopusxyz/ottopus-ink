@@ -67,6 +67,14 @@ describe('picking a route', () => {
     expect(pickRoute({ fromAsset: 'NEAR', toAsset: 'SOL', amount: '5' }, TOKENS, held())).toMatchObject({ kind: 'intents', to: SOL })
   })
 
+  it('takes the chain whose own coin it is when a symbol is also bridged elsewhere', () => {
+    const bridged = [...TOKENS, token('nep141:sol-on-aptos', 'SOL', 'aptos', 8, '0xsol'), token('nep141:xrp-on-starknet', 'XRP', 'starknet', 6, '0xxrp')]
+    expect(pickRoute({ fromAsset: 'NEAR', toAsset: 'SOL', amount: '5' }, bridged, held())).toMatchObject({ kind: 'intents', to: SOL })
+    expect(pickRoute({ fromAsset: 'NEAR', toAsset: 'XRP', amount: '5' }, bridged, held())).toMatchObject({ kind: 'intents', to: XRP })
+    const twoBridged = [...TOKENS, token('nep141:wif-a', 'WIF', 'sol', 6, 'a'), token('nep141:wif-b', 'WIF', 'base', 6, 'b')]
+    expect(pickRoute({ fromAsset: 'NEAR', toAsset: 'WIF', amount: '5' }, twoBridged, held())).toEqual({ kind: 'none', reason: 'unknown-asset', name: 'WIF', chain: null })
+  })
+
   it('keeps both the wallet and the Intents balance when both hold the token, the one that covers it first', () => {
     const both = held({ 'wallet:nep141:wrap.near': NEAR('2'), 'intents:nep141:wrap.near': NEAR('50') })
     expect(legs(pickRoute({ fromAsset: 'NEAR', toAsset: 'SOL', amount: '5' }, TOKENS, both))).toEqual(['intents:near:wNEAR', 'wallet:near:wNEAR'])

@@ -51,6 +51,9 @@ export const IPC = {
   removeZerionKey: 'wallet:remove-zerion-key',
   recentSwaps: 'wallet:recent-swaps',
   savedChats: 'chat:saved',
+  intentsDepositChains: 'wallet:intents-deposit-chains',
+  intentsDepositAddress: 'wallet:intents-deposit-address',
+  copyIntentsDeposit: 'wallet:copy-intents-deposit',
   deleteSavedChat: 'chat:delete-saved',
   clearChatHistory: 'chat:clear-history',
   /** Main to renderer: a followed swap moved on. It carries nothing: the page asks for them, which needs Ink unlocked. */
@@ -265,6 +268,12 @@ export interface InkBridge {
    * keeps it; `continue` goes on with a kept chat, whose recap Ink sends the new session.
    */
   startChat(agent: AgentId, options?: { historyId?: string; continue?: boolean }): Promise<string>
+  /** The chains NEAR Intents takes deposits on, with each token's minimum. Null when the bridge can't be read. */
+  intentsDepositChains(): Promise<IntentsDepositChain[] | null>
+  /** The wallet's NEAR Intents deposit address on a chain, only while Ink is unlocked. */
+  intentsDepositAddress(chain: string): Promise<IntentsDepositResult>
+  /** Copies that address or its memo, as main read it from the bridge, never text from the page. */
+  copyIntentsDeposit(chain: string, part: 'address' | 'memo'): Promise<{ ok: boolean }>
   /** Chats Ink kept from before, newest first. Empty while Ink is locked. */
   savedChats(): Promise<SavedChat[]>
   deleteSavedChat(id: string): Promise<void>

@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatSwap, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatSwap, type IntentsDepositChain, type IntentsDepositResult, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { depositAddress, depositChains, isDepositChain } from './intents/deposits'
 import { formatUnits } from '../shared/token-text'
 import { CHAT_ID, type SavedChat } from '../shared/history'
 import { callsGas, callsOfStep } from '../shared/near/calls'
@@ -202,6 +203,39 @@ let chatHistory: ChatHistory | null = null
 function getChatHistory(): ChatHistory {
   chatHistory ??= createChatHistory({ file: join(app.getPath('userData'), 'chats.bin'), box: osSecretBox })
   return chatHistory
+}
+
+/** The bridge's chains and tokens change rarely, so Receive reuses them for a while. */
+const DEPOSIT_CHAINS_MS = 10 * 60_000
+let depositChainList: { at: number; list: Promise<IntentsDepositChain[] | null> } | null = null
+
+function listedDepositChains(): Promise<IntentsDepositChain[] | null> {
+  if (!depositChainList || Date.now() - depositChainList.at > DEPOSIT_CHAINS_MS) {
+    const list = depositChains()
+    depositChainList = { at: Date.now(), list }
+    // A failed read isn't kept, so the next look asks again.
+    void list.then((read) => {
+      if (!read && depositChainList?.list === list) depositChainList = null
+    })
+  }
+  return depositChainList.list
+}
+
+/** Deposit addresses are fixed for an account, so each is asked for once a run. */
+const depositAddresses = new Map<string, { address: string; memo: string | null }>()
+
+/** The wallet's own NEAR Intents deposit address on a chain, only while unlocked: it ties the chain to the wallet. */
+async function ownDepositAddress(chain: unknown): Promise<IntentsDepositResult> {
+  if (typeof chain !== 'string' || !isDepositChain(chain)) return { ok: false, reason: 'unavailable' }
+  if (vault?.isUnlocked() !== true) return { ok: false, reason: 'locked' }
+  const own = await ownAccounts().catch(() => null)
+  const near = own?.ok ? own.accounts.find((account) => account.chain === 'near')?.address : undefined
+  if (!near) return { ok: false, reason: own?.ok === false && own.reason === 'locked' ? 'locked' : 'unavailable' }
+  const key = `${near} ${chain}`
+  const kept = depositAddresses.get(key) ?? (await depositAddress(near, chain))
+  if (!kept) return { ok: false, reason: 'unavailable' }
+  depositAddresses.set(key, kept)
+  return { ok: true, ...kept, account: near }
 }
 
 /** Which kept chat each running session belongs to, and with which agent. A continued chat runs in a new session. */
@@ -537,6 +571,28 @@ function registerIpc(): void {
       sendFromInk(chatId, recap)
     }
     return chatId
+  })
+
+  ipcMain.handle(IPC.intentsDepositChains, (event) => {
+    assertAppFrame(event)
+    return listedDepositChains()
+  })
+
+  ipcMain.handle(IPC.intentsDepositAddress, (event, chain: unknown) => {
+    assertAppFrame(event)
+    return ownDepositAddress(chain)
+  })
+
+  ipcMain.handle(IPC.copyIntentsDeposit, async (event, chain: unknown, part: unknown) => {
+    assertAppFrame(event)
+    // Only for the window in front, and only what main read from the bridge.
+    const focused = () => BrowserWindow.fromWebContents(event.sender)?.isFocused() === true
+    if (!focused() || (part !== 'address' && part !== 'memo')) return { ok: false }
+    const found = await ownDepositAddress(chain)
+    const text = found.ok ? (part === 'memo' ? found.memo : found.address) : null
+    if (!text || !focused()) return { ok: false }
+    clipboard.writeText(text)
+    return { ok: true }
   })
 
   ipcMain.handle(IPC.savedChats, (event) => {

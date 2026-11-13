@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn'
 import { ACCOUNT_CHAIN_MARK, type ChainId } from '@/lib/logos'
 import { assetKind, CHAIN_ASSETS, CHAIN_SUB, EVM_NETWORKS, receiveAsset, receiveNetwork } from '@/lib/receive'
 import { addressParts, CHAIN_INFO, vaultMessage } from '@/lib/wallet'
+import { IntentsDeposit } from './intents-deposit'
 import { QrCode } from './qr-code'
 
 type Loaded = { kind: 'loading' } | { kind: 'ready'; accounts: Account[] } | { kind: 'failed'; message: string }
@@ -22,6 +23,8 @@ export function ReceiveView({ startChain = null }: { /** The chain to open on, a
   const [chain, setChain] = useState<AccountChain | null>(startChain)
   const [asset, setAsset] = useState<string | null>(null)
   const [network, setNetwork] = useState<ChainId>('ethereum')
+  /** Your own address on a chain, or a deposit into NEAR Intents from any chain the bridge serves. */
+  const [mode, setMode] = useState<'wallet' | 'intents'>('wallet')
 
   useEffect(() => {
     let current = true
@@ -42,6 +45,48 @@ export function ReceiveView({ startChain = null }: { /** The chain to open on, a
 
   const accounts = loaded.kind === 'ready' ? loaded.accounts : []
   const account = accounts.find((item) => item.chain === chain) ?? accounts[0]
+  const chainStep = account ? (
+    <section aria-labelledby="receive-chain" className="flex flex-col gap-2.5">
+      <h2 id="receive-chain" className="ink-step">
+        <span className="ink-step__n">1</span>Which chain?
+      </h2>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-1.5">
+        {accounts.map((item) => (
+          <button
+            key={item.chain}
+            type="button"
+            className={cn('ink-choice', mode === 'wallet' && item.chain === account.chain && 'ink-choice--on')}
+            aria-pressed={mode === 'wallet' && item.chain === account.chain}
+            onClick={() => {
+              setChain(item.chain)
+              setMode('wallet')
+            }}
+          >
+            <ChainLogo chain={ACCOUNT_CHAIN_MARK[item.chain]} size="md" />
+            <span className="flex min-w-0 flex-col text-left">
+              <span className="text-[13px] font-bold">{item.chain === 'evm' ? 'EVM' : CHAIN_INFO[item.chain].name}</span>
+              <span className="text-[11.5px] text-[var(--ot-text-3)]">{CHAIN_SUB[item.chain]}</span>
+            </span>
+          </button>
+        ))}
+        <button
+          type="button"
+          className={cn('ink-choice', mode === 'intents' && 'ink-choice--on')}
+          aria-pressed={mode === 'intents'}
+          onClick={() => setMode('intents')}
+        >
+          <span className="ink-logo-stack" aria-hidden>
+            <IntentsLogo chain="ton" size="sm" />
+            <IntentsLogo chain="xrp" size="sm" />
+          </span>
+          <span className="flex min-w-0 flex-col text-left">
+            <span className="text-[13px] font-bold">Any chain</span>
+            <span className="text-[11.5px] text-[var(--ot-text-3)]">into NEAR Intents</span>
+          </span>
+        </button>
+      </div>
+    </section>
+  ) : null
 
   return (
     <main className="ink-panel" id="main">
@@ -59,41 +104,15 @@ export function ReceiveView({ startChain = null }: { /** The chain to open on, a
           <Callout severity="block" title="No addresses" compact className="max-w-[720px]">
             {loaded.message}
           </Callout>
+        ) : account && mode === 'intents' ? (
+          <div className="flex flex-col gap-5">
+            <div className="max-w-[720px]">{chainStep}</div>
+            <IntentsDeposit />
+          </div>
         ) : account ? (
           <div className="flex flex-wrap items-start gap-5">
             <div className="flex min-w-0 flex-[1_1_400px] flex-col gap-5">
-              <section aria-labelledby="receive-chain" className="flex flex-col gap-2.5">
-                <h2 id="receive-chain" className="ink-step">
-                  <span className="ink-step__n">1</span>Which chain?
-                </h2>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-1.5">
-                  {accounts.map((item) => (
-                    <button
-                      key={item.chain}
-                      type="button"
-                      className={cn('ink-choice', item.chain === account.chain && 'ink-choice--on')}
-                      aria-pressed={item.chain === account.chain}
-                      onClick={() => setChain(item.chain)}
-                    >
-                      <ChainLogo chain={ACCOUNT_CHAIN_MARK[item.chain]} size="md" />
-                      <span className="flex min-w-0 flex-col text-left">
-                        <span className="text-[13px] font-bold">{item.chain === 'evm' ? 'EVM' : CHAIN_INFO[item.chain].name}</span>
-                        <span className="text-[11.5px] text-[var(--ot-text-3)]">{CHAIN_SUB[item.chain]}</span>
-                      </span>
-                    </button>
-                  ))}
-                  <div className="ink-choice ink-choice--later" aria-label="More chains through NEAR Intents, later">
-                    <span className="ink-logo-stack" aria-hidden>
-                      <IntentsLogo chain="ton" size="sm" />
-                      <IntentsLogo chain="xrp" size="sm" />
-                    </span>
-                    <span className="flex min-w-0 flex-col text-left">
-                      <span className="text-[13px] font-bold">More chains</span>
-                      <span className="text-[11.5px]">through NEAR Intents, later</span>
-                    </span>
-                  </div>
-                </div>
-              </section>
+              {chainStep}
 
               {account.chain === 'evm' ? (
                 <section aria-labelledby="receive-network" className="flex flex-col gap-2.5">

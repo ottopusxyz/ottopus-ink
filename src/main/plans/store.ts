@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { Account } from '../../shared/accounts'
-import { PLAN_STATUSES, type PlanCore, type PlanCreator, type PlanFailure, type PlanIntent, type PlanStatus, type PlanStep } from '../../shared/plan'
+import type { Account, AccountChain } from '../../shared/accounts'
+import { PLAN_STATUSES, type PlanCore, type PlanCreator, type PlanFailure, type PlanIntent, type PlanStatus, type PlanStep, type PlanSwap } from '../../shared/plan'
 import { PlanIntegrityError } from '../../shared/canonical'
 import { planHash } from '../../shared/plan-hash'
 import { allowedRecipient } from './recipients'
@@ -61,7 +61,19 @@ interface Entry {
  * unsigned fields, or nothing when no module handles the intent yet, which
  * leaves the plan a draft. A failure means the plan can't go through.
  */
-export type BuildSteps = (intent: PlanIntent, own: readonly Account[]) => Promise<{ ok: true; steps: PlanStep[] } | { ok: false; reason: PlanFailure }>
+export type BuildSteps = (intent: PlanIntent, own: readonly Account[]) => Promise<{ ok: true; steps: PlanStep[] } & BuiltSwap | { ok: false; reason: PlanFailure }>
+
+/**
+ * What a swap's builder adds: the terms 1Click fixed, and who it pays, which must be
+ * the person's own address on the chain it pays out on. The store checks that again.
+ */
+export interface BuiltSwap {
+  swap?: PlanSwap
+  payout?: { address: string; chain: AccountChain }
+}
+
+/** How long a swap's deposit address must outlive the plan, so a deposit sent at the last moment still lands in time. */
+export const SWAP_DEADLINE_MARGIN_MS = 10 * 60_000
 
 const NO_STEPS: BuildSteps = async () => ({ ok: true, steps: [] })
 
@@ -167,6 +179,14 @@ export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(),
       if (!makeRoom()) return { ok: false, reason: 'too-many' }
 
       const at = now()
+      // A swap pays the person's own address and nothing else, outliving the plan.
+      let payee = recipient
+      if (built.swap || built.payout) {
+        const paid = built.payout ? allowedRecipient(built.payout.address, built.payout.chain, own, []) : null
+        if (intent.outcome !== 'swap' || intent.to || !built.swap || !paid || paid.why !== 'own' || built.swap.recipient !== paid.address) return { ok: false, reason: 'recipient-not-allowed' }
+        if (!(Date.parse(built.swap.deadline) >= at.getTime() + PLAN_TTL_MS + SWAP_DEADLINE_MARGIN_MS)) return { ok: false, reason: 'chain-unavailable' }
+        payee = paid
+      }
 
       const core: PlanCore = deepFreeze({
         hashVersion: 1,
@@ -175,10 +195,11 @@ export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(),
         createdAt: at.toISOString(),
         expiresAt: new Date(at.getTime() + PLAN_TTL_MS).toISOString(),
         intent: { ...intent },
-        recipient,
+        recipient: payee,
         summary: summaryOf(intent),
         // Copied into plain objects, so only the strings the hash covers can be in them.
         steps: built.steps.map(({ chain, action, fields }) => ({ chain, action, fields: { ...fields } })),
+        ...(built.swap ? { swap: { ...built.swap } } : {}),
       })
       const entry: Entry = { core, hash: planHash(core), owner, status: 'draft', deadline: monotonic() + PLAN_TTL_MS }
       plans.set(core.id, entry)

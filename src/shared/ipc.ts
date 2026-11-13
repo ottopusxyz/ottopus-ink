@@ -129,6 +129,20 @@ export interface InkNote {
   links: { label: string; url: string }[]
 }
 
+/** A chain the NEAR Intents bridge takes deposits on, with each token and the least of it the bridge credits. */
+export interface IntentsDepositChain {
+  /** The bridge's name for it: `eth:8453`. */
+  key: string
+  /** As people know it: "Base". */
+  name: string
+  /** Ink's mark for it, when it has one: `base`. */
+  mark: string | null
+  tokens: { symbol: string; min: string }[]
+}
+
+/** The account's deposit address on one chain, from the bridge, with the memo a chain needs. */
+export type IntentsDepositResult = { ok: true; address: string; memo: string | null; account: string } | { ok: false; reason: 'locked' | 'unavailable' }
+
 /** A swap Ink followed lately, for Home: what went in, what it's for, and where it stands. */
 export interface RecentSwap {
   planId: string

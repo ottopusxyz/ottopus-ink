@@ -10,7 +10,6 @@ import { depositEnding } from './intents/deposit-note'
 import { createDepositWatcher, type DepositJournal } from './intents/deposit-watch'
 import { depositAddress, depositChains, recentDeposits } from './intents/deposits'
 import { pickReceive, receiveChainOf, receiveChains, searchTokens, type ReceiveAsk } from './intents/receive'
-import { formatUnits } from '../shared/token-text'
 import { CHAT_ID, type SavedChat } from '../shared/history'
 import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
@@ -40,10 +39,11 @@ import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfo
 import { createReviewBroker } from './review/broker'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
 import { buildOneClickSwap } from './routes/swap-plan'
+import { swapSent } from './routes/swap-terms'
 import { createSwapJournal, type SwapJournal } from './routes/swap-journal'
 import { createSwapTracker } from './routes/swap-tracker'
 import { chainName } from './routes/route'
-import { createQuoter } from './routes/quoter'
+import { createQuoter, holdingsOf } from './routes/quoter'
 import { describeForReview } from './review/describe'
 import { createReviewWindow } from './review/window'
 import { isAppUrl, isSafeExternalUrl, secureWebPreferences } from './security'
@@ -152,6 +152,11 @@ const plans = createPlanStore({
     if (intent.outcome === 'swap') {
       return buildOneClickSwap(intent, own, {
         tokens: listedTokens,
+        // Read afresh, so a deposit that just landed can pay; only while the vault stays unlocked.
+        held: async () => {
+          const read = await ownPortfolio({ fresh: true })
+          return read.ok ? holdingsOf(read) : null
+        },
         quote: (request) => oneClickQuote(request),
         fits: (from, deposit, gas, calls) => nearCallsFit(nearRpc, from, deposit, gas, calls),
       })
@@ -355,7 +360,7 @@ function recentSwaps(): RecentSwap[] {
   if (vault?.isUnlocked() !== true) return []
   return swapTracker.recent().map(({ planId, swap, progress, startedAt }) => ({
     planId,
-    send: /^[0-9]+$/.test(swap.amountIn) ? `${formatUnits(BigInt(swap.amountIn), 24)} ${swap.sendSymbol}` : swap.sendSymbol,
+    send: swapSent(swap) ?? swap.sendSymbol,
     get: swap.getSymbol,
     where: swap.getChain === 'intents' ? 'in your NEAR Intents balance' : `on ${chainName(swap.getChain)}`,
     progress,

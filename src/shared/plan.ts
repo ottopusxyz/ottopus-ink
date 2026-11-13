@@ -97,6 +97,13 @@ export interface PlanSwap {
   feeBps: string
   /** How long 1Click expects the swap to take once the deposit lands. */
   seconds: string
+  /**
+   * `intents` when the Intents balance pays, moving the token inside intents.near to the
+   * deposit address; a refund goes back there. Absent when the wallet pays in NEAR.
+   */
+  payFrom?: 'intents'
+  /** The decimals of what's sent, for the Intents balance's tokens. Absent for NEAR's 24. */
+  sendDecimals?: string
 }
 
 /**

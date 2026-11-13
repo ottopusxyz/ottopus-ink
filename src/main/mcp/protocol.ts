@@ -53,7 +53,8 @@ const TOOLS = [
   },
   {
     name: 'create_plan',
-    description: 'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself.',
+    description:
+      'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself. A swap with chain intents pays from the NEAR Intents balance; to take a token out of that balance to a chain, swap it to the same token with to_chain set, such as USDC from intents to USDC on base.',
     inputSchema: objectSchema(
       {
         outcome: { type: 'string', enum: ['send', 'swap', 'stake'] },

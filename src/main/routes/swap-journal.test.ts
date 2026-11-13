@@ -67,6 +67,15 @@ describe('the swap journal', () => {
     expect(createSwapJournal({ file, box, now: () => NOW }).list().map((kept) => kept.planId)).toEqual(['ok'])
   })
 
+  it('keeps a swap paid from the Intents balance, and drops one claiming to pay from anywhere else', () => {
+    const file = fileIn()
+    const journal = createSwapJournal({ file, box, now: () => NOW })
+    journal.put(entry('p1', { swap: { ...SWAP, payFrom: 'intents', sendSymbol: 'USDC', sendDecimals: '6' } }))
+    journal.put(entry('p2', { swap: { ...SWAP, payFrom: 'elsewhere' } as unknown as PlanSwap }))
+    journal.put(entry('p3', { swap: { ...SWAP, sendDecimals: 'lots' } }))
+    expect(createSwapJournal({ file, box, now: () => NOW }).list().map((kept) => [kept.planId, kept.swap.payFrom])).toEqual([['p1', 'intents']])
+  })
+
   it('keeps nothing on disk without a keyring', () => {
     const file = fileIn()
     const journal = createSwapJournal({ file, box: noKeyring, now: () => NOW })

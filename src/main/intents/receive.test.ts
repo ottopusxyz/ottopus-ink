@@ -55,11 +55,15 @@ describe('the chains to receive on', () => {
 
 describe('searching a chain’s tokens', () => {
   it('finds NEAR Intents’ tokens first, with their minimums, then Zerion’s, once each', () => {
-    const found = searchTokens('base', 'b', BRIDGE, [{ symbol: 'BRETT', name: 'Brett' }, { symbol: 'BALD', name: 'Bald' }])
-    expect(found.map((token) => [token.symbol, token.intents, token.min])).toEqual([
-      ['BRETT', true, '1'],
-      ['cbBTC', true, '0.00001'],
-      ['BALD', false, null],
+    const found = searchTokens('base', 'b', BRIDGE, [
+      { symbol: 'BRETT', name: 'Brett', icon: 'data:image/png;base64,QlJFVFQ=' },
+      { symbol: 'BALD', name: 'Bald', icon: null },
+    ])
+    expect(found.map((token) => [token.symbol, token.intents, token.min, token.icon])).toEqual([
+      // NEAR Intents takes it, and Zerion's icon comes along.
+      ['BRETT', true, '1', 'data:image/png;base64,QlJFVFQ='],
+      ['cbBTC', true, '0.00001', null],
+      ['BALD', false, null, null],
     ])
     expect(searchTokens('base', 'usdc', BRIDGE, [])[0]).toMatchObject({ symbol: 'USDC', intents: true })
     expect(searchTokens('moon', 'usdc', BRIDGE, [])).toEqual([])

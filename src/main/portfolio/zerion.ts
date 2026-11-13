@@ -1,4 +1,5 @@
 import { cleanSymbol } from '../../shared/token-text'
+import { iconUrlOf } from './token-icons'
 
 /** Zerion's API. Every call carries the person's own key; Ink ships none. */
 export const ZERION_URL = 'https://api.zerion.io/v1'
@@ -199,6 +200,8 @@ export async function zerionHoldings(address: string, options: ZerionOptions): P
 export interface ZerionToken {
   symbol: string
   name: string | null
+  /** Its icon on Zerion's image host, for main to fetch, or null. */
+  icon: string | null
 }
 
 /** A token's name fit to show: plain words, short. Anyone can name a token anything. */
@@ -226,6 +229,7 @@ export async function zerionTokenSearch(query: string, chain: string, options: Z
     const verified = (attributes?.flags as { verified?: unknown } | undefined)?.verified === true
     if (!symbol || !verified) return []
     const name = typeof attributes?.name === 'string' && NAME.test(attributes.name) ? attributes.name : null
-    return [{ symbol, name }]
+    const icon = iconUrlOf((attributes?.icon as { url?: unknown } | null | undefined)?.url)
+    return [{ symbol, name, icon }]
   })
 }

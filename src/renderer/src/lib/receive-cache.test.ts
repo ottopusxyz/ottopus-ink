@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { ReceiveChain, ReceiveToken } from '../../../shared/ipc'
 import { CHAINS_FRESH_MS, SEARCHES_KEPT, SEARCH_FRESH_MS, receiveCache } from './receive-cache'
 
-const BASE: ReceiveChain = { id: 'base', name: 'Base', mark: 'base', own: 'evm', intents: true, tokens: [{ symbol: 'USDC', name: null, min: '1', intents: true }] }
-const USDC: ReceiveToken = { symbol: 'USDC', name: null, min: '1', intents: true }
+const BASE: ReceiveChain = { id: 'base', name: 'Base', mark: 'base', own: 'evm', intents: true, tokens: [{ symbol: 'USDC', name: null, min: '1', intents: true, icon: null }] }
+const USDC: ReceiveToken = { symbol: 'USDC', name: null, min: '1', intents: true, icon: null }
 
 function setup(lists: ReceiveChain[][] = [[BASE]]) {
   let clock = 0

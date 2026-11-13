@@ -69,8 +69,8 @@ export function receiveChains(bridge: readonly IntentsDepositChain[] | null): Re
           coin,
         )
           .slice(0, TOP)
-          .map((symbol) => ({ symbol, name: null, min: intents.tokens.find((token) => token.symbol === symbol)?.min ?? null, intents: true }))
-      : [{ symbol: coin, name: null, min: null, intents: false }]
+          .map((symbol) => ({ symbol, name: null, min: intents.tokens.find((token) => token.symbol === symbol)?.min ?? null, intents: true, icon: null }))
+      : [{ symbol: coin, name: null, min: null, intents: false, icon: null }]
     return [{ id, name, mark, own, intents: Boolean(intents), tokens }]
   })
 }
@@ -79,21 +79,27 @@ export function receiveChains(bridge: readonly IntentsDepositChain[] | null): Re
 export interface FoundToken {
   symbol: string
   name: string | null
+  /** Its icon, as main will hand it to the page, or null. */
+  icon: string | null
 }
 
 /**
  * A chain's tokens matching a search: those NEAR Intents takes there first, with their
- * minimums, then any Zerion knows on the chain that it doesn't. One entry per symbol.
+ * minimums, then any Zerion knows on the chain that it doesn't. One entry per symbol,
+ * with Zerion's icon for it where Zerion found it.
  */
 export function searchTokens(chainId: string, query: string, bridge: readonly IntentsDepositChain[] | null, zerion: readonly FoundToken[]): ReceiveToken[] {
   const chain = receiveChainOf(chainId)
   if (!chain) return []
   const wanted = query.trim().toLowerCase()
   const intents = bridge?.find((each) => each.key === chain.bridge)?.tokens ?? []
-  const found: ReceiveToken[] = intents.filter((token) => token.symbol.toLowerCase().includes(wanted)).map((token) => ({ symbol: token.symbol, name: null, min: token.min, intents: true }))
-  if (chain.own && chain.coin.toLowerCase().includes(wanted) && !found.some((token) => token.symbol.toLowerCase() === chain.coin.toLowerCase())) found.push({ symbol: chain.coin, name: null, min: null, intents: false })
+  const zerionOf = (symbol: string) => zerion.find((token) => token.symbol.toLowerCase() === symbol.toLowerCase())
+  const found: ReceiveToken[] = intents
+    .filter((token) => token.symbol.toLowerCase().includes(wanted))
+    .map((token) => ({ symbol: token.symbol, name: zerionOf(token.symbol)?.name ?? null, min: token.min, intents: true, icon: zerionOf(token.symbol)?.icon ?? null }))
+  if (chain.own && chain.coin.toLowerCase().includes(wanted) && !found.some((token) => token.symbol.toLowerCase() === chain.coin.toLowerCase())) found.push({ symbol: chain.coin, name: null, min: null, intents: false, icon: zerionOf(chain.coin)?.icon ?? null })
   for (const token of zerion) {
-    if (!found.some((each) => each.symbol.toLowerCase() === token.symbol.toLowerCase())) found.push({ symbol: token.symbol, name: token.name, min: null, intents: false })
+    if (!found.some((each) => each.symbol.toLowerCase() === token.symbol.toLowerCase())) found.push({ symbol: token.symbol, name: token.name, min: null, intents: false, icon: token.icon })
   }
   const order = ranked(
     found.map((token) => token.symbol),

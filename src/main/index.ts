@@ -30,6 +30,7 @@ import { createPlanStore, type PlanView } from './plans/store'
 import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reader'
 import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
 import { installId, INK_SERVICE_URL } from './portfolio/service'
+import { tokenIcons } from './portfolio/token-icons'
 import { checkZerionKey, zerionOptions, zerionTokenSearch, type ZerionAccess } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
@@ -222,6 +223,8 @@ function listedDepositChains(): Promise<IntentsDepositChain[] | null> {
   return depositChainList.list
 }
 
+/** Token icons fetched for the page's searches, kept for the session. */
+const icons = tokenIcons()
 /** Deposit addresses are fixed for an account, so each is asked for once a run. */
 const depositAddresses = new Map<string, { address: string; memo: string | null }>()
 
@@ -601,7 +604,9 @@ function registerIpc(): void {
     const known = receiveChainOf(chain)
     const access = zerionAccess()
     // Zerion knows only some chains; it's asked only for those, and only for a few letters, never an address.
-    const zerion = known?.zerion && access ? await zerionTokenSearch(query.trim(), known.zerion, zerionOptions(access)) : []
+    const found = known?.zerion && access ? await zerionTokenSearch(query.trim(), known.zerion, zerionOptions(access)) : []
+    // The page can't load images from the web; main fetches each icon and hands it over as data.
+    const zerion = await Promise.all(found.map(async (token) => ({ ...token, icon: token.icon ? await icons.icon(token.icon) : null })))
     return searchTokens(chain, query, await listedDepositChains(), zerion)
   })
 

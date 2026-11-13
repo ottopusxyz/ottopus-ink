@@ -152,6 +152,8 @@ export interface ReceiveToken {
   /** The least NEAR Intents credits, or null where it doesn't take this token. */
   min: string | null
   intents: boolean
+  /** Its icon as a data: URL, which main fetched from Zerion, when the search found one. */
+  icon: string | null
 }
 
 /** A chain to receive on: the wallet's own, one NEAR Intents takes deposits on, or both. */

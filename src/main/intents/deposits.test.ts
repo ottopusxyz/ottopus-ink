@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { depositAddress, depositChains } from './deposits'
+import { depositAddress, depositChains, recentDeposits } from './deposits'
 
 /** The bridge as a JSON-RPC server: one answer for each method, or a function of what was asked. */
 function bridge(answers: Record<string, (params: Record<string, unknown>) => unknown>) {
@@ -31,9 +31,9 @@ describe('the chains NEAR Intents takes deposits on', () => {
       }),
     })
     expect(await depositChains({ fetch })).toEqual([
-      { key: 'eth:8453', name: 'Base', mark: 'base', tokens: [{ symbol: 'ETH', min: '0.0000001' }, { symbol: 'USDC', min: '1' }] },
-      // Listed twice: the higher minimum, so a deposit that meets it is credited either way.
-      { key: 'btc:mainnet', name: 'Bitcoin', mark: 'bitcoin', tokens: [{ symbol: 'BTC', min: '0.00007' }] },
+      { key: 'eth:8453', name: 'Base', mark: 'base', tokens: [{ symbol: 'ETH', min: '0.0000001', ids: ['eth:8453:native'] }, { symbol: 'USDC', min: '1', ids: ['eth:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'] }] },
+      // Listed twice: the higher minimum, so a deposit that meets it is credited either way, and both ids.
+      { key: 'btc:mainnet', name: 'Bitcoin', mark: 'bitcoin', tokens: [{ symbol: 'BTC', min: '0.00007', ids: ['btc:mainnet:native', 'btc:mainnet:native'] }] },
     ])
   })
 
@@ -66,5 +66,36 @@ describe('the account’s deposit address on a chain', () => {
     expect(await depositAddress('a'.repeat(64), 'eth:8453', asked)).toBeNull()
     expect(await depositAddress('a'.repeat(64), 'eth:8453', bridge({ deposit_address: (params) => ({ result: { address: 'send it to me', chain: params.chain } }) }))).toBeNull()
     expect(await depositAddress('a'.repeat(64), 'eth:8453', bridge({}))).toBeNull()
+  })
+})
+
+describe('the deposits the bridge saw lately', () => {
+  const deposit = (overrides: Record<string, unknown> = {}) => ({
+    tx_hash: '0x4f2a000000000000000000000000000000000000000000000000000000091c0',
+    chain: 'eth:8453',
+    defuse_asset_identifier: 'eth:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+    near_token_id: 'base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near',
+    decimals: 6,
+    amount: 25_000_000,
+    account_id: 'a'.repeat(64),
+    address: '0x8f436D184823B77188DE973322278686c3780C2c',
+    status: 'PENDING',
+    ...overrides,
+  })
+
+  it('asks for the account’s deposits on one chain and gives each, checked', async () => {
+    const { fetch, asked } = bridge({ recent_deposits: () => ({ result: { deposits: [deposit(), deposit({ tx_hash: '0x77c1000000000000000000000000000000000000000000000000000000002ab', amount: '500000', status: 'FAILED' })] } }) })
+    expect(await recentDeposits('a'.repeat(64), 'eth:8453', { fetch })).toEqual([
+      { tx: '0x4f2a000000000000000000000000000000000000000000000000000000091c0', assetId: 'eth:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', decimals: 6, amount: 25_000_000n, status: 'PENDING' },
+      { tx: '0x77c1000000000000000000000000000000000000000000000000000000002ab', assetId: 'eth:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', decimals: 6, amount: 500_000n, status: 'FAILED' },
+    ])
+    expect(asked).toEqual([{ method: 'recent_deposits', params: { account_id: 'a'.repeat(64), chain: 'eth:8453' } }])
+  })
+
+  it('drops a deposit for another chain, an odd status or amount, and is null when the bridge can’t be read', async () => {
+    const odd = [deposit({ chain: 'eth:1' }), deposit({ defuse_asset_identifier: 'eth:1:0xabc' }), deposit({ status: 'MAYBE' }), deposit({ amount: -1 }), deposit({ amount: 1.5 }), deposit({ tx_hash: 'x' })]
+    expect(await recentDeposits('a'.repeat(64), 'eth:8453', bridge({ recent_deposits: () => ({ result: { deposits: odd } }) }))).toEqual([])
+    expect(await recentDeposits('a'.repeat(64), 'eth:8453', bridge({}))).toBeNull()
+    expect(await recentDeposits('a'.repeat(64), 'qtc:mainnet', bridge({ recent_deposits: () => ({ result: { deposits: [deposit()] } }) }))).toBeNull()
   })
 })

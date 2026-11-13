@@ -68,7 +68,7 @@ export async function depositChains({ fetch = globalThis.fetch, url = BRIDGE_URL
   }
   const tokens = (body as { result?: { tokens?: unknown } } | null)?.result?.tokens
   if (!Array.isArray(tokens)) return null
-  const byChain = new Map<string, Map<string, { decimals: number; min: bigint }>>()
+  const byChain = new Map<string, Map<string, { decimals: number; min: bigint; ids: string[] }>>()
   for (const entry of tokens) {
     if (typeof entry !== 'object' || entry === null) continue
     const { defuse_asset_identifier: id, asset_name: name, decimals, min_deposit_amount: min } = entry as Record<string, unknown>
@@ -79,13 +79,15 @@ export async function depositChains({ fetch = globalThis.fetch, url = BRIDGE_URL
     if (!CHAIN_KEY.test(key)) continue
     const chain = byChain.get(key) ?? new Map()
     const known = chain.get(symbol)
-    if (!known || BigInt(min) > known.min) chain.set(symbol, { decimals, min: BigInt(min) })
+    const ids = [...(known?.ids ?? []), id]
+    if (!known || BigInt(min) > known.min) chain.set(symbol, { decimals, min: BigInt(min), ids })
+    else known.ids = ids
     byChain.set(key, chain)
   }
   return CHAINS.flatMap(({ key, name, mark }) => {
     const chain = byChain.get(key)
     if (!chain) return []
-    const listed = [...chain].map(([symbol, { decimals, min }]) => ({ symbol, min: formatUnits(min, decimals) })).sort((a, b) => a.symbol.localeCompare(b.symbol))
+    const listed = [...chain].map(([symbol, { decimals, min, ids }]) => ({ symbol, min: formatUnits(min, decimals), ids })).sort((a, b) => a.symbol.localeCompare(b.symbol))
     return [{ key, name, mark, tokens: listed }]
   })
 }
@@ -116,4 +118,54 @@ export async function depositAddress(accountId: string, chain: string, { fetch =
   } catch {
     return null
   }
+}
+
+/** A deposit the bridge saw to an account's address on one chain. */
+export interface BridgeDeposit {
+  /** Its transaction on that chain. */
+  tx: string
+  /** The bridge's id for the token: `eth:8453:0x8335…`. */
+  assetId: string
+  decimals: number
+  /** In the token's smallest unit. */
+  amount: bigint
+  /**
+   * PENDING: seen on its chain, not credited yet. CREDITED and COMPLETED: in the
+   * account's NEAR Intents balance. FAILED: not credited.
+   */
+  status: 'PENDING' | 'CREDITED' | 'COMPLETED' | 'FAILED'
+}
+
+const STATUSES = new Set(['PENDING', 'CREDITED', 'COMPLETED', 'FAILED'])
+
+/** A whole number of smallest units, from the bridge's number or string. Null for anything else. */
+function unitsOf(value: unknown): bigint | null {
+  if (typeof value === 'string' && WHOLE.test(value)) return BigInt(value)
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && Number.isInteger(value)) return BigInt(value.toLocaleString('fullwide', { useGrouping: false }))
+  return null
+}
+
+/**
+ * The deposits the bridge saw lately to the account's address on one chain, newest
+ * first, each checked. Null when the bridge can't be read.
+ */
+export async function recentDeposits(accountId: string, chain: string, { fetch = globalThis.fetch, url = BRIDGE_URL }: { fetch?: typeof globalThis.fetch; url?: string } = {}): Promise<BridgeDeposit[] | null> {
+  if (!isDepositChain(chain)) return null
+  let body: unknown
+  try {
+    body = await call('recent_deposits', { account_id: accountId, chain }, fetch, url)
+  } catch {
+    return null
+  }
+  const deposits = (body as { result?: { deposits?: unknown } } | null)?.result?.deposits
+  if (!Array.isArray(deposits)) return null
+  return deposits.flatMap((entry): BridgeDeposit[] => {
+    if (typeof entry !== 'object' || entry === null) return []
+    const { tx_hash: tx, defuse_asset_identifier: assetId, decimals, amount, status, chain: on } = entry as Record<string, unknown>
+    const units = unitsOf(amount)
+    if (typeof tx !== 'string' || !/^[A-Za-z0-9:_-]{8,128}$/.test(tx) || typeof assetId !== 'string' || !assetId.startsWith(`${chain}:`) || assetId.length > 200) return []
+    if (on !== undefined && on !== chain) return []
+    if (typeof decimals !== 'number' || !Number.isInteger(decimals) || decimals < 0 || decimals > 36 || units === null || typeof status !== 'string' || !STATUSES.has(status)) return []
+    return [{ tx, assetId, decimals, amount: units, status: status as BridgeDeposit['status'] }]
+  })
 }

@@ -141,7 +141,8 @@ export interface IntentsDepositChain {
   name: string
   /** Ink's mark for it, when it has one: `base`. */
   mark: string | null
-  tokens: { symbol: string; min: string }[]
+  /** `ids`: the bridge's ids for the token, `eth:8453:0x8335…`, which its deposits name. */
+  tokens: { symbol: string; min: string; ids: string[] }[]
 }
 
 /** A token to receive on a chain: whether NEAR Intents takes it there, and the least it credits. */
@@ -180,6 +181,53 @@ export type ReceiveAnswer =
   | { ok: true; kind: 'intents'; chain: string; chainName: string; asset: string; address: string; memo: string | null; min: string; account: string }
   | { ok: true; kind: 'own'; chain: string; chainName: string; asset: string; address: string; path: string; why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable'; min: string | null }
   | { ok: false; reason: 'locked' | 'unavailable' | 'unknown-chain' | 'bad-amount' | 'below-minimum' | 'not-supported'; min?: string | null }
+
+/**
+ * Where a deposit Ink watches stands: watching for it, seen on its chain but not yet
+ * credited, credited, not credited, or no longer watched. `unwatched` is an address
+ * Ink can't watch at all, on a chain it reads no balances for.
+ */
+export interface DepositProgress {
+  stage: 'watching' | 'seen' | 'credited' | 'failed' | 'stopped' | 'unwatched'
+  /** What arrived, once seen: "25 USDC". */
+  got: string | null
+  /** The deposit's transaction on its chain, once seen. */
+  tx: string | null
+  /** That transaction on an explorer. Always https. */
+  link: string | null
+  /** When Ink stops watching, in ms since the epoch. */
+  until: number
+}
+
+/**
+ * A deposit card in a chat: where to send a token, which main worked out when the agent
+ * asked `get_deposit_address`, and what Ink has seen arrive there. Every value is main's,
+ * never the agent's.
+ */
+export interface ChatDeposit {
+  id: string
+  /** NEAR Intents' deposit address, or the wallet's own. */
+  kind: 'intents' | 'own'
+  /** Ink's name for the chain: `base`. */
+  chain: string
+  chainName: string
+  /** Ink's mark for the chain, when it has one. */
+  mark: string | null
+  asset: string
+  /** The token's icon, a data: URL, when Ink has no mark of its own for it. */
+  icon: string | null
+  /** How much the person said is coming, if they said. */
+  amount: string | null
+  address: string
+  memo: string | null
+  /** The least NEAR Intents credits, for its address. */
+  min: string | null
+  /** The NEAR account NEAR Intents credits, for its address. */
+  account: string | null
+  /** Why it's the wallet's own address, for that kind. */
+  why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable' | null
+  progress: DepositProgress
+}
 
 /** A swap Ink followed lately, for Home: what went in, what it's for, and where it stands. */
 export interface RecentSwap {

@@ -10,12 +10,14 @@ const ACCOUNTS: Account[] = [
   { chain: 'evm', path: "m/44'/60'/0'/0/0", address: EVM },
   { chain: 'bitcoin', path: "m/84'/0'/0'/0/0", address: 'bc1qown' },
 ]
-const BRIDGE: IntentsDepositChain[] = [
+const LISTED: (Omit<IntentsDepositChain, 'tokens'> & { tokens: { symbol: string; min: string }[] })[] = [
   { key: 'eth:8453', name: 'Base', mark: 'base', tokens: [{ symbol: 'USDC', min: '1' }, { symbol: 'ETH', min: '0.0000001' }, { symbol: 'BRETT', min: '1' }, { symbol: 'WETH', min: '0.0001' }, { symbol: 'cbBTC', min: '0.00001' }] },
   { key: 'btc:mainnet', name: 'Bitcoin', mark: 'bitcoin', tokens: [{ symbol: 'BTC', min: '0.00007' }] },
   { key: 'xrp:mainnet', name: 'XRP Ledger', mark: 'xrp', tokens: [{ symbol: 'XRP', min: '2' }] },
   { key: 'stellar:mainnet', name: 'Stellar', mark: null, tokens: [{ symbol: 'XLM', min: '0.1' }] },
 ]
+/** Each token with the bridge's id for it, as the bridge lists them. */
+const BRIDGE: IntentsDepositChain[] = LISTED.map((chain) => ({ ...chain, tokens: chain.tokens.map((token) => ({ ...token, ids: [`${chain.key}:${token.symbol.toLowerCase()}`] })) }))
 const DEPOSITS: Record<string, { address: string; memo: string | null }> = {
   'eth:8453': { address: '0xbridgebase', memo: null },
   'btc:mainnet': { address: 'bc1qbridge', memo: null },

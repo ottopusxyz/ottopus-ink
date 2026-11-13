@@ -21,6 +21,10 @@ export interface ReviewPlan {
   chain: string
   /** The coin that pays its fees and anything the actions attach: `NEAR`, `ETH`, `BNB`. */
   feeAsset: string
+  /** Ink's name for the chain, for its logo: `near`, `base`, `bsc`. */
+  chainMark: string
+  /** Where the chain shows a transaction: the explorer's name, and the page a transaction id is added to. */
+  explorer: { name: string; tx: string }
   /** The account that pays: the person's own. */
   from: string
   /** The key that signs for it. */

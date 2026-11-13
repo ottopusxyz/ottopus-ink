@@ -3,7 +3,8 @@ import type { ReviewFailure, ReviewPlan, ReviewState, ReviewSwap } from '../../.
 import { Otto, type PoseName } from '@/components/brand/otto'
 import { InkHold, StepList } from '@/components/motion/loaders'
 import { ArrowRightIcon, CheckIcon, ClockIcon, ExternalIcon } from '@/components/shell/icons'
-import { Badge, Button, buttonClasses, Callout, ChainLogo, TokenLogo } from '@/components/ui'
+import { Badge, Button, buttonClasses, Callout, TokenLogo } from '@/components/ui'
+import { ChainMark } from '@/components/wallet/chain-mark'
 import { ACCOUNT_KIND, approveLabel, canApprove, failureText, groupAddress, outcomeOf, sendSteps, shortHash, timeLeft } from './review-copy'
 
 /** Refusals about the click itself, which the plan's own state doesn't show. */
@@ -150,7 +151,7 @@ export function ReviewApp() {
           )}
           {state.transactionId ? (
             <div className="ink-review-card ink-review-card--stk flex w-full items-center gap-2.5 text-left">
-              <ChainLogo chain="near" size="md" />
+              <ChainMark chain={{ mark: plan.chainMark, name: plan.chain }} size="md" />
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="ink-eyebrow">Transaction</span>
                 <span className="selectable font-mono text-[12.5px]" title={state.transactionId}>
@@ -159,11 +160,11 @@ export function ReviewApp() {
               </div>
               <a
                 className={buttonClasses({ variant: 'secondary', size: 'sm', className: 'gap-1.5' })}
-                href={`https://nearblocks.io/txns/${state.transactionId}`}
+                href={`${plan.explorer.tx}${state.transactionId}`}
                 target="_blank"
                 rel="noreferrer"
               >
-                nearblocks.io
+                {plan.explorer.name}
                 <ExternalIcon size={12} />
               </a>
             </div>
@@ -172,7 +173,7 @@ export function ReviewApp() {
       ) : (
         <>
         <div className="ink-review-network">
-          <ChainLogo chain="near" size="sm" />
+          <ChainMark chain={{ mark: plan.chainMark, name: plan.chain }} size="sm" />
           <span className="font-semibold">{plan.network}</span>
           <span className="flex-1" />
           <span className="text-[11.5px] text-[var(--ot-text-3)]">not simulated</span>
@@ -206,7 +207,7 @@ export function ReviewApp() {
 
         <Section label="Amount" card>
           <p className="selectable m-0 flex items-center gap-2.5">
-            <TokenLogo symbol={plan.asset} chain={plan.chain === 'NEAR' ? 'near' : plan.chain.toLowerCase()} size="lg" />
+            <TokenLogo symbol={plan.asset} chain={plan.chainMark} size="lg" />
             <span className="font-display text-[32px] leading-none font-bold tracking-[-0.02em]">
               {plan.amount} {plan.asset}
             </span>
@@ -314,7 +315,7 @@ export function ReviewApp() {
             {state.transactionId && !fullScreen ? (
               <p className="m-0 text-[12.5px]">
                 <span className="text-[var(--ot-text-3)]">Transaction </span>
-                <a className="selectable font-mono [overflow-wrap:anywhere]" href={`https://nearblocks.io/txns/${state.transactionId}`} target="_blank" rel="noreferrer">
+                <a className="selectable font-mono [overflow-wrap:anywhere]" href={`${plan.explorer.tx}${state.transactionId}`} target="_blank" rel="noreferrer">
                   {state.transactionId}
                 </a>
               </p>

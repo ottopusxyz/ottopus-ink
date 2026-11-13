@@ -32,6 +32,8 @@ describe('what the review window shows', () => {
       network: 'NEAR mainnet',
       chain: 'NEAR',
       feeAsset: 'NEAR',
+      chainMark: 'near',
+      explorer: { name: 'nearblocks.io', tx: 'https://nearblocks.io/txns/' },
       from: FROM,
       publicKey: KEY,
       to: 'alice.near',

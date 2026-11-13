@@ -15,6 +15,8 @@ const STATE: ReviewState = {
     toKind: 'named',
     chain: 'NEAR',
     feeAsset: 'NEAR',
+    chainMark: 'near',
+    explorer: { name: 'nearblocks.io', tx: 'https://nearblocks.io/txns/' },
     toWhy: 'typed',
     amount: '1',
     amountYocto: '1000000000000000000000000',

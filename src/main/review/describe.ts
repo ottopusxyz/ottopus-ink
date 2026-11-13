@@ -9,8 +9,13 @@ import { nearTransferOf } from '../near/build'
 import type { PlanView } from '../plans/store'
 import { chainName } from '../routes/route'
 import { swapSent } from '../routes/swap-terms'
-import { evmChainById } from '../../shared/evm/chains'
+import { evmChainById, type EvmChain } from '../../shared/evm/chains'
 import { EvmDecodeError, evmTransferOfStep } from '../../shared/evm/transaction'
+
+const NEARBLOCKS = { name: 'nearblocks.io', tx: 'https://nearblocks.io/txns/' }
+
+/** An EVM chain's explorer, named by its host as the link shows it. */
+const explorerOf = (chain: EvmChain) => ({ name: new URL(chain.explorer.tx).hostname.replace(/^www\./, ''), tx: chain.explorer.tx })
 
 /**
  * What the review window shows for a plan, worked out from its fixed steps: the
@@ -39,6 +44,8 @@ export function describeForReview(plan: PlanView, network: string, maxFee: bigin
     network,
     chain: 'NEAR',
     feeAsset: 'NEAR',
+    chainMark: 'near',
+    explorer: NEARBLOCKS,
     from: transfer.signerId,
     publicKey: nearPublicKey(transfer.publicKey),
     to: transfer.receiverId,
@@ -124,6 +131,8 @@ function describeSwap(plan: PlanView, network: string, maxFee: bigint | null): R
     network,
     chain: 'NEAR',
     feeAsset: 'NEAR',
+    chainMark: 'near',
+    explorer: NEARBLOCKS,
     from: read.signerId,
     publicKey: nearPublicKey(read.publicKey),
     to: swap.recipient,
@@ -176,6 +185,8 @@ function describeEvmSend(plan: PlanView, maxFee: bigint | null): ReviewPlan | nu
     network: `${chain.name} mainnet`,
     chain: chain.name,
     feeAsset: chain.symbol,
+    chainMark: chain.id,
+    explorer: explorerOf(chain),
     from: transfer.from,
     publicKey: `secp256k1 · ${transfer.from}`,
     to: transfer.to,
@@ -255,6 +266,8 @@ function describeEvmSwap(plan: PlanView, maxFee: bigint | null): ReviewPlan | nu
     network: `${chain.name} mainnet`,
     chain: chain.name,
     feeAsset: chain.symbol,
+    chainMark: chain.id,
+    explorer: explorerOf(chain),
     from: transfer.from,
     publicKey: `secp256k1 · ${transfer.from}`,
     to: swap.recipient,

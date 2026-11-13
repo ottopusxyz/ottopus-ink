@@ -101,6 +101,8 @@ describe('what the review window shows for an EVM send', () => {
       network: 'Base mainnet',
       chain: 'Base',
       feeAsset: 'ETH',
+      chainMark: 'base',
+      explorer: { name: 'basescan.org', tx: 'https://basescan.org/tx/' },
       to: TO,
       toKind: 'evm',
       toWhy: 'typed',

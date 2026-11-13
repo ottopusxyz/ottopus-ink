@@ -95,9 +95,26 @@ export const INK_TOOLS = ['get_accounts', 'get_portfolio', 'get_quote', 'create_
  * A plan an agent proposed, as its chat's card shows it. The agent wrote every
  * value here, so show them as text. Only the review window shows what's signed.
  */
+/**
+ * Where a swap stands once its deposit landed, as main follows it with NEAR Intents:
+ * `deposited` (NEAR Intents has it or is spotting it), `swapping`, `done`, `refunded`,
+ * `failed`, or `unknown` once Ink stopped checking without an answer.
+ */
+export interface ChatSwap {
+  stage: 'deposited' | 'swapping' | 'done' | 'refunded' | 'failed' | 'unknown'
+  /** What was paid out, once done: "17.4 USDC". */
+  got: string | null
+  /** What came back, once refunded: "5 NEAR". */
+  refunded: string | null
+  /** The payout's transaction on an explorer, once there is one. Always https. */
+  link: string | null
+}
+
 export interface ChatPlan {
   id: string
   status: PlanStatus
+  /** Where its swap stands, once a swap's deposit landed. */
+  swap?: ChatSwap
   outcome: 'send' | 'swap' | 'stake'
   asset: string
   amount: string
@@ -176,6 +193,7 @@ export type ChatEvent =
   | { type: 'plan'; plan: ChatPlan }
   /** A plan of this chat's moved on, in the review window or on the chain. From main, like `plan`. */
   | { type: 'plan-status'; id: string; status: PlanStatus }
+  | { type: 'plan-swap'; id: string; swap: ChatSwap }
   | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
   /** The agent's process is gone and the chat can't continue. Error is null when Ink closed it. */
   | { type: 'ended'; error: string | null }

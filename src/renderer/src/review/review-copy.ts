@@ -10,7 +10,8 @@ import type { ReviewFailure, ReviewState } from '../../../shared/review'
  * hex account goes in groups of 8; a named account stays whole. Nothing is cut.
  */
 export function groupAddress(address: string): string[] {
-  const hex = /^(0x)?([0-9a-f]+)$/.exec(address)
+  // EVM addresses carry their checksum in upper and lower case.
+  const hex = /^(0x)?([0-9a-fA-F]+)$/.exec(address)
   if (!hex || address.length < 40) return [address]
   const [, prefix = '', digits = ''] = hex
   const groups = digits.match(/.{1,8}/g) ?? [digits]

@@ -140,7 +140,7 @@ export function ReviewApp() {
           <h1 className="m-0 font-display text-[34px] font-bold">{plan.swap ? 'Deposit sent!' : 'Sent!'}</h1>
           {plan.swap ? (
             <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
-              NEAR ran the deposit. NEAR Intents swaps it for about <span className="selectable font-mono">{plan.swap.get}</span> in {plan.swap.getChain}, usually within{' '}
+              NEAR ran the deposit. NEAR Intents swaps it for about <span className="selectable font-mono">{plan.swap.get}</span> {landsIn(plan.swap)}, usually within{' '}
               {plan.swap.seconds} seconds. Your chat shows when it lands.
             </p>
           ) : (
@@ -349,6 +349,9 @@ export function ReviewApp() {
   )
 }
 
+/** Where a swap pays out, in a phrase: "on Base", "in your NEAR Intents balance". */
+const landsIn = (swap: ReviewSwap) => (swap.getChain.startsWith('your ') ? `in ${swap.getChain}` : `on ${swap.getChain}`)
+
 /**
  * A swap's terms, as NEAR Intents' quote fixed them: what goes in and comes out, who it
  * pays and refunds, and where the deposit goes.
@@ -362,7 +365,7 @@ function SwapTerms({ plan, swap }: { plan: ReviewPlan; swap: ReviewSwap }) {
         <dd className="selectable m-0 font-mono font-bold">{swap.send}</dd>
         <dt className="text-[var(--ot-text-3)]">You get about</dt>
         <dd className="selectable m-0 font-mono font-bold">
-          {swap.get} <span className="font-sans font-normal text-[var(--ot-text-2)]">in {swap.getChain}</span>
+          {swap.get} <span className="font-sans font-normal text-[var(--ot-text-2)]">{landsIn(swap)}</span>
         </dd>
         <dt className="text-[var(--ot-text-3)]">At least</dt>
         <dd className="selectable m-0 font-mono">
@@ -375,7 +378,7 @@ function SwapTerms({ plan, swap }: { plan: ReviewPlan; swap: ReviewSwap }) {
         <div className="flex flex-wrap gap-1.5">
           <Badge tone="ok">
             <CheckIcon size={12} />
-            {plan.toKind === 'other-chain' ? `Your own address in ${swap.getChain}` : 'Your own NEAR Intents balance'}
+            {plan.toKind === 'other-chain' ? `Your own address on ${swap.getChain}` : 'Your own NEAR Intents balance'}
           </Badge>
         </div>
       </div>

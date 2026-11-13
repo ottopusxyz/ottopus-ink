@@ -39,6 +39,11 @@ describe('showing an address', () => {
     expect(groupAddress(id).join('')).toBe(id)
   })
 
+  it('groups a checksummed EVM address too, keeping its case', () => {
+    const address = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    expect(groupAddress(address)).toEqual(['0x', 'd8dA6BF2', '6964aF9D', '7eEd9e03', 'E53415D3', '7aA96045'])
+  })
+
   it('keeps the 0x apart for an Ethereum implicit account', () => {
     const id = `0x${'1234567890'.repeat(4)}`
     expect(groupAddress(id)).toEqual(['0x', '12345678', '90123456', '78901234', '56789012', '34567890'])

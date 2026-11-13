@@ -125,11 +125,13 @@ export function PlanCard({ plan }: { plan: ChatPlan }) {
             ) : null}
           </p>
         ) : null}
-        <p className="m-0 text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">
-          {plan.status === 'draft'
-            ? 'If Ink can send this, it opens in Ink’s review window. Nothing is signed unless you approve it there.'
-            : 'Check it in Ink’s review window. Nothing is signed unless you approve it there.'}
-        </p>
+        {plan.swap ? null : (
+          <p className="m-0 text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">
+            {plan.status === 'draft'
+              ? 'If Ink can send this, it opens in Ink’s review window. Nothing is signed unless you approve it there.'
+              : 'Check it in Ink’s review window. Nothing is signed unless you approve it there.'}
+          </p>
+        )}
         <span className="selectable font-mono text-[11.5px] text-[var(--ot-text-3)]">{plan.id}</span>
       </div>
     </article>

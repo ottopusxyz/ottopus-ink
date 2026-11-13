@@ -1,68 +1,59 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { PortfolioResult } from '../../../shared/portfolio'
+import { BACKGROUND_MS, createPortfolioStore, type PortfolioStore } from './portfolio-store'
 
 export interface PortfolioState {
-  /** Null until the first read answers. */
+  /** Null until something is known: the saved copy from before, or a live read. */
   result: PortfolioResult | null
-  /** A read is under way: the first, or a refresh over figures already shown. */
+  /** A read is under way: the first, or one behind figures already shown. */
   reading: boolean
-  /** The last refresh failed, so the figures shown are from before it. */
+  /** The figures shown were kept from before, and haven't been read again yet. */
+  saved: boolean
+  /** The last read failed, so the figures shown are from before it. */
   stale: boolean
   /** Reads again rather than taking main's read from the last minute. */
   refresh: () => void
 }
 
-const FAILED: PortfolioResult = { ok: false, reason: 'unavailable' }
+let store: PortfolioStore | null = null
+
+/** The page's one store, made on first use. Locking forgets it, so nothing shows behind the lock screen or after it. */
+function portfolioStore(): PortfolioStore {
+  if (!store) {
+    const made = createPortfolioStore(window.ink)
+    window.ink.onVaultStatus((status) => {
+      if (status.state !== 'unlocked') made.reset()
+    })
+    store = made
+  }
+  return store
+}
 
 /**
- * What the wallet holds, read when the component mounts. Main keeps a read for a
- * minute, so Home and the Portfolio page asking one after the other cost one read.
- * A refresh keeps the figures on screen until the new ones arrive.
+ * What the wallet holds, shared by every screen that shows it. It shows the last
+ * figures at once, the saved copy from before on the first read, and reads again
+ * behind them: when a screen opens, when Ink's window comes back to the front, and
+ * every two minutes while the window is in view, each time only once the figures
+ * are a minute old.
  */
 export function usePortfolio(): PortfolioState {
-  const [result, setResult] = useState<PortfolioResult | null>(null)
-  const [reading, setReading] = useState(true)
-  const [stale, setStale] = useState(false)
-  const asked = useRef(0)
-  const shown = useRef<PortfolioResult | null>(null)
-
-  /** A failed refresh keeps the figures already shown, and says they're from before. */
-  const settle = (answer: PortfolioResult) => {
-    setReading(false)
-    if (!answer.ok && shown.current?.ok) return setStale(true)
-    shown.current = answer
-    setResult(answer)
-    setStale(false)
-  }
-
-  const request = useCallback((fresh: boolean) => {
-    const ask = ++asked.current
-    window.ink.portfolio({ fresh }).then(
-      (answer) => {
-        if (ask === asked.current) settle(answer)
-      },
-      (error: unknown) => {
-        console.error('Could not read the portfolio', error)
-        if (ask === asked.current) settle(FAILED)
-      },
-    )
-  }, [])
+  const shared = portfolioStore()
+  const snapshot = useSyncExternalStore(shared.subscribe, shared.get)
 
   useEffect(() => {
-    request(false)
-    const counter = asked
+    shared.revalidate()
+    const onFocus = () => shared.revalidate()
+    window.addEventListener('focus', onFocus)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') shared.revalidate()
+    }, BACKGROUND_MS)
     return () => {
-      // An answer arriving after unmount is dropped.
-      counter.current++
+      window.removeEventListener('focus', onFocus)
+      clearInterval(timer)
     }
-  }, [request])
+  }, [shared])
 
-  const refresh = useCallback(() => {
-    setReading(true)
-    request(true)
-  }, [request])
-
-  return { result, reading, stale, refresh }
+  return { result: snapshot.result, reading: snapshot.reading, saved: snapshot.saved, stale: snapshot.failed, refresh: shared.refresh }
 }
 
 /** The time now, moved on every so often, for "read 40 seconds ago". */

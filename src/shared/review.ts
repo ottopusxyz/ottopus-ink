@@ -27,11 +27,12 @@ export interface ReviewPlan {
   toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain'
   /** Why Ink lets this plan pay `to`: it's the person's own address, or they typed it in the chat. */
   toWhy: 'own' | 'typed'
-  /** The deposit, in NEAR: for a swap, the NEAR swapped. */
+  /** What's sent, in `asset`: the NEAR sent or swapped, or the token a swap moves from the Intents balance. */
   amount: string
-  /** Exactly what is sent, in yoctoNEAR, for anyone checking the decimals. */
+  /** Exactly what is sent, in the asset's smallest unit (yoctoNEAR for NEAR), for anyone checking the decimals. */
   amountYocto: string
-  asset: 'NEAR'
+  /** `NEAR`, or the symbol of the token a swap pays from the Intents balance. */
+  asset: string
   /** The most the fees could take up front at today's gas price, in NEAR. Null when the chain couldn't be asked. */
   maxFee: string | null
   /** The same in yoctoNEAR. Main signs only while the fees can't cost more than this, and asks again if they could. */
@@ -57,15 +58,17 @@ export interface ReviewAction {
 
 /** A swap through NEAR Intents, as main read it from the plan's fixed terms. */
 export interface ReviewSwap {
-  /** "5 NEAR". */
+  /** "5 NEAR", "25 USDC". */
   send: string
+  /** What pays: NEAR from the wallet, or a token in the NEAR Intents balance, where a refund goes back too. */
+  from: 'wallet' | 'intents'
   /** What the quote expects to pay out: "17.400531 USDC". */
   get: string
   /** The least it pays out, or it's refunded. */
   least: string
   /** Where it pays out, as a person reads it: "Base", or "your NEAR Intents balance". */
   getChain: string
-  /** Where a refund goes: the person's own NEAR account. */
+  /** Where a refund goes: the person's own NEAR account, or its Intents balance when that paid. */
   refundTo: string
   /** 1Click's deposit address, which the transaction pays. */
   depositAddress: string

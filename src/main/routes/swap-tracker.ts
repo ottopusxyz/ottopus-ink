@@ -3,6 +3,7 @@ import type { PlanSwap } from '../../shared/plan'
 import { formatUnits } from '../../shared/token-text'
 import type { SwapReport, SwapStage } from './one-click'
 import type { JournalEntry, SwapJournal } from './swap-journal'
+import { swapSent } from './swap-terms'
 
 /** How often a swap is checked while it runs. 1Click swaps take seconds to minutes. */
 export const SWAP_POLL_MS = 5_000
@@ -36,8 +37,8 @@ function progressOf(report: SwapReport, swap: PlanSwap): ChatSwap {
   const stage = STAGES[report.stage]
   const decimals = /^[0-9]{1,2}$/.test(swap.getDecimals) ? Number(swap.getDecimals) : null
   const got = stage === 'done' && report.amountOut !== null && decimals !== null ? `${formatUnits(report.amountOut, decimals)} ${swap.getSymbol}` : null
-  // The deposit was wrapped NEAR, so that's what a refund pays back.
-  const refunded = stage === 'refunded' && report.refunded !== null && swap.originAsset === 'nep141:wrap.near' ? `${formatUnits(report.refunded, 24)} NEAR` : null
+  // A refund pays back what was sent: wrapped NEAR from the wallet, or the token from the Intents balance.
+  const refunded = stage === 'refunded' && report.refunded !== null ? swapSent({ ...swap, amountIn: report.refunded.toString() }) : null
   return { stage, got, refunded, link: report.payoutTx?.explorerUrl ?? null }
 }
 

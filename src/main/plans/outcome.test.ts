@@ -74,6 +74,11 @@ describe('how a plan ended', () => {
     expect(planOutcome('plan-1', SWAP, 'confirmed', 'Tx1', { stage: 'refunded', got: null, refunded: '2 NEAR', link: null })?.note).toMatchObject({ tone: 'info', title: 'Swap refunded' })
     expect(planOutcome('plan-1', SWAP, 'confirmed', 'Tx1', { stage: 'failed', got: null, refunded: null, link: null })?.note).toMatchObject({ tone: 'block', title: 'Swap failed' })
     expect(planOutcome('plan-1', SWAP, 'confirmed', 'Tx1', { stage: 'unknown', got: null, refunded: null, link: null })?.note).toMatchObject({ tone: 'info', title: 'Swap still open' })
+    // Paid from the Intents balance: the token's own amount, and a refund back there.
+    const fromIntents = base({ swap: { ...TERMS, payFrom: 'intents', sendSymbol: 'USDC', sendDecimals: '6', amountIn: '25000000' }, steps: [] })
+    const refunded = planOutcome('plan-1', fromIntents, 'confirmed', 'Tx1', { stage: 'refunded', got: null, refunded: '25 USDC', link: null })
+    expect(refunded?.note.lines).toEqual([`NEAR Intents couldn’t swap 25 USDC to ${TERMS.getSymbol} in time, and refunded 25 USDC to your NEAR Intents balance.`])
+    expect(refunded?.forAgent).toContain('refunded 25 USDC to the person’s NEAR Intents balance')
     expect(planOutcome('plan-1', SWAP, 'failed', null, null)?.note).toMatchObject({ tone: 'block', title: 'Swap not sent' })
   })
 

@@ -59,6 +59,9 @@ describe('following a swap', () => {
   it('says what came back when the swap is refunded', async () => {
     const { follow } = tracker([report('REFUNDED', { refunded: 5n * 10n ** 24n })])
     expect(await follow.follow('plan-1', SWAP, 'Tx1')).toEqual({ stage: 'refunded', got: null, refunded: '5 NEAR', link: null })
+    // From the Intents balance, the token comes back at its own decimals.
+    const fromIntents = tracker([report('REFUNDED', { refunded: 25_000_000n })])
+    expect(await fromIntents.follow.follow('plan-2', { ...SWAP, payFrom: 'intents', sendSymbol: 'USDC', sendDecimals: '6' }, 'Tx2')).toMatchObject({ stage: 'refunded', refunded: '25 USDC' })
   })
 
   it('keeps checking through answers it can’t read, and tells the chat only when something moves', async () => {

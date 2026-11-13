@@ -114,7 +114,7 @@ describe('what the review window shows for a swap', () => {
     const plan = await swapPlan()
     expect(describeForReview(plan, 'NEAR mainnet', FEE)).toMatchObject({
       kind: 'swap',
-      swap: { send: '5 NEAR', get: '17.400531 USDC', least: '17.226525 USDC', getChain: 'Base', refundTo: FROM, depositAddress: DEPOSIT, deadline: TERMS.deadline, fee: '0.2%', seconds: 22 },
+      swap: { send: '5 NEAR', from: 'wallet', get: '17.400531 USDC', least: '17.226525 USDC', getChain: 'Base', refundTo: FROM, depositAddress: DEPOSIT, deadline: TERMS.deadline, fee: '0.2%', seconds: 22 },
       from: FROM,
       to: EVM,
       toKind: 'other-chain',
@@ -149,5 +149,34 @@ describe('what the review window shows for a swap', () => {
     expect(describeForReview(await swapPlan(step(FIVE - 1n)), 'NEAR mainnet', FEE)).toBeNull()
     expect(describeForReview(await swapPlan(undefined, { refundTo: 'c'.repeat(64) }), 'NEAR mainnet', FEE)).toBeNull()
     expect(describeForReview(await swapPlan(STEP), 'NEAR mainnet', FEE)).toBeNull()
+  })
+
+  describe('paid from the Intents balance', () => {
+    const USDC = 'nep141:base-usdc.omft.near'
+    const INTENTS_TERMS: Partial<PlanSwap> = { originAsset: USDC, destinationAsset: 'nep141:wrap.near', amountIn: '25000000', sendSymbol: 'USDC', sendDecimals: '6', getSymbol: 'NEAR', getDecimals: '24', amountOut: '7000000000000000000000000', minAmountOut: '6930000000000000000000000', getChain: 'intents', recipient: FROM, payFrom: 'intents' }
+    const move = (amount = 25_000_000n, tokenId = USDC, to = DEPOSIT) => nearCallStep({ signerId: FROM, publicKey: KEY, receiverId: 'intents.near', calls: [{ method: 'mt_transfer', receiverId: to, tokenId, amount }] })
+
+    it('shows the token leaving the Intents balance, the refund going back there, and the move in plain words', async () => {
+      const plan = await swapPlan(move(), INTENTS_TERMS)
+      expect(describeForReview(plan, 'NEAR mainnet', FEE)).toMatchObject({
+        kind: 'swap',
+        swap: { send: '25 USDC', from: 'intents', get: '7 NEAR', least: '6.93 NEAR', refundTo: FROM },
+        amount: '25',
+        amountYocto: '25000000',
+        asset: 'USDC',
+        // Only the yoctoNEAR the move attaches, and the fee, leave the NEAR account.
+        maxTotal: '0.000267819075000000000001',
+        actions: [{ kind: 'FunctionCall', method: 'mt_transfer', amount: '0.000000000000000000000001', summary: `Move 25 USDC from your NEAR Intents balance to NEAR Intents’ deposit address ${DEPOSIT}` }],
+      })
+    })
+
+    it('shows nothing when the move isn’t exactly the swap’s token, amount and deposit address', async () => {
+      expect(describeForReview(await swapPlan(move(24_000_000n), INTENTS_TERMS), 'NEAR mainnet', FEE)).toBeNull()
+      expect(describeForReview(await swapPlan(move(undefined, 'nep141:usdt.tether-token.near'), INTENTS_TERMS), 'NEAR mainnet', FEE)).toBeNull()
+      expect(describeForReview(await swapPlan(move(undefined, undefined, 'e'.repeat(64)), INTENTS_TERMS), 'NEAR mainnet', FEE)).toBeNull()
+      // A wallet swap's calls under terms that say the Intents balance pays, and the other way round.
+      expect(describeForReview(await swapPlan(undefined, INTENTS_TERMS), 'NEAR mainnet', FEE)).toBeNull()
+      expect(describeForReview(await swapPlan(move(), { ...INTENTS_TERMS, payFrom: undefined }), 'NEAR mainnet', FEE)).toBeNull()
+    })
   })
 })

@@ -99,11 +99,16 @@ export interface PlanSwap {
   seconds: string
   /**
    * `intents` when the Intents balance pays, moving the token inside intents.near to the
-   * deposit address; a refund goes back there. Absent when the wallet pays in NEAR.
+   * deposit address; a refund goes back there. `evm` when the wallet pays on an EVM chain,
+   * sending the coin or token to the deposit address there; a refund goes back to the same
+   * address. Absent when the wallet pays in NEAR.
    */
-  payFrom?: 'intents'
-  /** The decimals of what's sent, for the Intents balance's tokens. Absent for NEAR's 24. */
+  payFrom?: 'intents' | 'evm'
+  /** The decimals of what's sent. Absent for NEAR's 24. */
   sendDecimals?: string
+  /** For `evm`: the chain id, and `native` or the token's contract, which the step must send. */
+  sendChainId?: string
+  sendToken?: string
 }
 
 /**

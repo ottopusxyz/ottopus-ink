@@ -30,6 +30,8 @@ describe('what the review window shows', () => {
       swap: null,
       hash: plan.hash,
       network: 'NEAR mainnet',
+      chain: 'NEAR',
+      feeAsset: 'NEAR',
       from: FROM,
       publicKey: KEY,
       to: 'alice.near',

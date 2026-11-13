@@ -1,4 +1,5 @@
 import { ACCOUNT_CHAINS, type Account, type AccountChain } from '../../shared/accounts'
+import { evmChainOf } from '../../shared/evm/chains'
 import type { PlanRecipient } from '../../shared/plan'
 
 /** What can sit around an address in a sentence but never inside one. */
@@ -23,8 +24,6 @@ function typedBy(address: string, messages: readonly string[]): boolean {
   return messages.some((message) => message.split(SEPARATORS).some((word) => sameAddress(word.replace(TRAILING, ''), address)))
 }
 
-/** EVM chains by the names an agent may use. Every one of them shares the wallet's single EVM address. */
-const EVM_CHAINS = new Set(['evm', 'ethereum', 'eth', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc', 'avalanche', 'gnosis'])
 
 /**
  * Which of the person's accounts lives on a chain, by the chain's name. Null for
@@ -35,7 +34,8 @@ const EVM_CHAINS = new Set(['evm', 'ethereum', 'eth', 'base', 'arbitrum', 'optim
 function accountChainOf(chain: string | null): AccountChain | null {
   if (!chain) return null
   const name = chain.toLowerCase()
-  if (EVM_CHAINS.has(name)) return 'evm'
+  // Every EVM chain Ink sends on shares the wallet's single EVM address.
+  if (name === 'evm' || evmChainOf(name)) return 'evm'
   return (ACCOUNT_CHAINS as readonly string[]).includes(name) && name !== 'evm' ? (name as AccountChain) : null
 }
 

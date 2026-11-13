@@ -15,16 +15,23 @@ export interface ReviewPlan {
   swap: ReviewSwap | null
   /** The hash the person approves. The signer signs only a plan that hashes to it. */
   hash: string
-  /** The network banner, such as `NEAR mainnet`. */
+  /** The network banner, such as `NEAR mainnet` or `Base mainnet`. */
   network: string
+  /** The chain that runs it, as people say it: `NEAR`, `Base`. */
+  chain: string
+  /** The coin that pays its fees and anything the actions attach: `NEAR`, `ETH`, `BNB`. */
+  feeAsset: string
   /** The account that pays: the person's own. */
   from: string
   /** The key that signs for it. */
   publicKey: string
   /** Who gets paid, in full: for a swap, who NEAR Intents pays out to. */
   to: string
-  /** What kind of NEAR account `to` is. A transfer creates an implicit one that doesn't exist yet. `other-chain` is a swap's payout address on another chain. */
-  toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain'
+  /**
+   * What kind of NEAR account `to` is. A transfer creates an implicit one that doesn't exist yet.
+   * `other-chain` is a swap's payout address on another chain, and `evm` an address on the EVM chain that sends.
+   */
+  toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain' | 'evm'
   /** Why Ink lets this plan pay `to`: it's the person's own address, or they typed it in the chat. */
   toWhy: 'own' | 'typed'
   /** What's sent, in `asset`: the NEAR sent or swapped, or the token a swap moves from the Intents balance. */
@@ -33,9 +40,9 @@ export interface ReviewPlan {
   amountYocto: string
   /** `NEAR`, or the symbol of the token a swap pays from the Intents balance. */
   asset: string
-  /** The most the fees could take up front at today's gas price, in NEAR. Null when the chain couldn't be asked. */
+  /** The most the fees could take up front at today's gas price, in `feeAsset`. Null when the chain couldn't be asked. */
   maxFee: string | null
-  /** The same in yoctoNEAR. Main signs only while the fees can't cost more than this, and asks again if they could. */
+  /** The same in its smallest unit: yoctoNEAR, or wei. Main signs only while the fees can't cost more than this, and asks again if they could. */
   maxFeeYocto: string | null
   /** The deposit and that fee ceiling together, the most that can leave the account. Null without the fee. */
   maxTotal: string | null
@@ -48,7 +55,7 @@ export interface ReviewPlan {
 /** One decoded action. A transfer calls no contract, so `method` is null for it. */
 export interface ReviewAction {
   kind: 'Transfer' | 'FunctionCall'
-  /** What it attaches, in NEAR. */
+  /** What it attaches, in `feeAsset`. */
   amount: string
   /** The contract method a call action runs. */
   method: string | null
@@ -60,8 +67,8 @@ export interface ReviewAction {
 export interface ReviewSwap {
   /** "5 NEAR", "25 USDC". */
   send: string
-  /** What pays: NEAR from the wallet, or a token in the NEAR Intents balance, where a refund goes back too. */
-  from: 'wallet' | 'intents'
+  /** What pays: NEAR from the wallet, a coin or token from the wallet on an EVM chain, or a token in the NEAR Intents balance. A refund goes back to the same place. */
+  from: 'wallet' | 'evm' | 'intents'
   /** What the quote expects to pay out: "17.400531 USDC". */
   get: string
   /** The least it pays out, or it's refunded. */

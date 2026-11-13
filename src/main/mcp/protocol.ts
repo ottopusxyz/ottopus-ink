@@ -54,7 +54,7 @@ const TOOLS = [
   {
     name: 'create_plan',
     description:
-      'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself. A swap with chain intents pays from the NEAR Intents balance; to take a token out of that balance to a chain, swap it to the same token with to_chain set, such as USDC from intents to USDC on base.',
+      'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself. A send works on NEAR and on EVM chains such as base, ethereum, arbitrum, optimism, polygon, bsc and avalanche, for the chain’s own coin or a token by symbol or contract. A swap can pay from the wallet on those EVM chains too. A swap with chain intents pays from the NEAR Intents balance; to take a token out of that balance to a chain, swap it to the same token with to_chain set, such as USDC from intents to USDC on base.',
     inputSchema: objectSchema(
       {
         outcome: { type: 'string', enum: ['send', 'swap', 'stake'] },

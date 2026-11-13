@@ -6,6 +6,10 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, saf
 import type { Account } from '../shared/accounts'
 import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
 import { createDepositJournal } from './intents/deposit-journal'
+import { evmChainById, type EvmChain } from '../shared/evm/chains'
+import { evmTransferOfStep } from '../shared/evm/transaction'
+import { buildEvmSend, evmFeeCeiling, isEvmSend } from './evm/build'
+import { createEvmRpc, type EvmRpc } from './evm/rpc'
 import { depositEnding } from './intents/deposit-note'
 import { createDepositWatcher, type DepositJournal } from './intents/deposit-watch'
 import { depositAddress, depositChains, recentDeposits } from './intents/deposits'
@@ -145,10 +149,22 @@ let agents: Promise<AgentStatus[]> | null = null
 /** NEAR mainnet, for balances and for building and sending transfers. */
 const nearRpc = createNearRpc()
 
+/** Each EVM chain's RPC client, made on first use. */
+const evmRpcs = new Map<string, EvmRpc>()
+function evmRpcFor(chain: EvmChain): EvmRpc {
+  let rpc = evmRpcs.get(chain.id)
+  if (!rpc) {
+    rpc = createEvmRpc(chain)
+    evmRpcs.set(chain.id, rpc)
+  }
+  return rpc
+}
+
 /** Every plan made while the app runs. Each chain module builds the steps it knows; anything else stays a draft. */
 const plans = createPlanStore({
   buildSteps: async (intent, own) => {
     if (isNearSend(intent)) return buildNearSend(intent, own, nearRpc)
+    if (isEvmSend(intent)) return buildEvmSend(intent, own, { rpcFor: evmRpcFor, tokens: listedTokens })
     if (intent.outcome === 'swap') {
       return buildOneClickSwap(intent, own, {
         tokens: listedTokens,
@@ -378,6 +394,18 @@ const reviewWindow = createReviewWindow({
 
 /** What the review window shows for a plan: its own step decoded, and today's fee ceiling if NEAR answers. */
 async function describePlan(plan: PlanView) {
+  const [first] = plan.core.steps
+  if (first?.chain === 'evm') {
+    let fee: bigint | null = null
+    try {
+      const transfer = evmTransferOfStep(first)
+      const chain = evmChainById(transfer.chainId)
+      if (chain) fee = await evmFeeCeiling(evmRpcFor(chain), transfer.gas).catch(() => null)
+    } catch {
+      // A step that doesn't read as Ink's own transfer isn't shown at all.
+    }
+    return describeForReview(plan, '', fee)
+  }
   const transfer = nearTransferOf(plan.core)
   let fee: bigint | null = null
   if (transfer) fee = await nearSendFeeCeiling(nearRpc, transfer.receiverId).catch(() => null)
@@ -408,6 +436,7 @@ const reviews = createReviewBroker({
     // Looked up each time, since the vault is made on first use.
     vault: { sign: (core, hash, live) => getVault().sign(core, hash, live) },
     rpc: nearRpc,
+    evmRpc: evmRpcFor,
     onConfirmed: (plan, transactionId) => {
       if (plan.core.swap) void swapTracker.follow(plan.id, plan.core.swap, transactionId)
     },

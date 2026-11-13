@@ -9,6 +9,8 @@ import { nearTransferOf } from '../near/build'
 import type { PlanView } from '../plans/store'
 import { chainName } from '../routes/route'
 import { swapSent } from '../routes/swap-terms'
+import { evmChainById } from '../../shared/evm/chains'
+import { EvmDecodeError, evmTransferOfStep } from '../../shared/evm/transaction'
 
 /**
  * What the review window shows for a plan, worked out from its fixed steps: the
@@ -21,6 +23,7 @@ import { swapSent } from '../routes/swap-terms'
  * again just before signing.
  */
 export function describeForReview(plan: PlanView, network: string, maxFee: bigint | null): ReviewPlan | null {
+  if (plan.core.steps[0]?.chain === 'evm') return plan.core.swap ? describeEvmSwap(plan, maxFee) : describeEvmSend(plan, maxFee)
   if (plan.core.swap) return describeSwap(plan, network, maxFee)
   const transfer = nearTransferOf(plan.core)
   const toKind = transfer ? nearAccountKind(transfer.receiverId) : null
@@ -34,6 +37,8 @@ export function describeForReview(plan: PlanView, network: string, maxFee: bigin
     swap: null,
     hash: plan.hash,
     network,
+    chain: 'NEAR',
+    feeAsset: 'NEAR',
     from: transfer.signerId,
     publicKey: nearPublicKey(transfer.publicKey),
     to: transfer.receiverId,
@@ -117,6 +122,8 @@ function describeSwap(plan: PlanView, network: string, maxFee: bigint | null): R
     },
     hash: plan.hash,
     network,
+    chain: 'NEAR',
+    feeAsset: 'NEAR',
     from: read.signerId,
     publicKey: nearPublicKey(read.publicKey),
     to: swap.recipient,
@@ -136,6 +143,134 @@ function describeSwap(plan: PlanView, network: string, maxFee: bigint | null): R
       // The move's token and amount checked against the swap's own above, so they can be written as a person reads them.
       summary: call.method === 'mt_transfer' ? `Move ${sent} from your NEAR Intents balance to NEAR Intents’ deposit address ${call.receiverId}` : describeCall(call, read.receiverId),
     })),
+    expiresAt: plan.core.expiresAt,
+  }
+}
+
+/**
+ * An EVM send's review, from its one step: the coin or token, the exact amount at the
+ * token's own decimals, who gets it, and the most the fees could take in the chain's coin.
+ * The recipient must be the one the plan pays (the person's, or one they typed).
+ */
+function describeEvmSend(plan: PlanView, maxFee: bigint | null): ReviewPlan | null {
+  const [step, ...rest] = plan.core.steps
+  const recipient = plan.core.recipient
+  if (!step || rest.length > 0 || plan.core.swap || !recipient) return null
+  let transfer: ReturnType<typeof evmTransferOfStep>
+  try {
+    transfer = evmTransferOfStep(step)
+  } catch (error) {
+    if (error instanceof EvmDecodeError) return null
+    throw error
+  }
+  const chain = evmChainById(transfer.chainId)
+  if (!chain || recipient.address.toLowerCase() !== transfer.to.toLowerCase()) return null
+  const native = transfer.token === 'native'
+  const amount = formatUnits(transfer.amount, transfer.decimals)
+  const fee = maxFee === null ? null : formatUnits(maxFee, 18)
+  return {
+    id: plan.id,
+    kind: 'send',
+    swap: null,
+    hash: plan.hash,
+    network: `${chain.name} mainnet`,
+    chain: chain.name,
+    feeAsset: chain.symbol,
+    from: transfer.from,
+    publicKey: `secp256k1 · ${transfer.from}`,
+    to: transfer.to,
+    toKind: 'evm',
+    toWhy: recipient.why,
+    amount,
+    amountYocto: transfer.amount.toString(),
+    asset: transfer.symbol,
+    maxFee: fee,
+    maxFeeYocto: maxFee === null ? null : maxFee.toString(),
+    // What can leave in the chain's coin: the coin sent and the fees, or just the fees for a token.
+    maxTotal: maxFee === null ? null : formatUnits((native ? transfer.amount : 0n) + maxFee, 18),
+    actions: [
+      native
+        ? { kind: 'Transfer', amount, method: null, summary: `Send ${amount} ${chain.symbol} to ${transfer.to} on ${chain.name}` }
+        : { kind: 'FunctionCall', amount: '0', method: 'transfer', summary: `Send ${amount} ${transfer.symbol} to ${transfer.to} on ${chain.name}, through the token’s contract ${transfer.token}` },
+    ],
+    expiresAt: plan.core.expiresAt,
+  }
+}
+
+/**
+ * A swap the wallet pays on an EVM chain, from its one transfer and the terms 1Click fixed.
+ * Shown only when the two agree: the transfer sends exactly the swap's coin or token and
+ * amount, on its chain, to its deposit address, from the address a refund goes back to; and
+ * 1Click pays the plan's own recipient.
+ */
+function describeEvmSwap(plan: PlanView, maxFee: bigint | null): ReviewPlan | null {
+  const swap = plan.core.swap as PlanSwap
+  const [step, ...rest] = plan.core.steps
+  const recipient = plan.core.recipient
+  if (!step || rest.length > 0 || !recipient || recipient.address !== swap.recipient || swap.payFrom !== 'evm') return null
+  let transfer: ReturnType<typeof evmTransferOfStep>
+  try {
+    transfer = evmTransferOfStep(step)
+  } catch (error) {
+    if (error instanceof EvmDecodeError) return null
+    throw error
+  }
+  const chain = evmChainById(transfer.chainId)
+  const sent = swapSent(swap)
+  const agrees =
+    chain !== null &&
+    sent !== null &&
+    String(transfer.chainId) === swap.sendChainId &&
+    transfer.token === swap.sendToken &&
+    transfer.to.toLowerCase() === swap.depositAddress.toLowerCase() &&
+    transfer.amount.toString() === swap.amountIn &&
+    transfer.from.toLowerCase() === swap.refundTo.toLowerCase() &&
+    String(transfer.decimals) === swap.sendDecimals
+  if (!agrees || !chain || !sent) return null
+  const get = tokenAmount(swap.amountOut, swap.getDecimals, swap.getSymbol)
+  const least = tokenAmount(swap.minAmountOut, swap.getDecimals, swap.getSymbol)
+  const seconds = Number(swap.seconds)
+  const feeBps = Number(swap.feeBps)
+  if (!get || !least || !Number.isFinite(seconds) || !Number.isInteger(feeBps)) return null
+  const toKind = swap.getChain === 'intents' ? nearAccountKind(swap.recipient) : 'other-chain'
+  if (!toKind) return null
+  const native = transfer.token === 'native'
+  const amount = formatUnits(transfer.amount, transfer.decimals)
+  return {
+    id: plan.id,
+    kind: 'swap',
+    swap: {
+      send: sent,
+      from: 'evm',
+      get,
+      least,
+      getChain: swap.getChain === 'intents' ? 'your NEAR Intents balance' : chainName(swap.getChain),
+      refundTo: swap.refundTo,
+      depositAddress: swap.depositAddress,
+      deadline: swap.deadline,
+      fee: `${(feeBps / 100).toFixed(2).replace(/\.?0+$/, '')}%`,
+      seconds,
+    },
+    hash: plan.hash,
+    network: `${chain.name} mainnet`,
+    chain: chain.name,
+    feeAsset: chain.symbol,
+    from: transfer.from,
+    publicKey: `secp256k1 · ${transfer.from}`,
+    to: swap.recipient,
+    toKind,
+    toWhy: recipient.why,
+    amount,
+    amountYocto: transfer.amount.toString(),
+    asset: transfer.symbol,
+    maxFee: maxFee === null ? null : formatUnits(maxFee, 18),
+    maxFeeYocto: maxFee === null ? null : maxFee.toString(),
+    maxTotal: maxFee === null ? null : formatUnits((native ? transfer.amount : 0n) + maxFee, 18),
+    actions: [
+      native
+        ? { kind: 'Transfer', amount, method: null, summary: `Send ${amount} ${chain.symbol} to NEAR Intents’ deposit address ${transfer.to} on ${chain.name}` }
+        : { kind: 'FunctionCall', amount: '0', method: 'transfer', summary: `Send ${amount} ${transfer.symbol} to NEAR Intents’ deposit address ${transfer.to} on ${chain.name}, through the token’s contract ${transfer.token}` },
+    ],
     expiresAt: plan.core.expiresAt,
   }
 }

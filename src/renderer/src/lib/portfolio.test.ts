@@ -111,6 +111,11 @@ describe('amounts and times for the page', () => {
     expect(readAgo(0, 42_000)).toBe('42 seconds ago')
     expect(readAgo(0, 80_000)).toBe('a minute ago')
     expect(readAgo(0, 5 * 60_000)).toBe('5 minutes ago')
+    expect(readAgo(0, 59 * 60_000)).toBe('59 minutes ago')
+    expect(readAgo(0, 61 * 60_000)).toBe('an hour ago')
+    expect(readAgo(0, 3 * 3600_000)).toBe('3 hours ago')
+    expect(readAgo(0, 30 * 3600_000)).toBe('a day ago')
+    expect(readAgo(0, 4 * 86_400_000)).toBe('4 days ago')
     expect(readAgo(10_000, 0)).toBe('just now')
   })
 

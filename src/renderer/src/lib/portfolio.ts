@@ -113,13 +113,17 @@ export function spread(rows: readonly PortfolioRow[]): string {
   return chains.size > 1 ? `Across ${chains.size} chains` : chains.size === 1 && !chains.has('near') ? `On ${rows.find((row) => row.counted > 0)?.networkName}` : 'On NEAR so far'
 }
 
-/** "just now", "40 seconds ago", "3 minutes ago". */
+/** "just now", "40 seconds ago", "3 minutes ago", "2 hours ago", "4 days ago". */
 export function readAgo(readAt: number, now: number): string {
   const seconds = Math.max(0, Math.round((now - readAt) / 1000))
   if (seconds < 10) return 'just now'
   if (seconds < 60) return `${seconds} seconds ago`
   const minutes = Math.round(seconds / 60)
-  return minutes === 1 ? 'a minute ago' : `${minutes} minutes ago`
+  if (minutes < 60) return minutes === 1 ? 'a minute ago' : `${minutes} minutes ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return hours === 1 ? 'an hour ago' : `${hours} hours ago`
+  const days = Math.round(hours / 24)
+  return days === 1 ? 'a day ago' : `${days} days ago`
 }
 
 /** Why there are no figures, in a line. */

@@ -141,7 +141,7 @@ describe('the token search route', () => {
     attributes: {
       name: `${symbol} token`,
       symbol,
-      icon: { url: 'https://cdn.example.test/icon.png' },
+      icon: { url: symbol === 'USDC' ? 'https://cdn.zerion.io/usdc.png' : 'https://cdn.example.test/icon.png' },
       flags: { verified: true },
       market_data: { price: 1, market_cap: 1_000_000 },
       implementations: chains.map((chain) => ({ chain_id: chain, address: `0x${'1'.repeat(40)}`, decimals: 6 })),
@@ -150,11 +150,15 @@ describe('the token search route', () => {
   const search = (query: string, chain = 'base') => `/v1/zerion/fungibles?q=${encodeURIComponent(query)}&chain=${chain}`
 
   it('searches Zerion’s tokens on one chain, largest first, trimmed to that chain', async () => {
-    const { call, asked } = world([{ body: { data: [fungible('USDC', ['base', 'ethereum']), fungible('NOPE', ['ethereum'])] } }])
+    const { call, asked } = world([{ body: { data: [fungible('USDC', ['base', 'ethereum']), fungible('NOPE', ['ethereum']), fungible('USDT', ['base'])] } }])
     const response = await call(search('usd'))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
-      data: [{ attributes: { symbol: 'USDC', name: 'USDC token', flags: { verified: true }, implementations: [{ chain_id: 'base', address: `0x${'1'.repeat(40)}`, decimals: 6 }] } }],
+      data: [
+        { attributes: { symbol: 'USDC', name: 'USDC token', flags: { verified: true }, icon: { url: 'https://cdn.zerion.io/usdc.png' }, implementations: [{ chain_id: 'base', address: `0x${'1'.repeat(40)}`, decimals: 6 }] } },
+        // An icon anywhere but Zerion's image hosts is dropped.
+        { attributes: { symbol: 'USDT', name: 'USDT token', flags: { verified: true }, implementations: [{ chain_id: 'base', address: `0x${'1'.repeat(40)}`, decimals: 6 }] } },
+      ],
     })
     expect(asked[0]!.url).toBe('https://api.zerion.io/v1/fungibles/?filter%5Bsearch_query%5D=usd&filter%5Bimplementation_chain_id%5D=base&page%5Bsize%5D=20&sort=-market_data.market_cap&currency=usd')
     expect(asked[0]!.authorization).toBe(`Basic ${btoa(`${KEY}:`)}`)

@@ -89,12 +89,27 @@ const MAX_FUNGIBLES = 20
  * Zerion verified it, and its address and decimals on the chain asked about. Icons,
  * prices and the rest stay behind.
  */
+/** Where Zerion keeps token icons. Ink fetches icons from these alone, so others are dropped here too. */
+const ICON_HOSTS = ['cdn.zerion.io', 'token-icons.s3.amazonaws.com']
+
+/** A token's icon URL when it's https on one of Zerion's image hosts, else null. */
+function iconUrl(icon: unknown): string | null {
+  if (!isRecord(icon) || typeof icon.url !== 'string' || icon.url.length > 300) return null
+  try {
+    const url = new URL(icon.url)
+    return url.protocol === 'https:' && ICON_HOSTS.includes(url.hostname) && !url.username && !url.password && !url.port ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
 export function trimFungible(item: unknown, chain: string): unknown {
   if (!isRecord(item) || !isRecord(item.attributes)) return null
   const attributes = item.attributes
   const implementations = Array.isArray(attributes.implementations) ? attributes.implementations.filter((entry) => isRecord(entry) && entry.chain_id === chain).map((entry) => pick(entry, ['chain_id', 'address', 'decimals'])) : []
   if (implementations.length === 0) return null
-  return { attributes: { symbol: attributes.symbol, name: attributes.name, flags: pick(attributes.flags, ['verified']), implementations } }
+  const icon = iconUrl(attributes.icon)
+  return { attributes: { symbol: attributes.symbol, name: attributes.name, flags: pick(attributes.flags, ['verified']), ...(icon ? { icon: { url: icon } } : {}), implementations } }
 }
 
 /** Tokens on one chain whose name or symbol matches, largest by market cap first, trimmed. */

@@ -1,4 +1,4 @@
-import type { ChatPlan } from '../../../../shared/ipc'
+import type { ChatPlan, ChatSwap } from '../../../../shared/ipc'
 import type { PlanStatus } from '../../../../shared/plan'
 import { Otto, type PoseName } from '@/components/brand/otto'
 import { StatusChip, TokenLogo } from '@/components/ui'
@@ -22,6 +22,34 @@ const POSE: Record<PlanStatus, PoseName> = {
 const MOVING = new Set<PlanStatus>(['awaiting_review', 'signing', 'submitted'])
 
 const KIND: Record<ChatPlan['outcome'], string> = { send: 'Send', swap: 'Swap', stake: 'Stake' }
+
+/** Otto for where a swap stands once its deposit landed. */
+const SWAP_POSE: Record<ChatSwap['stage'], { pose: PoseName; moving: boolean }> = {
+  deposited: { pose: 'loader', moving: true },
+  swapping: { pose: 'loader', moving: true },
+  done: { pose: 'confirmed', moving: false },
+  refunded: { pose: 'heads-up', moving: false },
+  failed: { pose: 'ink', moving: false },
+  unknown: { pose: 'heads-up', moving: false },
+}
+
+/** Where a swap stands, in a line. Main wrote the amounts from what NEAR Intents reported. */
+export function swapLine({ stage, got, refunded }: ChatSwap): string {
+  switch (stage) {
+    case 'deposited':
+      return 'Deposit landed. NEAR Intents is picking it up.'
+    case 'swapping':
+      return 'NEAR Intents is swapping it now.'
+    case 'done':
+      return got ? `Done: ${got} paid out.` : 'Done: paid out.'
+    case 'refunded':
+      return refunded ? `Refunded: ${refunded} back to your NEAR account.` : 'Refunded to your NEAR account.'
+    case 'failed':
+      return 'NEAR Intents couldn’t finish this swap. Any refund goes to your NEAR account.'
+    case 'unknown':
+      return 'Ink stopped checking. NEAR Intents still finishes or refunds it on its own.'
+  }
+}
 
 /**
  * A plan an agent proposed, as a ticket: what leaves and where it goes as the
@@ -65,7 +93,11 @@ export function PlanCard({ plan }: { plan: ChatPlan }) {
           </p>
         </div>
         <span className="ink-ticket__pocket">
-          <Otto pose={POSE[plan.status]} size={76} animated={MOVING.has(plan.status)} />
+          {plan.swap ? (
+            <Otto pose={SWAP_POSE[plan.swap.stage].pose} size={76} animated={SWAP_POSE[plan.swap.stage].moving} />
+          ) : (
+            <Otto pose={POSE[plan.status]} size={76} animated={MOVING.has(plan.status)} />
+          )}
         </span>
       </div>
       <div className="ink-ticket__perf" aria-hidden />
@@ -79,6 +111,19 @@ export function PlanCard({ plan }: { plan: ChatPlan }) {
               </div>
             ))}
           </dl>
+        ) : null}
+        {plan.swap ? (
+          <p className="m-0 text-[13px] font-semibold leading-[1.45]" role="status">
+            {swapLine(plan.swap)}
+            {plan.swap.link ? (
+              <>
+                {' '}
+                <a className="font-normal underline" href={plan.swap.link} target="_blank" rel="noreferrer">
+                  See the payout
+                </a>
+              </>
+            ) : null}
+          </p>
         ) : null}
         <p className="m-0 text-[12.5px] leading-[1.45] text-[var(--ot-text-2)]">
           {plan.status === 'draft'

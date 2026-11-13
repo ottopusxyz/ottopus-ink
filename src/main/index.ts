@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentStatus, type AppInfo, type ZerionKeyStatus } from '../shared/ipc'
+import { IPC, type AgentStatus, type AppInfo, type ChatSwap, type ZerionKeyStatus } from '../shared/ipc'
 import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
 import type { VaultResult } from '../shared/vault'
@@ -15,7 +15,7 @@ import { detectEntries } from './external/detect'
 import { createSignIns, type SecretBox } from './external/sign-ins'
 import { createExternalTools, type Confirm, type ExternalTools } from './external/tools'
 import { startMcpBridge, type McpBridge } from './mcp/bridge'
-import { buildNearSend, callsFeeCeiling, isNearSend, nearSendFeeCeiling, nearTransferOf } from './near/build'
+import { buildNearSend, callsFeeCeiling, isNearSend, nearCallsFit, nearSendFeeCeiling, nearTransferOf } from './near/build'
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
@@ -26,7 +26,9 @@ import { installId, INK_SERVICE_URL } from './portfolio/service'
 import { checkZerionKey, type ZerionAccess } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
-import { oneClickQuote, oneClickTokens, type OneClickToken } from './routes/one-click'
+import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
+import { buildOneClickSwap } from './routes/swap-plan'
+import { createSwapTracker } from './routes/swap-tracker'
 import { createQuoter } from './routes/quoter'
 import { describeForReview } from './review/describe'
 import { createReviewWindow } from './review/window'
@@ -131,7 +133,27 @@ const nearRpc = createNearRpc()
 
 /** Every plan made while the app runs. Each chain module builds the steps it knows; anything else stays a draft. */
 const plans = createPlanStore({
-  buildSteps: async (intent, own) => (isNearSend(intent) ? buildNearSend(intent, own, nearRpc) : { ok: true, steps: [] }),
+  buildSteps: async (intent, own) => {
+    if (isNearSend(intent)) return buildNearSend(intent, own, nearRpc)
+    if (intent.outcome === 'swap') {
+      return buildOneClickSwap(intent, own, {
+        tokens: listedTokens,
+        quote: (request) => oneClickQuote(request),
+        fits: (from, deposit, gas, calls) => nearCallsFit(nearRpc, from, deposit, gas, calls),
+      })
+    }
+    return { ok: true, steps: [] }
+  },
+})
+
+/** Each chat's ear for its swap plans, by plan id. */
+const swapListeners = new Map<string, (swap: ChatSwap) => void>()
+
+/** Follows each swap once NEAR ran its deposit, and tells the chat that made it. */
+const swapTracker = createSwapTracker({
+  submit: (deposit) => submitDeposit(deposit),
+  status: (depositAddress) => swapStatus(depositAddress),
+  onUpdate: (planId, swap) => swapListeners.get(planId)?.(swap),
 })
 
 /** The review window. It opens whenever a plan waits for review. */
@@ -174,6 +196,9 @@ const reviews = createReviewBroker({
     // Looked up each time, since the vault is made on first use.
     vault: { sign: (core, hash, live) => getVault().sign(core, hash, live) },
     rpc: nearRpc,
+    onConfirmed: (plan, transactionId) => {
+      if (plan.core.swap) void swapTracker.follow(plan.id, plan.core.swap, transactionId)
+    },
   }),
   describe: describePlan,
   unlocked: () => vault?.isUnlocked() === true,
@@ -295,7 +320,7 @@ function getMcpBridge(): Promise<McpBridge> {
     accounts: ownAccounts,
     portfolio: () => ownPortfolio(),
     quote: quoteRoute,
-    plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts }),
+    plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts, swapOf: swapTracker.get }),
   }).catch((error: unknown) => {
     mcpBridge = null
     throw error
@@ -407,6 +432,11 @@ function registerIpc(): void {
       bridge: await getMcpBridge(),
       shim: join(import.meta.dirname, 'shim.js'),
       review: (planId: string, owner: string, notify: Parameters<typeof reviews.offer>[2]) => void reviews.offer(planId, owner, notify),
+      swaps: (planId: string, notify: (swap: ChatSwap) => void) => {
+        swapListeners.set(planId, notify)
+        // Room for every plan the store keeps, and no more.
+        if (swapListeners.size > 500) swapListeners.delete(swapListeners.keys().next().value as string)
+      },
     }
     const env = await agentEnv()
     const external = await getExternalTools().forNewChat()

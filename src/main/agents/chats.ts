@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentStatus, ChatEvent } from '../../shared/ipc'
+import type { AgentStatus, ChatEvent, ChatSwap } from '../../shared/ipc'
 import type { PlanStatus } from '../../shared/plan'
 import { looksLikeItMovesFunds } from '../external/catalog'
 import { itemsNeedingSignIn, type SessionExternal } from '../external/session'
@@ -20,6 +20,8 @@ export interface ChatTools {
    * window or anything that signs.
    */
   review?: (planId: string, owner: string, notify: (status: PlanStatus) => void) => void
+  /** Tells the chat where a swap plan stands once its deposit landed. Main passes this in too. */
+  swaps?: (planId: string, notify: (swap: ChatSwap) => void) => void
 }
 
 /** Longer than anyone types or pastes into a chat. */
@@ -52,7 +54,7 @@ const TYPED_KEPT = 50
 export function startChat(
   agent: AgentStatus,
   agentEnv: AgentEnv,
-  { bridge, shim, review }: ChatTools,
+  { bridge, shim, review, swaps }: ChatTools,
   external: SessionExternal,
   onEvent: (chatId: string, event: ChatEvent) => void,
 ): string {
@@ -73,6 +75,9 @@ export function startChat(
       onEvent(chatId, { type: 'plan', plan })
       review?.(plan.id, owner, (status) => {
         if (!over) onEvent(chatId, { type: 'plan-status', id: plan.id, status })
+      })
+      swaps?.(plan.id, (swap) => {
+        if (!over) onEvent(chatId, { type: 'plan-swap', id: plan.id, swap })
       })
     },
     typed: () => typed,

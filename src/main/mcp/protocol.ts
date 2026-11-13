@@ -1,5 +1,5 @@
 import type { Account, AccountChain } from '../../shared/accounts'
-import type { ChatPlan } from '../../shared/ipc'
+import type { ChatPlan, ChatSwap } from '../../shared/ipc'
 import type { PlanIntent, PlanStatus, PlanSummary, PlanToolResult, PlanTools } from '../../shared/plan'
 import type { HoldingGroup, PortfolioGap, PortfolioResult, TokenHolding, ZerionState } from '../../shared/portfolio'
 import type { VaultResult } from '../../shared/vault'
@@ -119,6 +119,16 @@ const STATUS_WORDS: Record<PlanStatus, string> = {
   cancelled: 'cancelled',
   expired: 'expired',
   blocked: 'blocked by a safety rule',
+}
+
+/** Where a swap stands once its deposit landed, for get_plan. Main wrote every value from NEAR Intents' report. */
+const SWAP_WORDS: Record<ChatSwap['stage'], (swap: ChatSwap) => string> = {
+  deposited: () => 'NEAR ran the deposit; NEAR Intents is picking it up.',
+  swapping: () => 'NEAR Intents is swapping it now.',
+  done: (swap) => `NEAR Intents finished the swap${swap.got ? ` and paid out ${swap.got}` : ''}.`,
+  refunded: (swap) => `NEAR Intents couldn’t swap it and refunded ${swap.refunded ?? 'it'} to the NEAR account.`,
+  failed: () => 'NEAR Intents couldn’t finish the swap; any refund goes to the NEAR account.',
+  unknown: () => 'Ink stopped checking; NEAR Intents still finishes or refunds it on its own.',
 }
 
 /** Why a plan tool said no, worded for the agent to act on. */
@@ -401,7 +411,9 @@ async function quoteAnswer(quote: McpHandlers['quote'], args: unknown): Promise<
       ...(outcome.compared ? ['Ink quoted paying from the wallet and from the Intents balance, and this one gives more.'] : []),
       ...(outcome.enough === null ? [UNCHECKED] : outcome.enough ? [] : [`${outcome.source === 'wallet' ? 'The wallet' : 'The Intents balance'} holds only ${amountText(outcome.held)}, so it can’t pay this yet.`]),
       moves,
-      'Ink can’t send swaps yet, so a plan for one stays a draft.',
+      outcome.source === 'wallet' && outcome.send.symbol === 'NEAR' && outcome.paidTo !== 'no-own-address'
+        ? 'create_plan with outcome swap makes this a plan for the person to review, with a fresh quote.'
+        : 'Ink can’t send this swap yet, so a plan for it stays a draft.',
     ].join('\n'),
   )
 }
@@ -510,7 +522,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         const intent = intentFrom(params.arguments)
         if (!intent) return result(toolAnswer(PLAN_SCHEMA_HELP, true))
         if (!plans) return result(NOT_BUILT.create_plan ?? NOT_SET_UP)
-        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is made: ${plan.summary}. If Ink can send it (so far, native NEAR on NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.`)
+        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is made: ${plan.summary}. If Ink can send it (so far, NEAR sent on NEAR, and NEAR swapped through NEAR Intents to the person’s own address), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.`)
         if (made.plan) onPlan?.(chatPlanOf(made.plan))
         return result(made.answer)
       }
@@ -519,7 +531,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         if (!id) return result(toolAnswer('plan_id must be the id create_plan gave.', true))
         const answered =
           params.name === 'get_plan'
-            ? await planAnswer(() => plans.get(id), id, (plan) => `Plan ${plan.id} is ${STATUS_WORDS[plan.status]}: ${plan.summary}.`)
+            ? await planAnswer(() => plans.get(id), id, (plan) => `Plan ${plan.id} is ${STATUS_WORDS[plan.status]}: ${plan.summary}.${plan.swap ? ` ${SWAP_WORDS[plan.swap.stage](plan.swap)}` : ''}`)
             : await planAnswer(() => plans.cancel(id), id, (plan) => `Plan ${plan.id} is cancelled. Nothing was signed.`)
         return result(answered.answer)
       }

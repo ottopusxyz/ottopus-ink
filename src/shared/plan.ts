@@ -1,3 +1,5 @@
+import type { ChatSwap } from './ipc'
+
 /** What a plan is and the states it moves through. Types and vocabulary only: main builds and hashes plans. */
 
 /**
@@ -146,6 +148,8 @@ export interface PlanSummary {
   summary: string
   intent: PlanIntent
   recipient: PlanRecipient | null
+  /** Where its swap stands, once a swap's deposit landed. */
+  swap?: ChatSwap
 }
 
 export type PlanToolResult =

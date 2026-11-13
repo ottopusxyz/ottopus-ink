@@ -1,4 +1,5 @@
 import { INK_TOOLS, type AgentId, type ChatEvent, type ChatPlan, type InkNote } from '../../../shared/ipc'
+import type { SavedChat } from '../../../shared/history'
 import { NOTHING_SIGNED } from '@/components/ui/copy'
 
 export type ChatStatus = 'idle' | 'live' | 'settled'
@@ -55,6 +56,8 @@ export interface Chat {
   trimmed: boolean
   /** The number in the next item's id. */
   nextItem: number
+  /** Kept from before Ink restarted: read-only until the person continues it in a new session. */
+  restored?: boolean
 }
 
 /** Enough for a very long chat, while an agent in a loop can't fill the window's memory. */
@@ -96,6 +99,34 @@ export function newChat(id: string, agent: AgentId, text: string): Chat {
     nextItem: 0,
   }
   return withItem(chat, { kind: 'user', text })
+}
+
+/**
+ * A chat Ink kept from before it restarted, drawn the way it was: rebuilt from Ink's own
+ * record with the same rules as a live chat, then ended, since its session is gone.
+ */
+export function restoredChat(saved: SavedChat): Chat {
+  const start: Chat = { ...newChat(saved.id, saved.agent, saved.opening), items: [], nextItem: 0, phase: 'ready', lock: 'locked' }
+  const rebuilt = saved.events.reduce((chat, event) => {
+    if (event.type === 'you') return withItem(chat, { kind: 'user', text: event.text })
+    if (event.type === 'continued') return withItem(chat, { kind: 'notice', severity: 'info', title: 'Continued after a restart', text: null })
+    return applyChatEvent(chat, event)
+  }, start)
+  return { ...rebuilt, phase: 'ended', status: 'settled', restored: true }
+}
+
+/**
+ * A kept chat goes on in a new session, which Ink has told what happened so far. What
+ * the person typed before counts for addresses only once they type it again.
+ */
+export function chatContinued(chat: Chat, sessionId: string, agent: AgentId): Chat {
+  const note = withItem(chat, {
+    kind: 'notice',
+    severity: 'info',
+    title: 'Continued after a restart',
+    text: 'Ink told your agent what happened so far. Type any address from before again if you want it paid.',
+  })
+  return { ...note, sessionId, agent, phase: 'answering', status: 'live', lock: 'unchecked', restored: false }
 }
 
 /** The session is up and has the first message. */

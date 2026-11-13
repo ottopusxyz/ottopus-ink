@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { ChatEvent, ChatPlan } from '../../../shared/ipc'
 import { NOTHING_SIGNED } from '@/components/ui/copy'
 import {
+  chatContinued,
+  restoredChat,
   applyChatEvent,
   chatFailedToStart,
   chatStarted,
@@ -462,5 +464,39 @@ describe('a plan trimmed out of a long chat', () => {
   it('follows the latest plan, not an older one still in the chat', () => {
     const chat = after([{ type: 'plan', plan }])
     expect(trimmedPlan({ ...chat, plan: { ...plan, id: 'newer' } })).toEqual({ ...plan, id: 'newer' })
+  })
+})
+
+describe('a chat kept from before a restart', () => {
+  const PLAN: ChatPlan = { id: 'p', status: 'awaiting_review', outcome: 'swap', asset: 'NEAR', amount: '2', chain: 'near', to: null, toAsset: 'USDC', toChain: 'base' }
+  const saved = {
+    id: '11111111-2222-4333-8444-555555555555',
+    agent: 'claude-code' as const,
+    opening: 'Swap 2 NEAR to USDC on Base',
+    startedAt: 1,
+    updatedAt: 2,
+    events: [
+      { type: 'you' as const, text: 'Swap 2 NEAR to USDC on Base' },
+      { type: 'text' as const, text: 'Here is a plan.' },
+      { type: 'plan' as const, plan: PLAN },
+      { type: 'plan-status' as const, id: 'p', status: 'confirmed' as const, transactionId: 'Tx1' },
+      { type: 'plan-note' as const, id: 'p', note: { tone: 'ok' as const, title: 'Swap done', lines: ['2 NEAR → 7.07 USDC.'], links: [] } },
+      { type: 'continued' as const, agent: 'claude-code' as const, at: 3 },
+      { type: 'you' as const, text: 'thanks' },
+    ],
+  }
+
+  it('is drawn as it was, from Ink’s record, and is read-only', () => {
+    const chat = restoredChat(saved)
+    expect(chat).toMatchObject({ id: saved.id, title: 'Swap 2 NEAR to USDC on Base', agent: 'claude-code', phase: 'ended', restored: true, sessionId: null })
+    expect(chat.items.map((item) => item.kind)).toEqual(['user', 'agent', 'plan', 'ink-note', 'notice', 'user'])
+    expect(chat.plan).toMatchObject({ id: 'p', status: 'confirmed', transactionId: 'Tx1' })
+  })
+
+  it('goes on in a new session, which says what happened and that addresses need typing again', () => {
+    const chat = chatContinued(restoredChat(saved), 'session-2', 'claude-code')
+    expect(chat).toMatchObject({ sessionId: 'session-2', phase: 'answering', restored: false, lock: 'unchecked' })
+    expect(chat.items.at(-1)).toMatchObject({ kind: 'notice', title: 'Continued after a restart' })
+    expect(applyChatEvent(chat, { type: 'turn-end', outcome: 'done', error: null }).phase).toBe('ready')
   })
 })

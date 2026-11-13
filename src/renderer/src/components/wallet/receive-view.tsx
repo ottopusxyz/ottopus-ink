@@ -7,7 +7,7 @@ import { Sea } from '@/components/motion/sea'
 import { CheckIcon, CloseIcon, CopyIcon, SearchIcon } from '@/components/shell/icons'
 import { Callout, ChainLogo, Input, IntentsLogo, TokenLogo } from '@/components/ui'
 import { cn } from '@/lib/cn'
-import { isChainId } from '@/lib/logos'
+import { isChainId, isTokenSymbol } from '@/lib/logos'
 import { receiveCacheOfApp } from '@/lib/receive-cache'
 import { addressParts } from '@/lib/wallet'
 import { QrCode } from './qr-code'
@@ -34,6 +34,36 @@ function ChainMark({ chain, size = 'md' }: { chain: Pick<ReceiveChain, 'mark' | 
 /** A minimum worth showing: one too small to matter, such as wNEAR's one yoctoNEAR, reads as none. */
 function minOf(min: string | null): string | null {
   return min && !/^0\.0{8}/.test(min) ? min : null
+}
+
+/**
+ * Icons for the tiles Ink has no mark of its own for, found by searching each symbol on
+ * the chain. Searches are cached, so a chain's tiles are looked up once a while.
+ */
+function useTileIcons(chainId: string | undefined, tokens: readonly ReceiveToken[]): (token: ReceiveToken) => string | null {
+  const cache = receiveCacheOfApp()
+  const [icons, setIcons] = useState<Record<string, string>>({})
+  const wanted = tokens
+    .filter((token) => !token.icon && !isTokenSymbol(token.symbol))
+    .map((token) => token.symbol)
+    .join(' ')
+  useEffect(() => {
+    if (!chainId || !wanted) return
+    let live = true
+    for (const symbol of wanted.split(' ')) {
+      cache.loadSearch(chainId, symbol).then(
+        (found) => {
+          const icon = found.find((token) => token.symbol.toLowerCase() === symbol.toLowerCase())?.icon
+          if (live && icon) setIcons((now) => ({ ...now, [`${chainId} ${symbol}`]: icon }))
+        },
+        () => undefined,
+      )
+    }
+    return () => {
+      live = false
+    }
+  }, [cache, chainId, wanted])
+  return (token) => token.icon ?? icons[`${chainId} ${token.symbol}`] ?? null
 }
 
 /** A placeholder shaped like what's loading. */
@@ -200,6 +230,7 @@ export function ReceiveView({ startChain = null }: { /** The chain to open on, a
     return chain && !top.includes(chain) ? [...top, chain] : top
   }, [list, chain])
   const tokens = token && chain && !chain.tokens.some((each) => each.symbol === token.symbol) ? [...chain.tokens, token] : (chain?.tokens ?? [])
+  const iconOf = useTileIcons(chain?.id, tokens)
 
   const pickChain = (id: string) => {
     setChainId(id)
@@ -255,7 +286,7 @@ export function ReceiveView({ startChain = null }: { /** The chain to open on, a
                         setAmount('')
                       }}
                     >
-                      <TokenLogo symbol={item.symbol} size="md" />
+                      <TokenLogo symbol={item.symbol} icon={iconOf(item)} size="md" />
                       <span className="flex min-w-0 flex-col text-left">
                         <span className="text-[13px] font-bold">{item.symbol}</span>
                         {minOf(item.min) ? <span className="text-[11.5px] text-[var(--ot-text-3)]">min {item.min}</span> : null}
@@ -280,7 +311,7 @@ export function ReceiveView({ startChain = null }: { /** The chain to open on, a
               ) : null}
             </div>
 
-            <ReceiveCard chain={chain} asset={token.symbol} amount={token.intents && /^[0-9]+(\.[0-9]+)?$/.test(amount) ? amount : null} />
+            <ReceiveCard chain={chain} asset={token.symbol} icon={iconOf(token)} amount={token.intents && /^[0-9]+(\.[0-9]+)?$/.test(amount) ? amount : null} />
           </div>
         )}
       </div>
@@ -396,7 +427,7 @@ function TokenSearch({ chain, onPick }: { chain: ReceiveChain; onPick: (token: R
       onQuery={ask}
       render={(item) => (
         <>
-          <TokenLogo symbol={item.symbol} size="sm" />
+          <TokenLogo symbol={item.symbol} icon={item.icon} size="sm" />
           <span className="flex min-w-0 flex-1 items-baseline gap-2">
             <span className="text-[13px] font-semibold">{item.symbol}</span>
             {item.name && item.name.toLowerCase() !== item.symbol.toLowerCase() ? <span className="truncate text-[12px] text-[var(--ot-text-3)]">{item.name}</span> : null}
@@ -412,7 +443,7 @@ function TokenSearch({ chain, onPick }: { chain: ReceiveChain; onPick: (token: R
 type Answer = { kind: 'loading' } | { kind: 'ready'; answer: ReceiveAnswer; for: string; chain: ReceiveChain }
 
 /** The address main picked, with whose it is, its QR code, any memo, and what to send. */
-function ReceiveCard({ chain, asset, amount }: { chain: ReceiveChain; asset: string; amount: string | null }) {
+function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asset: string; icon: string | null; amount: string | null }) {
   const [state, setState] = useState<Answer>({ kind: 'loading' })
   const [copied, setCopied] = useState<'none' | 'address' | 'memo' | 'failed'>('none')
   const timer = useRef<number | undefined>(undefined)
@@ -488,7 +519,7 @@ function ReceiveCard({ chain, asset, amount }: { chain: ReceiveChain; asset: str
       <Otto pose="base" size={70} animated className="ink-address-card__otto" />
       <div className="flex items-center gap-2.5">
         <div className={cn('flex min-w-0 flex-1 items-center gap-2.5 transition-opacity', stale && 'opacity-50')}>
-          <TokenLogo symbol={answer.asset} size="md" />
+          <TokenLogo symbol={answer.asset} icon={answer.asset === asset ? icon : null} size="md" />
           <div className="min-w-0">
             <div className="text-[15px] font-extrabold">Receive {answer.asset}</div>
             <div className="text-[12px] text-[var(--ot-text-3)]">

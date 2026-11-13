@@ -11,7 +11,7 @@ import { Bone } from '@/components/portfolio/portfolio-skeleton'
 import { formatMoney } from '@/lib/format'
 import { isTokenSymbol } from '@/lib/logos'
 import { portfolioView, spread } from '@/lib/portfolio'
-import { useNow, usePortfolio } from '@/lib/use-portfolio'
+import { usePortfolio } from '@/lib/use-portfolio'
 import { homeSwaps, useRecentSwaps } from '@/lib/recent-swaps'
 import { SwapBanner } from './swap-banner'
 import type { ChainId } from '@/lib/logos'
@@ -123,7 +123,7 @@ export function HomeView({
   readyAgent,
 }: HomeViewProps) {
   const running = live[0]
-  const swaps = homeSwaps(useRecentSwaps(), useNow(30_000))
+  const swaps = homeSwaps(useRecentSwaps())
 
   return (
     <main className="ink-panel" id="main">

@@ -104,6 +104,25 @@ function swapSteps(plan: ChatPlan, from: TrackerStep['state']): TrackerStep[] {
   }
 }
 
+/**
+ * Whether a plan is still on its way: waiting for review, being signed or sent, or a swap
+ * NEAR Intents hasn't settled yet. A finished plan's tracker steps aside: Ink's note in the
+ * chat says how it ended. A draft Ink can't send isn't on its way either.
+ */
+export function isUnderWay(plan: ChatPlan): boolean {
+  switch (plan.status) {
+    case 'awaiting_review':
+    case 'approved':
+    case 'signing':
+    case 'submitted':
+      return true
+    case 'confirmed':
+      return plan.outcome === 'swap' && (!plan.swap || plan.swap.stage === 'deposited' || plan.swap.stage === 'swapping')
+    default:
+      return false
+  }
+}
+
 /** Where a plan stands in a few words, for the strip's headline. */
 export function trackerSummary(plan: ChatPlan): string {
   const steps = trackerSteps(plan)

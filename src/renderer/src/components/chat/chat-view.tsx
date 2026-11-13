@@ -14,6 +14,7 @@ import { InkNoteCard } from './ink-note'
 import { Markdown } from './markdown'
 import { PlanCard } from './plan-card'
 import { PlanTracker } from './plan-tracker'
+import { isUnderWay } from '@/lib/plan-tracker'
 import { ToolCall } from './tool-call'
 
 export interface ChatViewProps {
@@ -96,7 +97,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onTool
         </Tooltip>
         <ChatMenu canEnd={chat.phase !== 'ended' && Boolean(chat.sessionId)} onEnd={onEnd} />
       </div>
-      {chat.plan ? <PlanTracker plan={chat.plan} earlier={earlier} /> : null}
+      {chat.plan && isUnderWay(chat.plan) ? <PlanTracker plan={chat.plan} earlier={earlier} /> : null}
 
       <div
         ref={scroller}

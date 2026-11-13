@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatPlan, ChatSwap } from '../../../shared/ipc'
-import { trackerSteps, trackerSummary } from './plan-tracker'
+import { isUnderWay, trackerSteps, trackerSummary } from './plan-tracker'
 
 const SEND: ChatPlan = { id: 'p', status: 'awaiting_review', outcome: 'send', asset: 'NEAR', amount: '1', chain: 'near', to: 'alice.near', toAsset: null, toChain: null }
 const SWAP: ChatPlan = { ...SEND, outcome: 'swap', to: null, toAsset: 'USDC', toChain: 'base' }
@@ -39,5 +39,14 @@ describe('the plan tracker', () => {
     expect(states({ ...SWAP, status: 'cancelled' })).toEqual(['Review:failed', 'Sign:pending', 'On NEAR:pending', 'Swap:pending', 'Paid out on Base:pending'])
     expect(trackerSummary({ ...SEND, status: 'expired' })).toBe('Expired')
     expect(trackerSummary({ ...SEND, status: 'draft' })).toBe('Ink can’t send this yet')
+  })
+
+  it('is on show only while the plan is on its way, and steps aside once it’s finished', () => {
+    for (const status of ['awaiting_review', 'approved', 'signing', 'submitted'] as const) expect(isUnderWay({ ...SEND, status }), status).toBe(true)
+    for (const status of ['draft', 'confirmed', 'failed', 'cancelled', 'expired', 'blocked'] as const) expect(isUnderWay({ ...SEND, status }), status).toBe(false)
+    // A swap goes on after its deposit, until NEAR Intents settles it.
+    expect(isUnderWay({ ...SWAP, status: 'confirmed' })).toBe(true)
+    expect(isUnderWay({ ...SWAP, status: 'confirmed', swap: swap('swapping') })).toBe(true)
+    for (const stage of ['done', 'refunded', 'failed', 'unknown'] as const) expect(isUnderWay({ ...SWAP, status: 'confirmed', swap: swap(stage) }), stage).toBe(false)
   })
 })

@@ -51,10 +51,17 @@ export const IPC = {
   removeZerionKey: 'wallet:remove-zerion-key',
   recentSwaps: 'wallet:recent-swaps',
   savedChats: 'chat:saved',
+  receiveChains: 'wallet:receive-chains',
+  searchReceiveTokens: 'wallet:search-receive-tokens',
+  receiveAddress: 'wallet:receive-address',
+  copyReceive: 'wallet:copy-receive',
+  watchDepositAgain: 'wallet:watch-deposit-again',
   deleteSavedChat: 'chat:delete-saved',
   clearChatHistory: 'chat:clear-history',
   /** Main to renderer: a followed swap moved on. It carries nothing: the page asks for them, which needs Ink unlocked. */
   swapsChanged: 'wallet:swaps-changed',
+  /** Main to renderer: a deposit of a kept chat whose session is gone moved on, with the chat's id. Only while unlocked. */
+  depositEvent: 'wallet:deposit-event',
   /** Main to renderer: the vault's status, sent on every change. */
   vaultStatusChanged: 'vault:status-changed',
 } as const
@@ -96,7 +103,7 @@ export interface AgentStatus {
 }
 
 /** The tools of Ink's MCP server. The server has exactly these, and the page shortens only these names. */
-export const INK_TOOLS = ['get_accounts', 'get_portfolio', 'get_quote', 'create_plan', 'get_plan', 'cancel_plan'] as const
+export const INK_TOOLS = ['get_accounts', 'get_deposit_address', 'get_portfolio', 'get_quote', 'create_plan', 'get_plan', 'cancel_plan'] as const
 
 /**
  * A plan an agent proposed, as its chat's card shows it. The agent wrote every
@@ -127,6 +134,102 @@ export interface InkNote {
   lines: string[]
   /** Explorer pages, each https. */
   links: { label: string; url: string }[]
+}
+
+/** A chain the NEAR Intents bridge takes deposits on, with each token and the least of it the bridge credits. */
+export interface IntentsDepositChain {
+  /** The bridge's name for it: `eth:8453`. */
+  key: string
+  /** As people know it: "Base". */
+  name: string
+  /** Ink's mark for it, when it has one: `base`. */
+  mark: string | null
+  /** `ids`: the bridge's ids for the token, `eth:8453:0x8335…`, which its deposits name. */
+  tokens: { symbol: string; min: string; ids: string[] }[]
+}
+
+/** A token to receive on a chain: whether NEAR Intents takes it there, and the least it credits. */
+export interface ReceiveToken {
+  symbol: string
+  /** Zerion's name for it, when the search found it there. */
+  name: string | null
+  /** The least NEAR Intents credits, or null where it doesn't take this token. */
+  min: string | null
+  intents: boolean
+  /** Its icon as a data: URL, which main fetched from Zerion, when the search found one. */
+  icon: string | null
+}
+
+/** A chain to receive on: the wallet's own, one NEAR Intents takes deposits on, or both. */
+export interface ReceiveChain {
+  /** Ink's name for it: `base`. */
+  id: string
+  name: string
+  /** Ink's mark for it, when it has one. */
+  mark: string | null
+  /** The wallet's account that receives there, if any. */
+  own: AccountChain | null
+  /** Whether NEAR Intents takes deposits there. */
+  intents: boolean
+  /** Its top few tokens, before any search. */
+  tokens: ReceiveToken[]
+}
+
+/**
+ * Where to receive, NEAR Intents first: its deposit address, so what arrives lands in the
+ * Intents balance; or the wallet's own address, and why (`not-in-intents`, `below-minimum`
+ * or `intents-unavailable`); or why neither can take it.
+ */
+export type ReceiveAnswer =
+  | { ok: true; kind: 'intents'; chain: string; chainName: string; asset: string; address: string; memo: string | null; min: string; account: string }
+  | { ok: true; kind: 'own'; chain: string; chainName: string; asset: string; address: string; path: string; why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable'; min: string | null }
+  | { ok: false; reason: 'locked' | 'unavailable' | 'unknown-chain' | 'bad-amount' | 'below-minimum' | 'not-supported'; min?: string | null }
+
+/**
+ * Where a deposit Ink watches stands: watching for it, seen on its chain but not yet
+ * credited, credited, not credited, or no longer watched. `unwatched` is an address
+ * Ink can't watch at all, on a chain it reads no balances for.
+ */
+export interface DepositProgress {
+  stage: 'watching' | 'seen' | 'credited' | 'failed' | 'stopped' | 'unwatched'
+  /** What arrived, once seen: "25 USDC". */
+  got: string | null
+  /** The deposit's transaction on its chain, once seen. */
+  tx: string | null
+  /** That transaction on an explorer. Always https. */
+  link: string | null
+  /** When Ink stops watching, in ms since the epoch. */
+  until: number
+}
+
+/**
+ * A deposit card in a chat: where to send a token, which main worked out when the agent
+ * asked `get_deposit_address`, and what Ink has seen arrive there. Every value is main's,
+ * never the agent's.
+ */
+export interface ChatDeposit {
+  id: string
+  /** NEAR Intents' deposit address, or the wallet's own. */
+  kind: 'intents' | 'own'
+  /** Ink's name for the chain: `base`. */
+  chain: string
+  chainName: string
+  /** Ink's mark for the chain, when it has one. */
+  mark: string | null
+  asset: string
+  /** The token's icon, a data: URL, when Ink has no mark of its own for it. */
+  icon: string | null
+  /** How much the person said is coming, if they said. */
+  amount: string | null
+  address: string
+  memo: string | null
+  /** The least NEAR Intents credits, for its address. */
+  min: string | null
+  /** The NEAR account NEAR Intents credits, for its address. */
+  account: string | null
+  /** Why it's the wallet's own address, for that kind. */
+  why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable' | null
+  progress: DepositProgress
 }
 
 /** A swap Ink followed lately, for Home: what went in, what it's for, and where it stands. */
@@ -231,6 +334,12 @@ export type ChatEvent =
   | { type: 'plan-swap'; id: string; swap: ChatSwap }
   /** How a plan of this chat ended, from main. */
   | { type: 'plan-note'; id: string; note: InkNote }
+  /** Where to send a deposit, from main when the agent asked; again when it's watched anew. */
+  | { type: 'deposit'; deposit: ChatDeposit }
+  /** A deposit of this chat's moved on. From main. */
+  | { type: 'deposit-progress'; id: string; progress: DepositProgress }
+  /** A deposit of this chat landed or wasn't credited, in Ink's words. */
+  | { type: 'deposit-note'; id: string; note: InkNote }
   /** Ink passed a plan's ending to the agent, which is now answering it. */
   | { type: 'ink-told' }
   | { type: 'turn-end'; outcome: 'done' | 'stopped' | 'failed'; error: string | null }
@@ -251,6 +360,16 @@ export interface InkBridge {
    * keeps it; `continue` goes on with a kept chat, whose recap Ink sends the new session.
    */
   startChat(agent: AgentId, options?: { historyId?: string; continue?: boolean }): Promise<string>
+  /** The chains to receive on, the wallet's own and NEAR Intents' together, each with its top tokens. */
+  receiveChains(): Promise<ReceiveChain[]>
+  /** A chain's tokens matching a search: NEAR Intents' first, then Zerion's. */
+  searchReceiveTokens(chain: string, query: string): Promise<ReceiveToken[]>
+  /** Where to receive a token, NEAR Intents first. Only while Ink is unlocked. */
+  receiveAddress(ask: { chain: string; asset: string; amount: string | null }): Promise<ReceiveAnswer>
+  /** Copies that address or its memo, as main worked it out, never text from the page. */
+  copyReceive(ask: { chain: string; asset: string; amount: string | null }, part: 'address' | 'memo'): Promise<{ ok: boolean }>
+  /** Watches a deposit card's address for another day, once Ink stopped. */
+  watchDepositAgain(id: string): Promise<{ ok: boolean }>
   /** Chats Ink kept from before, newest first. Empty while Ink is locked. */
   savedChats(): Promise<SavedChat[]>
   deleteSavedChat(id: string): Promise<void>
@@ -307,6 +426,8 @@ export interface InkBridge {
   /** The swaps Ink followed lately, newest first. Empty while Ink is locked. */
   recentSwaps(): Promise<RecentSwap[]>
   onSwapsChanged(listener: () => void): () => void
+  /** A deposit of a kept chat, with no session now, moved on. `chatId` is the page's id for the chat. */
+  onDepositEvent(listener: (chatId: string, event: Extract<ChatEvent, { type: 'deposit-progress' | 'deposit-note' }>) => void): () => void
 }
 
 /** Messages between main and the signer utility process. */

@@ -1,4 +1,5 @@
 import { cleanSymbol } from '../../shared/token-text'
+import { iconUrlOf } from './token-icons'
 
 /** Zerion's API. Every call carries the person's own key; Ink ships none. */
 export const ZERION_URL = 'https://api.zerion.io/v1'
@@ -193,4 +194,42 @@ export async function zerionHoldings(address: string, options: ZerionOptions): P
     next = typeof link === 'string' && link.startsWith(`${base}/`) && link !== next ? link : null
   }
   return holdings
+}
+
+/** A token Zerion's search found on a chain. */
+export interface ZerionToken {
+  symbol: string
+  name: string | null
+  /** Its icon on Zerion's image host, for main to fetch, or null. */
+  icon: string | null
+}
+
+/** A token's name fit to show: plain words, short. Anyone can name a token anything. */
+const NAME = /^[A-Za-z0-9 .()$+-]{1,40}$/
+
+/**
+ * Tokens on one chain whose name or symbol matches, from Zerion's own list: with the
+ * person's key straight from Zerion, else through Ottopus's service. Only tokens Zerion
+ * has verified, since anyone can make one with any symbol. Empty when Zerion can't say.
+ */
+export async function zerionTokenSearch(query: string, chain: string, options: ZerionOptions): Promise<ZerionToken[]> {
+  const path = options.key
+    ? `/fungibles/?${new URLSearchParams({ 'filter[search_query]': query, 'filter[implementation_chain_id]': chain, 'page[size]': '20', sort: '-market_data.market_cap', currency: 'usd' }).toString()}`
+    : `/fungibles?${new URLSearchParams({ q: query, chain }).toString()}`
+  let body: unknown
+  try {
+    body = await zerionGet(path, options)
+  } catch {
+    return []
+  }
+  const data = typeof body === 'object' && body !== null && Array.isArray((body as { data?: unknown }).data) ? (body as { data: unknown[] }).data : []
+  return data.flatMap((item) => {
+    const attributes = typeof item === 'object' && item !== null ? (item as { attributes?: Record<string, unknown> }).attributes : undefined
+    const symbol = cleanSymbol(attributes?.symbol)
+    const verified = (attributes?.flags as { verified?: unknown } | undefined)?.verified === true
+    if (!symbol || !verified) return []
+    const name = typeof attributes?.name === 'string' && NAME.test(attributes.name) ? attributes.name : null
+    const icon = iconUrlOf((attributes?.icon as { url?: unknown } | null | undefined)?.url)
+    return [{ symbol, name, icon }]
+  })
 }

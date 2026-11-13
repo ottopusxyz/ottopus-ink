@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkZerionKey, networkName, toHolding, ZerionError, zerionHoldings } from './zerion'
+import { checkZerionKey, networkName, toHolding, ZerionError, zerionHoldings, zerionTokenSearch } from './zerion'
 
 const KEY = 'zk_dev_test_not_a_real_key_0001'
 const USDC_BASE = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
@@ -130,5 +130,31 @@ describe('checking a key', () => {
     expect(await checkZerionKey({ key: KEY, fetch: fakeZerion({ '/chains/': [{ body: { data: [] } }] }).fetch })).toBe('ok')
     expect(await checkZerionKey({ key: KEY, fetch: fakeZerion({ '/chains/': [{ status: 401 }] }).fetch })).toBe('bad-key')
     expect(await checkZerionKey({ key: KEY, fetch: fakeZerion({ '/chains/': [{ status: 500 }] }).fetch })).toBe('unavailable')
+  })
+})
+
+describe('searching Zerion’s tokens on a chain', () => {
+  const fungible = (symbol: string, attributes: Record<string, unknown> = {}) => ({ attributes: { symbol, name: `${symbol} token`, flags: { verified: true }, icon: { url: `https://cdn.zerion.io/${symbol.toLowerCase()}.png` }, ...attributes } })
+
+  it('gives verified tokens with their names and icons on Zerion’s image host only', async () => {
+    const { fetch } = fakeZerion({
+      '/fungibles/': [
+        {
+          body: {
+            data: [
+              fungible('DEGEN'),
+              fungible('AERO', { icon: { url: 'https://tracker.example.test/aero.png' } }),
+              fungible('NOICON', { icon: null }),
+              fungible('FAKE', { flags: { verified: false } }),
+            ],
+          },
+        },
+      ],
+    })
+    expect(await zerionTokenSearch('e', 'base', { key: KEY, fetch })).toEqual([
+      { symbol: 'DEGEN', name: 'DEGEN token', icon: 'https://cdn.zerion.io/degen.png' },
+      { symbol: 'AERO', name: 'AERO token', icon: null },
+      { symbol: 'NOICON', name: 'NOICON token', icon: null },
+    ])
   })
 })

@@ -1,4 +1,4 @@
-import { memo, useEffect, useId, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useId, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
 import { Otto } from '@/components/brand/otto'
 import { Callout, ErrorState, TokenLogo, Tooltip } from '@/components/ui'
 import { Sea } from '@/components/motion/sea'
@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { AgentMark } from './agent-picker'
 import { Composer, toolsChip } from './composer'
+import { DepositCard } from './deposit-card'
 import { InkNoteCard } from './ink-note'
 import { Markdown } from './markdown'
 import { PlanCard } from './plan-card'
@@ -30,6 +31,8 @@ export interface ChatViewProps {
   onForget: () => void
   /** Opens Settings on tools and skills. */
   onToolsSettings: () => void
+  /** Opens Receive on a chain, from a deposit card. */
+  onOpenReceive?: ((chain: string) => void) | undefined
 }
 
 /** How near the bottom counts as following along. Further up, someone is reading. */
@@ -51,7 +54,13 @@ const WORKING: Partial<Record<Chat['phase'], string>> = {
  * it sends is drawn as plain text, so it has no way to load an image or disguise
  * where a link goes.
  */
-export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onContinue, onForget, onToolsSettings }: ChatViewProps) {
+export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onContinue, onForget, onToolsSettings, onOpenReceive }: ChatViewProps) {
+  // One function for the life of the view, so the conversation's rows don't redraw when the app does.
+  const openReceiveNow = useRef(onOpenReceive)
+  useEffect(() => {
+    openReceiveNow.current = onOpenReceive
+  }, [onOpenReceive])
+  const openReceive = useCallback((chain: string) => openReceiveNow.current?.(chain), [])
   const scroller = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const following = useRef(true)
@@ -119,13 +128,13 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onCont
           {kept ? <PlanCard plan={kept} /> : null}
           {turns.map((turn) =>
             turn.kind === 'you' ? (
-              <ConversationItem key={turn.item.id} item={turn.item} />
+              <ConversationItem key={turn.item.id} item={turn.item} onOpenReceive={openReceive} />
             ) : (
               <div key={turn.id} className="ink-turn">
                 <AgentMark id={chat.agent} />
                 <div className="ink-turn__body">
                   {turn.items.map((item) => (
-                    <ConversationItem key={item.id} item={item} />
+                    <ConversationItem key={item.id} item={item} onOpenReceive={openReceive} />
                   ))}
                   {turn === lastTurn ? thinking : null}
                 </div>
@@ -235,7 +244,7 @@ function ChatMenu({ canEnd, onEnd, canForget, onForget }: { canEnd: boolean; onE
 }
 
 /** Memoised because a long chat redraws on every batch, and only its newest row has changed. */
-const ConversationItem = memo(function ConversationItem({ item }: { item: ChatItem }): ReactNode {
+const ConversationItem = memo(function ConversationItem({ item, onOpenReceive }: { item: ChatItem; onOpenReceive: (chain: string) => void }): ReactNode {
   switch (item.kind) {
     case 'user':
       return <div className="ink-bubble">{item.text}</div>
@@ -262,5 +271,7 @@ const ConversationItem = memo(function ConversationItem({ item }: { item: ChatIt
       return <PlanCard plan={item.plan} />
     case 'ink-note':
       return <InkNoteCard note={item.note} />
+    case 'deposit':
+      return <DepositCard deposit={item.deposit} onOpenReceive={onOpenReceive} />
   }
 })

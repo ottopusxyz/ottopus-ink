@@ -1,4 +1,4 @@
-import { INK_TOOLS, type AgentId, type ChatEvent, type ChatPlan, type InkNote } from '../../../shared/ipc'
+import { INK_TOOLS, type AgentId, type ChatDeposit, type ChatEvent, type ChatPlan, type InkNote } from '../../../shared/ipc'
 import type { SavedChat } from '../../../shared/history'
 import { NOTHING_SIGNED } from '@/components/ui/copy'
 
@@ -20,7 +20,9 @@ export type ChatItem =
       result: { text: string; isError: boolean; ms: number | null } | null
     }
   | { kind: 'plan'; id: string; plan: ChatPlan }
-  /** How a plan ended, in Ink's own words, from main: never the agent's. */
+  /** Where to send a deposit, and what Ink has seen arrive, from main: never the agent's. */
+  | { kind: 'deposit'; id: string; deposit: ChatDeposit }
+  /** How a plan or a deposit ended, in Ink's own words, from main: never the agent's. `planId` names either. */
   | { kind: 'ink-note'; id: string; planId: string; note: InkNote }
   /** `ends` marks the failure that finished a chat, which gets more room than one it can carry on from. */
   | { kind: 'notice'; id: string; severity: 'info' | 'block'; title: string; text: string | null; ends?: true }
@@ -155,7 +157,29 @@ export function messageFailed(chat: Chat, error: string): Chat {
 }
 
 /** What one event from the chat's session does to it. `at` is when the event reached the page. */
+/** A deposit card's event, from main. */
+export type DepositEvent = Extract<ChatEvent, { type: 'deposit' | 'deposit-progress' | 'deposit-note' }>
+
+const isDepositEvent = (event: ChatEvent): event is DepositEvent => event.type === 'deposit' || event.type === 'deposit-progress' || event.type === 'deposit-note'
+
+/**
+ * A deposit card's event. These apply even once a chat's session has ended, since Ink
+ * goes on watching the address. A card shown again, when the agent asked again for the
+ * same address, moves down to where it was asked.
+ */
+export function applyDepositEvent(chat: Chat, event: DepositEvent): Chat {
+  switch (event.type) {
+    case 'deposit':
+      return withItem({ ...chat, items: chat.items.filter((item) => !(item.kind === 'deposit' && item.deposit.id === event.deposit.id)) }, { kind: 'deposit', deposit: event.deposit })
+    case 'deposit-progress':
+      return { ...chat, items: chat.items.map((item) => (item.kind === 'deposit' && item.deposit.id === event.id ? { ...item, deposit: { ...item.deposit, progress: event.progress } } : item)) }
+    case 'deposit-note':
+      return withItem(chat, { kind: 'ink-note', planId: event.id, note: event.note })
+  }
+}
+
 export function applyChatEvent(chat: Chat, event: ChatEvent, at?: number): Chat {
+  if (isDepositEvent(event)) return applyDepositEvent(chat, event)
   // Ending a chat takes a moment in the main process, and it stops here at once. The
   // exception is the lock: a person who pressed End must still hear that it broke.
   if (chat.phase === 'ended' && event.type !== 'lock') return chat

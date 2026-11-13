@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentStatus, ChatEvent, ChatSwap, InkNote } from '../../shared/ipc'
+import type { AgentStatus, ChatDeposit, ChatEvent, ChatSwap, DepositProgress, InkNote, ReceiveAnswer } from '../../shared/ipc'
 import type { PlanStatus } from '../../shared/plan'
 import { looksLikeItMovesFunds } from '../external/catalog'
 import { itemsNeedingSignIn, type SessionExternal } from '../external/session'
@@ -26,6 +26,18 @@ export interface ChatTools {
    * Main passes this in too.
    */
   follow?: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; ending: (ending: PlanEnding) => void }) => void
+  /**
+   * Shows and watches an address get_deposit_address gave the chat's agent. Each of
+   * `listen` says whether the chat was still open to hear it. Main passes this in.
+   */
+  deposits?: (chatId: string, owner: string, ask: { chain: string; asset: string; amount: string | null }, answer: Extract<ReceiveAnswer, { ok: true }>, listen: DepositListen) => void
+}
+
+/** What a chat hears of a deposit it showed. Each says whether the chat was still open. */
+export interface DepositListen {
+  show: (deposit: ChatDeposit) => boolean
+  progress: (id: string, progress: DepositProgress) => boolean
+  ending: (id: string, ending: PlanEnding) => boolean
 }
 
 /** How a plan ended: Ink's note for the person, and the facts to pass to the agent. */
@@ -74,7 +86,7 @@ const turns = new Map<string, Turn>()
 export function startChat(
   agent: AgentStatus,
   agentEnv: AgentEnv,
-  { bridge, shim, review, follow }: ChatTools,
+  { bridge, shim, review, follow, deposits }: ChatTools,
   external: SessionExternal,
   onEvent: (chatId: string, event: ChatEvent) => void,
 ): string {
@@ -108,6 +120,20 @@ export function startChat(
           onEvent(chatId, { type: 'plan-note', id: plan.id, note })
           turn.forAgent.push(forAgent)
           if (!turn.busy) tellAgent(chatId)
+        },
+      })
+    },
+    onReceive: (ask, answer, owner) => {
+      if (over || !locked) return
+      deposits?.(chatId, owner, ask, answer, {
+        show: (deposit) => (over ? false : (onEvent(chatId, { type: 'deposit', deposit }), true)),
+        progress: (id, progress) => (over ? false : (onEvent(chatId, { type: 'deposit-progress', id, progress }), true)),
+        ending: (id, { note, forAgent }) => {
+          if (over) return false
+          onEvent(chatId, { type: 'deposit-note', id, note })
+          turn.forAgent.push(forAgent)
+          if (!turn.busy) tellAgent(chatId)
+          return true
         },
       })
     },

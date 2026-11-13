@@ -13,6 +13,7 @@ interface ToolCopy {
 /** How each of Ink's tools reads in a chat: what it's doing, what it did, or that it didn't. */
 export const TOOL_COPY: Record<InkTool, ToolCopy> = {
   get_accounts: { running: 'Finding your accounts', done: 'Found your accounts', failed: 'Couldn’t read your accounts', tint: '#FFF0DC' },
+  get_deposit_address: { running: 'Finding where to receive', done: 'Found where to receive', failed: 'Couldn’t find where to receive', tint: '#E5DCFF' },
   get_portfolio: { running: 'Reading your balances', done: 'Read your balances', failed: 'Couldn’t read your balances', tint: '#C9F2DD' },
   get_quote: { running: 'Getting a quote', done: 'Got a quote', failed: 'Couldn’t get a quote', tint: '#CFE0FF' },
   create_plan: { running: 'Drafting a plan', done: 'Drafted a plan', failed: 'Couldn’t draft the plan', tint: '#FFD2C2' },

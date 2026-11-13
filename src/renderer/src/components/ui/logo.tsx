@@ -72,11 +72,13 @@ export function ChainLogo({ chain, size, label }: { chain: ChainId; size?: LogoS
 /**
  * A token's mark, with its chain as a small badge only where the chain adds
  * something: USDC on Base gets one, NEAR on NEAR doesn't. A symbol Ink has no
- * mark for falls back to its chain's mark, then to its first letters.
+ * mark for takes `icon`, a data: URL main fetched, then its chain's mark, then
+ * its first letters.
  */
-export function TokenLogo({ symbol, chain, size = 'md', label }: { symbol: string; chain?: string | null; size?: LogoSize; label?: string }) {
+export function TokenLogo({ symbol, chain, icon, size = 'md', label }: { symbol: string; chain?: string | null; icon?: string | null; size?: LogoSize; label?: string }) {
   const badge = chainBadge(symbol, chain)
-  const src = isTokenSymbol(symbol) ? TOKEN_SRC[symbol.toUpperCase() as TokenSymbol] : badge ? CHAIN_SRC[badge] : null
+  const fetched = icon?.startsWith('data:image/') ? icon : null
+  const src = isTokenSymbol(symbol) ? TOKEN_SRC[symbol.toUpperCase() as TokenSymbol] : (fetched ?? (badge ? CHAIN_SRC[badge] : null))
   const mark = src ? (
     <Mark src={src} size={size} label={label} />
   ) : (

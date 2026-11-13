@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentId, ChatEvent } from '../../../shared/ipc'
-import { applyChatEvent, chatContinued, chatFailedToStart, chatStarted, ipcErrorText, messageFailed, messageSent, newChat, restoredChat, type Chat } from './chats'
+import { applyChatEvent, applyDepositEvent, chatContinued, chatFailedToStart, chatStarted, ipcErrorText, messageFailed, messageSent, newChat, restoredChat, type Chat } from './chats'
 
 /** Replies arrive a few characters at a time, so React draws them at this pace at most. */
 const BATCH_MS = 50
@@ -96,6 +96,15 @@ export function useChats(): [Chat[], ChatActions] {
       timer.current = null
     }
   }, [flush])
+
+  // A deposit Ink still watches for a chat whose session is gone: main names the kept chat, which is the page's id for it.
+  useEffect(
+    () =>
+      window.ink.onDepositEvent((chatId, event) => {
+        setChats((all) => all.map((chat) => (chat.id === chatId ? applyDepositEvent(chat, event) : chat)))
+      }),
+    [],
+  )
 
   const actions = useMemo<ChatActions>(
     () => ({

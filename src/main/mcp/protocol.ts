@@ -1,5 +1,5 @@
 import type { Account, AccountChain } from '../../shared/accounts'
-import type { ChatPlan, ChatSwap } from '../../shared/ipc'
+import type { ChatPlan, ChatSwap, ReceiveAnswer } from '../../shared/ipc'
 import type { PlanIntent, PlanStatus, PlanSummary, PlanToolResult, PlanTools } from '../../shared/plan'
 import type { HoldingGroup, PortfolioGap, PortfolioResult, TokenHolding, ZerionState } from '../../shared/portfolio'
 import type { VaultResult } from '../../shared/vault'
@@ -30,6 +30,12 @@ const TOOLS = [
     name: 'get_accounts',
     description: "The wallet's address on each chain.",
     inputSchema: objectSchema({}),
+  },
+  {
+    name: 'get_deposit_address',
+    description:
+      'Where the wallet receives a token on a chain. NEAR Intents first: its deposit address there, so what arrives lands in the NEAR Intents balance, unless it doesn’t take the token or the amount is under its minimum; then the wallet’s own address on that chain. Give amount when the person said how much.',
+    inputSchema: objectSchema({ chain: text, asset: text, amount: text }, ['chain', 'asset']),
   },
   {
     name: 'get_portfolio',
@@ -77,6 +83,7 @@ const NOT_SET_UP = toolAnswer('The wallet is not set up yet.')
 const NOT_BUILT: Record<string, ReturnType<typeof toolAnswer>> = {
   get_portfolio: toolAnswer('Ink can’t read balances yet.'),
   get_quote: toolAnswer('Ink can’t get quotes yet.'),
+  get_deposit_address: toolAnswer('Ink can’t give deposit addresses yet.'),
   get_plan: toolAnswer('Ink can’t track plans yet.'),
   cancel_plan: toolAnswer('Ink can’t track plans yet, so there is nothing to cancel. Nothing was signed.'),
   create_plan: toolAnswer('Ink can’t make plans yet.'),
@@ -105,6 +112,10 @@ export interface McpHandlers {
   portfolio?: () => Promise<PortfolioResult>
   /** What a payment would give by the route main picks. */
   quote?: (ask: RouteAsk) => Promise<QuoteOutcome>
+  /** Where the wallet receives a token, NEAR Intents first. */
+  receive?: (ask: { chain: string; asset: string; amount: string | null }) => Promise<ReceiveAnswer>
+  /** Gets each address get_deposit_address gave this session's agent, so Ink can show it and watch it. */
+  onReceive?: (ask: { chain: string; asset: string; amount: string | null }, answer: Extract<ReceiveAnswer, { ok: true }>) => void
 }
 
 /** How each status reads to an agent. */
@@ -420,6 +431,60 @@ async function quoteAnswer(quote: McpHandlers['quote'], args: unknown): Promise<
   )
 }
 
+/** get_deposit_address's answer: the address, whose it is, the memo and minimum, and where the money lands. */
+async function receiveAnswer(receive: McpHandlers['receive'], args: unknown, onReceive?: McpHandlers['onReceive']): Promise<object> {
+  if (!receive) return NOT_BUILT.get_deposit_address ?? NOT_SET_UP
+  const fields = isRecord(args) ? args : {}
+  const word = (value: unknown) => (typeof value === 'string' && value.length <= 40 && PLAN_FIELD.test(value) ? value : null)
+  const chain = word(fields.chain)
+  const asset = word(fields.asset)
+  const amount = fields.amount === undefined ? null : word(fields.amount)
+  const extra = Object.keys(fields).some((key) => !['chain', 'asset', 'amount'].includes(key))
+  if (!chain || !asset || (fields.amount !== undefined && amount === null) || extra) return toolAnswer('get_deposit_address needs chain and asset, each one word, and amount only as a plain decimal.', true)
+  let answer: ReceiveAnswer
+  try {
+    answer = await receive({ chain, asset, amount })
+  } catch {
+    return toolAnswer('Ink couldn’t work out where to receive right now. Try again.', true)
+  }
+  if (!answer.ok) {
+    switch (answer.reason) {
+      case 'locked':
+        return toolAnswer('Ink is locked. Ask the person to unlock Ink, then try again.', true)
+      case 'unknown-chain':
+        return toolAnswer(`Ink can’t receive on a chain called ${chain}. Use a name such as near, base, ethereum, solana, bitcoin, tron, ton, xrp or stellar.`, true)
+      case 'bad-amount':
+        return toolAnswer('The amount must be a plain decimal, such as 25 or 0.5.', true)
+      case 'below-minimum':
+        return toolAnswer(`NEAR Intents credits at least ${answer.min ?? 'more'} ${asset} on ${chain}, and the wallet has no address of its own there, so nothing under that would arrive. Ask the person to send at least that.`, true)
+      case 'not-supported':
+        return toolAnswer(`Neither NEAR Intents nor the wallet’s own accounts take ${asset} on ${chain}.`, true)
+      default:
+        return toolAnswer('Ink couldn’t work out where to receive right now. Try again.', true)
+    }
+  }
+  onReceive?.({ chain, asset, amount }, answer)
+  const shown = 'Ink shows the person this address and its QR code in the chat, watches for the deposit, and tells you when it lands.'
+  if (answer.kind === 'intents') {
+    return toolAnswer(
+      [
+        `Send ${answer.asset} on ${answer.chainName} to: ${answer.address}`,
+        ...(answer.memo ? [`Memo, required: ${answer.memo}. Without it the deposit isn’t credited.`] : []),
+        `This is the NEAR Intents bridge’s deposit address for this wallet, not one of the wallet’s own addresses. What arrives lands in the wallet’s NEAR Intents balance (account ${answer.account}).`,
+        `Send at least ${answer.min} ${answer.asset}: less isn’t credited. Only ${answer.asset} on ${answer.chainName}.`,
+        shown,
+      ].join('\n'),
+    )
+  }
+  const why =
+    answer.why === 'below-minimum'
+      ? `That amount is under the ${answer.min ?? ''} ${answer.asset} NEAR Intents credits, so it goes to the wallet’s own address instead.`
+      : answer.why === 'intents-unavailable'
+        ? 'NEAR Intents couldn’t be reached for its deposit address, so this is the wallet’s own address.'
+        : `NEAR Intents doesn’t take ${answer.asset} on ${answer.chainName}, so this is the wallet’s own address.`
+  return toolAnswer([`Send ${answer.asset} on ${answer.chainName} to: ${answer.address}`, why, `Only ${answer.asset} on ${answer.chainName}.`, shown].join('\n'))
+}
+
 async function accountsAnswer(read: McpHandlers['accounts']): Promise<object> {
   if (!read) return NOT_SET_UP
   let answer: VaultResult<{ accounts: Account[] }>
@@ -489,7 +554,7 @@ export function parseErrorResponse(): object {
  * server doesn't have gets a proper error rather than silence: Claude Code opens
  * with `server/discover` and falls back to `initialize` only when told no.
  */
-export async function handleMcpMessage(message: unknown, version: string, { onPlan, accounts, plans, portfolio, quote }: McpHandlers = {}): Promise<object | null> {
+export async function handleMcpMessage(message: unknown, version: string, { onPlan, accounts, plans, portfolio, quote, receive, onReceive }: McpHandlers = {}): Promise<object | null> {
   if (!isRecord(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     const id = isRecord(message) && (typeof message.id === 'string' || typeof message.id === 'number') ? message.id : null
     return rpcError(id, INVALID_REQUEST, 'Not a JSON-RPC 2.0 request')
@@ -540,6 +605,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
       if (params.name === 'get_accounts') return result(await accountsAnswer(accounts))
       if (params.name === 'get_portfolio') return result(await portfolioAnswer(portfolio, params.arguments))
       if (params.name === 'get_quote') return result(await quoteAnswer(quote, params.arguments))
+      if (params.name === 'get_deposit_address') return result(await receiveAnswer(receive, params.arguments, onReceive))
       return result(NOT_BUILT[params.name as string] ?? NOT_SET_UP)
     }
     default:

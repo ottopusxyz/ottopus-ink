@@ -269,6 +269,30 @@
   gap: 8px;
   padding: 12px 16px 14px;
 }
+/* A deposit card's QR code: on white whatever the theme, so any phone scans it, with the chain's mark at its heart. */
+.ink-deposit-qr {
+  position: relative;
+  flex: none;
+  padding: 8px;
+  border: 2px solid #16213E;
+  border-radius: 16px;
+  background: #fff;
+}
+.ink-deposit-qr svg { display: block; }
+.ink-ticket .ink-copy {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 13.5px;
+}
+.ink-deposit-qr__mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px #16213E;
+  transform: translate(-50%, -50%);
+}
 
 /* Home: a calm highlight under the second line, Otto's speech bubble, and the
    banner for a plan waiting on the person. */
@@ -1209,12 +1233,95 @@ button.ink-connector { cursor: pointer; }
 }
 .ink-composer__hint .ink-kbd { font-size: 10.5px; }
 
-/* Receive: chains still to come, on a dashed tile that isn't a choice yet. */
-.ink-choice--later {
-  border-style: dashed;
-  background: transparent;
+/* Receive: search fields shaped like the sidebar's, with their matches dropped
+   down in a popover card. The field and the list join while it's open. */
+.ink-finder {
+  position: relative;
+  max-width: 360px;
+}
+.ink-finder__field {
+  height: 38px;
+  margin: 0;
+  padding: 0 8px 0 12px;
+  border-color: var(--ot-border-strong);
+  border-radius: 12px;
+  transition: border-color var(--ot-dur-fast), box-shadow var(--ot-dur-fast);
+}
+.ink-finder__field:focus-within {
+  border-color: var(--ot-plan);
+  box-shadow: 0 0 0 3px var(--ot-plan-bg);
+}
+.ink-finder__field:focus-within svg:first-child { color: var(--ot-plan-text); }
+.ink-finder__clear {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ot-surface-3);
+  color: var(--ot-text-2);
+  cursor: pointer;
+}
+.ink-finder__clear:hover { background: var(--ot-border-strong); color: var(--ot-text); }
+.ink-finder__list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 280px;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--ot-border);
+  border-radius: 14px;
+  background: var(--ot-card);
+  box-shadow: 0 2px 6px rgba(22, 33, 62, 0.08), 0 18px 40px rgba(22, 33, 62, 0.18);
+  animation: ink-finder-in var(--ot-dur-fast) ease-out;
+}
+.ink-finder__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.ink-finder__option[aria-selected="true"] {
+  background: var(--ot-plan-bg);
+  box-shadow: inset 0 0 0 1px var(--ot-plan-border);
+}
+.ink-finder__empty {
+  padding: 10px 9px;
+  font-size: 12.5px;
   color: var(--ot-text-3);
-  cursor: default;
+}
+@keyframes ink-finder-in {
+  from { opacity: 0; translate: 0 -4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-finder__list { animation: none; }
+}
+/* The address card's note while a new address is on its way. */
+.ink-address-card__updating {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
+  background: var(--ot-plan-bg);
+  color: var(--ot-plan-text);
+  font-size: 11.5px;
+  font-weight: 700;
 }
 
 /* Settings › Agent: a card per agent, the default on coral with the sticker edge. */

@@ -22,6 +22,7 @@ export function toolsChip(external: readonly string[]): { text: string; hint: st
 /** What each of Ink's tools reaches, in a few words, and what kind of thing it does. */
 const ABOUT: Record<InkTool, { text: string; does: 'Read' | 'Propose' | 'Cancel'; tone: Tone }> = {
   get_accounts: { text: 'Your addresses, no keys', does: 'Read', tone: 'ok' },
+  get_deposit_address: { text: 'Where to receive, NEAR Intents first', does: 'Read', tone: 'ok' },
   get_portfolio: { text: 'Balances on every chain', does: 'Read', tone: 'ok' },
   get_quote: { text: 'Prices through NEAR Intents', does: 'Read', tone: 'ok' },
   create_plan: { text: 'Drafts a plan for you to review', does: 'Propose', tone: 'coral' },

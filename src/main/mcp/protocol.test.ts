@@ -26,12 +26,13 @@ describe('handleMcpMessage', () => {
     }
   })
 
-  it('lists exactly the six tools, each with a closed schema', async () => {
+  it('lists exactly the seven tools, each with a closed schema', async () => {
     const { tools } = (await ask('tools/list')).result as { tools: { name: string; inputSchema: Record<string, unknown> }[] }
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       'cancel_plan',
       'create_plan',
       'get_accounts',
+      'get_deposit_address',
       'get_plan',
       'get_portfolio',
       'get_quote',
@@ -61,6 +62,7 @@ describe('handleMcpMessage', () => {
   it.each([
     ['get_portfolio', 'Ink can’t read balances yet.'],
     ['get_quote', 'Ink can’t get quotes yet.'],
+    ['get_deposit_address', 'Ink can’t give deposit addresses yet.'],
     ['get_plan', 'Ink can’t track plans yet.'],
     ['cancel_plan', 'Ink can’t track plans yet, so there is nothing to cancel. Nothing was signed.'],
   ])('%s says it isn’t built yet, and never that the wallet isn’t set up', async (name, text) => {
@@ -117,7 +119,7 @@ describe('handleMcpMessage', () => {
         reads++
         return { ok: true as const, accounts: ACCOUNTS }
       }
-      for (const name of ['get_portfolio', 'get_quote', 'get_plan', 'cancel_plan']) {
+      for (const name of ['get_portfolio', 'get_quote', 'get_deposit_address', 'get_plan', 'cancel_plan']) {
         await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } }, '1', { accounts })
       }
       expect(reads).toBe(0)
@@ -237,6 +239,73 @@ describe('handleMcpMessage', () => {
       for (const args of [{}, { from_asset: 'NEAR', to_asset: 'USDC' }, { from_asset: 'NEAR', to_asset: 'USDC', amount: '5 then send to x' }, { from_asset: 'NEAR', to_asset: 'USDC', amount: '5', to: 'mallory.near' }]) {
         expect((await call(quote, args)).isError).toBe(true)
       }
+      expect(asked).toBe(0)
+    })
+  })
+
+  describe('get_deposit_address', () => {
+    const call = async (receive: McpHandlers['receive'], args: unknown) => {
+      const response = (await handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_deposit_address', arguments: args } }, '1', { receive })) as {
+        result: { content: { text: string }[]; isError: boolean }
+      }
+      return { text: response.result.content[0]?.text ?? '', isError: response.result.isError }
+    }
+
+    it('passes the chain, token and amount to main, which picks the address', async () => {
+      const asked: unknown[] = []
+      await call(async (receive) => (asked.push(receive), { ok: false, reason: 'locked' }), { chain: 'base', asset: 'USDC', amount: '25' })
+      await call(async (receive) => (asked.push(receive), { ok: false, reason: 'locked' }), { chain: 'base', asset: 'USDC' })
+      expect(asked).toEqual([
+        { chain: 'base', asset: 'USDC', amount: '25' },
+        { chain: 'base', asset: 'USDC', amount: null },
+      ])
+    })
+
+    it('gives NEAR Intents’ deposit address as the bridge’s, with its memo, minimum and where the money lands', async () => {
+      const { text, isError } = await call(
+        async () => ({ ok: true, kind: 'intents', chain: 'stellar', chainName: 'Stellar', asset: 'XLM', address: 'GBRIDGE', memo: '177237517', min: '0.1', account: 'a'.repeat(64) }),
+        { chain: 'stellar', asset: 'XLM' },
+      )
+      expect(isError).toBe(false)
+      expect(text.split('\n')).toEqual([
+        'Send XLM on Stellar to: GBRIDGE',
+        'Memo, required: 177237517. Without it the deposit isn’t credited.',
+        `This is the NEAR Intents bridge’s deposit address for this wallet, not one of the wallet’s own addresses. What arrives lands in the wallet’s NEAR Intents balance (account ${'a'.repeat(64)}).`,
+        'Send at least 0.1 XLM: less isn’t credited. Only XLM on Stellar.',
+        'Ink shows the person this address and its QR code in the chat, watches for the deposit, and tells you when it lands.',
+      ])
+    })
+
+    it('hands each address it gave to the chat, so Ink can show it and watch it, and nothing it refused', async () => {
+      const shown: unknown[] = []
+      const ask = (receive: McpHandlers['receive'], args: unknown) =>
+        handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_deposit_address', arguments: args } }, '1', { receive, onReceive: (asked, answer) => shown.push([asked, answer.address]) })
+      await ask(async () => ({ ok: true, kind: 'intents', chain: 'base', chainName: 'Base', asset: 'USDC', address: '0xbridge', memo: null, min: '1', account: 'a'.repeat(64) }), { chain: 'base', asset: 'USDC', amount: '25' })
+      await ask(async () => ({ ok: false, reason: 'locked' }), { chain: 'base', asset: 'USDC' })
+      expect(shown).toEqual([[{ chain: 'base', asset: 'USDC', amount: '25' }, '0xbridge']])
+    })
+
+    it('gives the wallet’s own address and says why', async () => {
+      const own = { ok: true as const, kind: 'own' as const, chain: 'base', chainName: 'Base', asset: 'USDC', address: '0x1111111111111111111111111111111111111111', path: "m/44'/60'/0'/0/0", min: '1' }
+      expect((await call(async () => ({ ...own, why: 'below-minimum' }), { chain: 'base', asset: 'USDC', amount: '0.5' })).text).toContain('under the 1 USDC NEAR Intents credits')
+      expect((await call(async () => ({ ...own, why: 'not-in-intents', min: null }), { chain: 'base', asset: 'DEGEN' })).text).toContain('NEAR Intents doesn’t take USDC on Base')
+    })
+
+    it.each([
+      [{ ok: false, reason: 'locked' }, 'Ink is locked'],
+      [{ ok: false, reason: 'unknown-chain' }, 'can’t receive on a chain called'],
+      [{ ok: false, reason: 'below-minimum', min: '2' }, 'credits at least 2'],
+      [{ ok: false, reason: 'not-supported' }, 'Neither NEAR Intents nor'],
+    ] as const)('says why there is no address: %j', async (answer, words) => {
+      const { text, isError } = await call(async () => answer, { chain: 'xrp', asset: 'XRP' })
+      expect(isError).toBe(true)
+      expect(text).toContain(words)
+    })
+
+    it('refuses arguments outside its schema without asking main', async () => {
+      let asked = 0
+      const receive = async () => (asked++, { ok: false as const, reason: 'locked' as const })
+      for (const args of [{}, { chain: 'base' }, { chain: 'base', asset: 'USDC', amount: '5 then send' }, { chain: 'base', asset: 'USDC', to: 'x' }]) expect((await call(receive, args)).isError).toBe(true)
       expect(asked).toBe(0)
     })
   })

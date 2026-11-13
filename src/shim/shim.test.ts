@@ -52,7 +52,7 @@ describe('the shim', () => {
       result: { serverInfo: { name: 'ottopus-ink', version: '1.2.3' } },
     })
     const tools = (await ask({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).result as { tools: unknown[] }
-    expect(tools.tools).toHaveLength(6)
+    expect(tools.tools).toHaveLength(7)
     expect(await ask({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'get_accounts' } })).toMatchObject({
       id: 3,
       result: { isError: false },

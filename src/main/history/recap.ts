@@ -44,7 +44,11 @@ export function recapOf(chat: SavedChat): string {
         lines.push(`Ink: a plan was proposed: ${planLine(event.plan)}.`)
         break
       case 'plan-note':
+      case 'deposit-note':
         lines.push(`Ink: ${event.note.title}. ${event.note.lines.join(' ')}`)
+        break
+      case 'deposit':
+        lines.push(`Ink: it showed the person where to send ${event.deposit.asset} on ${event.deposit.chainName}${event.deposit.kind === 'intents' ? ', NEAR Intents’ deposit address' : ', the wallet’s own address'}.`)
         break
       case 'plan-status': {
         const plan = plans.get(event.id)

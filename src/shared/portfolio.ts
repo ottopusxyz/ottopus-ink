@@ -64,21 +64,21 @@ export interface TokenHolding {
 
 /**
  * The accounts whose holdings Ink reads: NEAR itself, its Intents balance on intents.near,
- * and through Zerion the EVM, Solana and Tron ones.
+ * its Tron account from TronGrid, and through Zerion the EVM and Solana ones.
  */
 export type HoldingGroup = 'near' | 'intents' | 'evm' | 'solana' | 'tron'
 
 /**
- * Zerion, which reads the EVM, Solana and Tron accounts with the person's own key:
+ * Zerion, which reads the EVM and Solana accounts, with the person's own key or Ottopus's:
  * `off` without a key, `ok`, or why it couldn't read this time.
  */
 export type ZerionState = 'off' | 'ok' | 'bad-key' | 'rate-limited' | 'unavailable'
 
 /**
  * What couldn't be read this time, so the figures may be short: `tokens` (the NEAR token
- * list), `prices`, `reviews` (which tokens are vouched for), or `intents` (the Intents balance).
+ * list), `prices`, `reviews` (which tokens are vouched for), `intents` (the Intents balance), or `tron`.
  */
-export type PortfolioGap = 'tokens' | 'prices' | 'reviews' | 'intents'
+export type PortfolioGap = 'tokens' | 'prices' | 'reviews' | 'intents' | 'tron'
 
 export interface Portfolio {
   near: NearHolding
@@ -87,7 +87,7 @@ export interface Portfolio {
   /** Most valuable first. Every chain read, NEAR's tokens and Zerion's alike. */
   tokens: TokenHolding[]
   zerion: ZerionState
-  /** Whose Zerion access read the EVM, Solana and Tron accounts: the person's own key, or Ottopus's service. */
+  /** Whose Zerion access read the EVM and Solana accounts: the person's own key, or Ottopus's service. */
   zerionVia: 'own-key' | 'ottopus' | null
   /** Accounts Zerion was asked about and couldn't read, such as an address kind it doesn't track. */
   unread: HoldingGroup[]

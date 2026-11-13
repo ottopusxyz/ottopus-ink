@@ -16,7 +16,7 @@ import { useNow, usePortfolio } from '@/lib/use-portfolio'
 const CHAIN_NAMES: Record<AccountChain, string> = { near: 'NEAR', evm: 'EVM', solana: 'Solana', bitcoin: 'Bitcoin', tron: 'Tron', sui: 'Sui', aptos: 'Aptos' }
 
 /** Accounts Zerion reads, with the person's own key. */
-const ZERION_GROUPS: readonly AccountChain[] = ['evm', 'solana', 'tron']
+const ZERION_GROUPS: readonly AccountChain[] = ['evm', 'solana']
 
 /** Accounts Ink doesn't read at all yet. */
 const NEVER_READ: readonly AccountChain[] = ['bitcoin', 'sui', 'aptos']
@@ -27,9 +27,9 @@ const NETWORK_MARKS: Record<string, ChainId> = { 'binance-smart-chain': 'bsc' }
 const markOf = (network: string): ChainId | null => NETWORK_MARKS[network] ?? (isChainId(network) ? network : null)
 
 const ZERION_PROBLEMS: Record<Exclude<ZerionState, 'ok' | 'off'>, string> = {
-  'bad-key': 'Zerion turned down your API key, so EVM, Solana and Tron are missing. Change it in Settings.',
-  'rate-limited': 'Zerion’s limit is used up for now, so EVM, Solana and Tron are missing. Try again in a minute.',
-  unavailable: 'Zerion couldn’t be reached, so EVM, Solana and Tron are missing.',
+  'bad-key': 'Zerion turned down your API key, so EVM and Solana are missing. Change it in Settings.',
+  'rate-limited': 'Zerion’s limit is used up for now, so EVM and Solana are missing. Try again in a minute.',
+  unavailable: 'Zerion couldn’t be reached, so EVM and Solana are missing.',
 }
 
 const GROUP_NAMES: Record<HoldingGroup, string> = { near: 'NEAR', intents: 'NEAR Intents', evm: 'EVM', solana: 'Solana', tron: 'Tron' }
@@ -153,6 +153,7 @@ function Gaps({ portfolio, stale }: { portfolio: Portfolio; stale: boolean }) {
     ...(portfolio.gaps.includes('prices') ? ['Prices couldn’t be read, so there are no dollar values.'] : []),
     ...(portfolio.gaps.includes('reviews') ? ['Some tokens couldn’t be checked, so they aren’t counted.'] : []),
     ...(portfolio.gaps.includes('intents') ? ['Your NEAR Intents balance couldn’t be read, so it may be missing.'] : []),
+    ...(portfolio.gaps.includes('tron') ? ['Your Tron account couldn’t be read, so it may be missing.'] : []),
     ...(portfolio.near.stakingComplete ? [] : ['Some staking pools couldn’t be read, so staked NEAR may be higher.']),
     ...(portfolio.zerion !== 'ok' && portfolio.zerion !== 'off' ? [ZERION_PROBLEMS[portfolio.zerion]] : []),
     ...(portfolio.unread.length > 0 ? [`Zerion couldn’t read your ${portfolio.unread.map((group) => GROUP_NAMES[group]).join(' or ')} address.`] : []),
@@ -185,7 +186,10 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
   const [filter, setFilter] = useState<Filter>('all')
   const view = result?.ok ? portfolioView(result) : null
   const zerion = result?.ok ? result.zerion : 'off'
-  const read = (chain: AccountChain) => chain === 'near' || (ZERION_GROUPS.includes(chain) && zerion === 'ok' && result?.ok === true && !result.unread.includes(chain as HoldingGroup))
+  const read = (chain: AccountChain) =>
+    chain === 'near' ||
+    (chain === 'tron' && result?.ok === true && !result.gaps.includes('tron')) ||
+    (ZERION_GROUPS.includes(chain) && zerion === 'ok' && result?.ok === true && !result.unread.includes(chain as HoldingGroup))
   // The Intents balance has a section of its own, under NEAR's chip and All chains.
   const inFilter = (row: PortfolioRow) => row.group !== 'intents' && (filter === 'all' || row.group === filter)
   const rows = view?.rows.filter(inFilter) ?? []
@@ -301,7 +305,7 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
                         <ChainStack chains={notRead.map((chain) => ACCOUNT_CHAIN_MARK[chain])} />
                         <span className="flex-1 text-[12.5px] text-[var(--ot-text-3)]">
                           {zerion === 'off'
-                            ? 'Add your own Zerion key for EVM, Solana and Tron. Bitcoin, Sui and Aptos come later.'
+                            ? 'Add your own Zerion key for EVM and Solana. Bitcoin, Sui and Aptos come later.'
                             : `Nothing read on ${notRead.map((chain) => CHAIN_NAMES[chain]).join(', ')}.`}
                         </span>
                         {zerion === 'off' ? (
@@ -325,7 +329,7 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
                               Get your {CHAIN_NAMES[filter]} address
                             </Button>
                           </>
-                        ) : !read(filter) && zerion === 'off' ? (
+                        ) : !read(filter) && zerion === 'off' && ZERION_GROUPS.includes(filter) ? (
                           <>
                             <b>{CHAIN_NAMES[filter]} balances need your own Zerion key</b>
                             <span className="max-w-[46ch] text-[12.5px] text-[var(--ot-text-3)]">It’s free from dashboard.zerion.io. Ink keeps it sealed on this computer.</span>
@@ -386,7 +390,7 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
               <p className="m-0 flex flex-wrap items-center gap-2 text-[12px] text-[var(--ot-text-3)]">
                 {reading ? <Ring size={12} label="Reading balances" /> : null}
                 {reading ? 'Reading again · ' : ''}Balances read {readAgo(result.readAt, now)}: NEAR from NEAR’s RPC and FastNEAR, with prices and reviews from Intear; the Intents balance from intents.near, priced by 1Click
-                {zerion === 'off' ? '' : result.zerionVia === 'ottopus' ? '; EVM, Solana and Tron from Zerion, through Ottopus’s service' : '; EVM, Solana and Tron from Zerion, with your key'}. They see the
+                ; Tron from TronGrid{zerion === 'off' ? '' : result.zerionVia === 'ottopus' ? '; EVM and Solana from Zerion, through Ottopus’s service' : '; EVM and Solana from Zerion, with your key'}. They see the
                 addresses they read.
               </p>
             </>

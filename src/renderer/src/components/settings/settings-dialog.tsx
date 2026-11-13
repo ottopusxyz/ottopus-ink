@@ -339,7 +339,7 @@ const ZERION_FAILURES = {
 } as const
 
 /**
- * The person's own Zerion API key, for balances on EVM chains, Solana and Tron. Main
+ * The person's own Zerion API key, for balances on EVM chains and Solana. Main
  * checks it with Zerion before keeping it, sealed by the OS keyring; the page can set
  * and remove it but never reads it back.
  */
@@ -369,7 +369,7 @@ function ZerionKeySetting() {
       if (answer.ok) {
         setStatus((current) => ({ set: true, kept: current?.kept ?? true, shared: current?.shared ?? false }))
         setDraft('')
-        setNote({ ok: true, text: 'Saved. Portfolio now reads your EVM, Solana and Tron balances.' })
+        setNote({ ok: true, text: 'Saved. Portfolio now reads your EVM and Solana balances with it.' })
       } else {
         setNote({ ok: false, text: ZERION_FAILURES[answer.reason] })
       }
@@ -398,8 +398,8 @@ function ZerionKeySetting() {
           <h3 className="m-0 text-[14px] font-semibold">Balances on other chains</h3>
           <p className="m-0 mt-0.5 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
             {status?.shared && !status.set
-              ? 'Ink reads EVM, Solana and Tron balances through Ottopus’s Zerion access, so you need no key. Ottopus’s service and Zerion see those addresses, and keep no record of them. To go straight to Zerion instead, add your own key, free from '
-              : 'Ink reads EVM, Solana and Tron balances through Zerion, with your own API key. Get a free one from '}
+              ? 'Ink reads EVM and Solana balances through Ottopus’s Zerion access, so you need no key. Ottopus’s service and Zerion see those addresses, and keep no record of them. To go straight to Zerion instead, add your own key, free from '
+              : 'Ink reads EVM and Solana balances through Zerion, with your own API key. Get a free one from '}
             <a className="ink-text-link" href="https://dashboard.zerion.io" target="_blank" rel="noreferrer">
               dashboard.zerion.io
             </a>

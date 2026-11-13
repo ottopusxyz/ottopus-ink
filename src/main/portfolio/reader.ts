@@ -5,6 +5,7 @@ import { nearBalance, type NearBalance } from '../near/balance'
 import type { NearRpc } from '../near/rpc'
 import { nearPriceList, nearTokenReview, WRAPPED_NEAR, type NearTokenPrice, type NearTokenReview } from './near-prices'
 import { intentsBalances, intentsTokenList, type IntentsBalance, type IntentsToken } from './intents'
+import { tronHoldings, type TronHoldings } from './tron'
 import { nearTokenBalances, type NearTokenBalance } from './near-tokens'
 import { ZerionError, zerionHoldings, zerionOptions, type ZerionAccess, type ZerionHolding } from './zerion'
 
@@ -42,7 +43,42 @@ export interface PortfolioReader {
   forget(): void
 }
 
-const ZERION_GROUPS = ['evm', 'solana', 'tron'] as const satisfies readonly HoldingGroup[]
+/** Accounts Zerion reads. Its wallet endpoint doesn't take Tron addresses, so Tron is read from TronGrid. */
+const ZERION_GROUPS = ['evm', 'solana'] as const satisfies readonly HoldingGroup[]
+
+/**
+ * A Tron address's holdings, priced from 1Click's list, which names TRX and the Tron
+ * tokens Intents trades. Those count; any other TRC-20 token is only counted as unpriced,
+ * since anyone can send one. Null when there's nothing to price them with.
+ */
+function fromTron(held: TronHoldings, listed: Map<string, IntentsToken> | null): { tokens: TokenHolding[]; unpriced: number } | null {
+  if (!listed) return held.trx === 0n && held.tokens.length === 0 ? { tokens: [], unpriced: 0 } : null
+  const onTron = new Map([...listed.values()].filter((token) => token.chain === 'tron' && token.usd !== null).map((token) => [token.contract ?? 'native', token]))
+  const tokens: TokenHolding[] = []
+  let unpriced = 0
+  const add = (contract: string | null, raw: bigint) => {
+    const known = onTron.get(contract ?? 'native')
+    if (!known || known.usd === null) return void unpriced++
+    const value = usdValue(raw, known.decimals, known.usd)
+    tokens.push({
+      id: `tron:${contract ?? 'native'}`,
+      group: 'tron',
+      network: 'tron',
+      networkName: 'Tron',
+      contract,
+      symbol: known.symbol,
+      decimals: known.decimals,
+      amount: formatUnits(raw, known.decimals),
+      price: { usd: known.usd, change24h: null },
+      usdValue: value,
+      countedUsd: value,
+      trust: 'reviewed',
+    })
+  }
+  if (held.trx > 0n) add(null, held.trx)
+  for (const token of held.tokens) add(token.contract, token.raw)
+  return { tokens, unpriced }
+}
 
 /** A Zerion holding in the portfolio's terms. Zerion's own list of known tokens decides what's counted; its spam filter has already run. */
 function fromZerion(holding: ZerionHolding): TokenHolding | null {
@@ -118,7 +154,7 @@ function nearTotal(balance: NearBalance): bigint {
 
 /**
  * The wallet's portfolio: its NEAR, every NEAR token with a price, what Zerion reads for
- * the EVM, Solana and Tron accounts when the person gave Ink a key, and what that comes to.
+ * the EVM and Solana accounts, the Tron account from TronGrid, and what that comes to.
  * Each source can fail on its own. Without NEAR itself there is nothing to show, so that
  * throws; without the rest the portfolio says what is missing.
  */
@@ -160,13 +196,14 @@ export function createPortfolioReader({ rpc, zerionAccess = () => null, fetch = 
 
   async function read(accounts: PortfolioAccounts, access: ZerionAccess | null): Promise<Portfolio> {
     const accountId = accounts.near
-    const [balance, held, prices, zerion, inIntents, listed] = await Promise.all([
+    const [balance, held, prices, zerion, inIntents, listed, onTron] = await Promise.all([
       nearBalance(accountId, { rpc, fetch }),
       nearTokenBalances(accountId, { fetch }),
       nearPriceList({ fetch }),
       readZerion(accounts, access),
       intentsBalances(accountId, { rpc }),
       intentsTokenList({ fetch }),
+      accounts.tron ? tronHoldings(accounts.tron, { fetch }) : null,
     ])
     const gaps: PortfolioGap[] = []
     if (held === null) gaps.push('tokens')
@@ -219,6 +256,15 @@ export function createPortfolioReader({ rpc, zerionAccess = () => null, fetch = 
         const token = fromIntents(held, listed, prices)
         if (token) tokens.push(token)
         else unpriced++
+      }
+    }
+
+    if (accounts.tron) {
+      const tron = onTron ? fromTron(onTron, listed) : null
+      if (!tron) gaps.push('tron')
+      else {
+        tokens.push(...tron.tokens)
+        unpriced += tron.unpriced
       }
     }
 

@@ -65,6 +65,10 @@ export interface IntentsToken {
   usd: number | null
   /** The chain it came from, as a person reads it: "Base", "Bitcoin". */
   origin: string
+  /** 1Click's short name for that chain: `base`, `tron`. */
+  chain: string
+  /** Its contract on that chain, or null for the chain's own coin. */
+  contract: string | null
 }
 
 /** 1Click's short names for chains, as people read them. Unknown ones are shown in capitals. */
@@ -124,12 +128,14 @@ export async function intentsTokenList({ fetch = globalThis.fetch, url = ONE_CLI
   const tokens = new Map<string, IntentsToken>()
   for (const entry of body) {
     if (typeof entry !== 'object' || entry === null) continue
-    const { assetId, symbol, decimals, price, blockchain } = entry as Record<string, unknown>
+    const { assetId, symbol, decimals, price, blockchain, contractAddress } = entry as Record<string, unknown>
     const clean = cleanSymbol(typeof symbol === 'string' ? symbol.replace(/\([A-Z]+\)$/, '') : null)
     if (typeof assetId !== 'string' || !TOKEN_ID.test(assetId) || !clean) continue
     if (typeof decimals !== 'number' || !Number.isInteger(decimals) || decimals < 0 || decimals > 36) continue
     const usd = typeof price === 'number' && Number.isFinite(price) && price > 0 ? price : null
-    tokens.set(assetId, { symbol: clean, decimals, usd, origin: originName(typeof blockchain === 'string' ? blockchain : '?') })
+    const chain = typeof blockchain === 'string' ? blockchain : '?'
+    const contract = typeof contractAddress === 'string' && /^[A-Za-z0-9._:-]{1,200}$/.test(contractAddress) ? contractAddress : null
+    tokens.set(assetId, { symbol: clean, decimals, usd, origin: originName(chain), chain, contract })
   }
   return tokens
 }

@@ -61,14 +61,16 @@ describe('1Click’s token list', () => {
     const tokens = await intentsTokenList(
       answer([
         { assetId: 'nep141:eth.omft.near', decimals: 18, blockchain: 'eth', symbol: 'ETH', price: 2054.73 },
+        { assetId: 'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near', decimals: 6, blockchain: 'tron', symbol: 'USDT', price: 1, contractAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' },
         { assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6, blockchain: 'base', symbol: 'USDC', price: 1 },
         { assetId: 'nep141:old.near', decimals: 6, blockchain: 'near', symbol: 'USDT(DEPRECATED)', price: 0 },
       ]),
     )
-    expect(tokens?.get('nep141:eth.omft.near')).toEqual({ symbol: 'ETH', decimals: 18, usd: 2054.73, origin: 'Ethereum' })
+    expect(tokens?.get('nep141:eth.omft.near')).toEqual({ symbol: 'ETH', decimals: 18, usd: 2054.73, origin: 'Ethereum', chain: 'eth', contract: null })
+    expect(tokens?.get('nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near')).toMatchObject({ chain: 'tron', contract: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' })
     expect(tokens?.get('nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near')?.origin).toBe('Base')
     // The tag goes, and with no price the token is known but not valued.
-    expect(tokens?.get('nep141:old.near')).toEqual({ symbol: 'USDT', decimals: 6, usd: null, origin: 'NEAR' })
+    expect(tokens?.get('nep141:old.near')).toEqual({ symbol: 'USDT', decimals: 6, usd: null, origin: 'NEAR', chain: 'near', contract: null })
   })
 
   it('leaves out what it can’t name, and is null when 1Click fails', async () => {

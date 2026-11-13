@@ -18,7 +18,7 @@ A small Cloudflare Worker that lets Ink use providers whose API keys Ottopus hol
 | `GET /v1/health` | `{ ok, zerion: 'ready' \| 'off' }` |
 | `GET /v1/zerion/wallets/{address}/positions/` | An EVM, Solana or Tron address's wallet balances from Zerion, with Zerion's spam filter on. Zerion's shape, cut down to what Ink reads. Cached 60 s per address. |
 
-Zerion's wallet endpoint doesn't read Tron addresses today (checked 13 Nov against the live service): those answer `503`, and Ink shows Tron as not read while the other accounts still count.
+Zerion's wallet endpoint doesn't read Tron addresses (checked 13 Nov against the live service): those answer `503`. Ink doesn't ask: it reads Tron from TronGrid itself.
 
 Answers Ink already understands: `200` with `{ data, links: { next: null } }`, `400` for an address Zerion doesn't read, `429` with `retry-after` when a limit is reached, `503` when Zerion can't answer (including when it refuses the key, which callers never hear about). Requests may carry `x-ink-install`.
 

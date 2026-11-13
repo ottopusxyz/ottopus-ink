@@ -3,6 +3,8 @@ import type { NearAccountView, NearRpc } from '../near/rpc'
 import { createPortfolioReader, MAX_REVIEWS, PORTFOLIO_TTL_MS, saleValue } from './reader'
 
 const ID = 'alice.near'
+const TRON = 'TJCo98saj6WND61g1uuKwJ9GMWMT9WkJFo'
+const USDT_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
 const NEAR = 10n ** 24n
 
 /** NEAR's RPC: the account, pools that hold nothing, and intents.near with what the Intents balance holds. */
@@ -26,6 +28,8 @@ interface World {
   prices?: Record<string, { price: string; symbol: string; decimal: number }> | 'down'
   reviews?: Record<string, string | 'down'>
   liquidity?: Record<string, number>
+  /** TronGrid's answer for the account, or a failure. */
+  tron?: unknown | 'down'
   /** 1Click's token list, or a failure. */
   oneClick?: unknown[] | 'down'
   /** Zerion's answer for each address: positions, or a status it fails with. */
@@ -39,6 +43,7 @@ function fakeFetch(world: World) {
   const fetch = (async (url: string) => {
     asked.push(url)
     if (url.endsWith('/staking')) return json({ pools: [] })
+    if (url.startsWith('https://api.trongrid.io/')) return world.tron === 'down' ? new Response('', { status: 503 }) : json(world.tron ?? { data: [] })
     if (url.endsWith('/v0/tokens')) return world.oneClick === 'down' ? new Response('', { status: 500 }) : json(world.oneClick ?? [])
     const wallet = /api\.zerion\.io\/v1\/wallets\/([^/]+)\/positions/.exec(url)?.[1]
     if (wallet) {
@@ -169,11 +174,12 @@ describe('the portfolio on NEAR', () => {
         '0xevm': [position('ETH', 'base', 3000, true, null), position('USDC', 'arbitrum', 2), position('RUG', 'base', 50, false)],
         // A Solana address answers only for Solana, so a stray EVM row in it is dropped.
         SoLaNa: [position('SOL', 'solana', 160, true, null), position('ETH', 'base', 999)],
-        TrOn: 400,
+        // Zerion doesn't read Tron addresses, and Ink no longer asks it to.
+        [TRON]: 400,
       },
     })
     const reader = createPortfolioReader({ rpc: fakeRpc(VIEW), fetch, zerionAccess: () => ({ via: 'own-key', key: 'zk_dev_test_not_a_real_key_0001' }) })
-    const portfolio = await reader.read({ near: ID, evm: '0xevm', solana: 'SoLaNa', tron: 'TrOn' })
+    const portfolio = await reader.read({ near: ID, evm: '0xevm', solana: 'SoLaNa', tron: TRON })
 
     expect(portfolio.tokens.map(({ id, group, networkName, symbol, amount, countedUsd, trust }) => ({ id, group, networkName, symbol, amount, countedUsd, trust }))).toEqual([
       { id: 'base:native', group: 'evm', networkName: 'Base', symbol: 'ETH', amount: '2', countedUsd: 3000, trust: 'reviewed' },
@@ -182,9 +188,9 @@ describe('the portfolio on NEAR', () => {
       { id: 'arbitrum:0xtoken', group: 'evm', networkName: 'Arbitrum', symbol: 'USDC', amount: '2', countedUsd: 2, trust: 'reviewed' },
     ])
     expect(portfolio.zerion).toBe('ok')
-    expect(portfolio.unread).toEqual(['tron'])
+    expect(portfolio.unread).toEqual([])
     expect(portfolio.totalUsd).toBe(40 + 3000 + 160 + 2)
-    expect(asked.filter((url) => url.includes('api.zerion.io'))).toHaveLength(3)
+    expect(asked.filter((url) => url.includes('api.zerion.io'))).toHaveLength(2)
   })
 
   it('reads no other chain without a key, and says when Zerion turns the key down', async () => {
@@ -251,6 +257,29 @@ describe('the portfolio on NEAR', () => {
     expect(asked).toHaveLength(1)
     expect(asked[0]!.url.startsWith('https://service.example.test/v1/zerion/wallets/0xevm/positions/')).toBe(true)
     expect(asked[0]!.headers).toEqual({ 'x-ink-install': 'install_test_0123456789', accept: 'application/json' })
+  })
+
+  it('reads Tron from TronGrid, counting what 1Click prices and only counting the rest', async () => {
+    const { fetch } = fakeFetch({
+      prices: PRICES,
+      tron: { data: [{ balance: 10_000_000, trc20: [{ [USDT_TRON]: '25000000' }, { TL81r5Zze7Av4DiKxCBzCbtDnUQVSQfm82: '999' }] }] },
+      oneClick: [
+        { assetId: 'nep245:v2_1.omni.hot.tg:728126428_11111111111111111111', decimals: 6, blockchain: 'tron', symbol: 'TRX', price: 0.3 },
+        { assetId: 'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near', decimals: 6, blockchain: 'tron', symbol: 'USDT', price: 1, contractAddress: USDT_TRON },
+      ],
+    })
+    const portfolio = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch }).read({ near: ID, tron: TRON })
+    expect(portfolio.tokens.filter((token) => token.group === 'tron').map(({ id, symbol, amount, usdValue, trust }) => ({ id, symbol, amount, usdValue, trust }))).toEqual([
+      { id: `tron:${USDT_TRON}`, symbol: 'USDT', amount: '25', usdValue: 25, trust: 'reviewed' },
+      { id: 'tron:native', symbol: 'TRX', amount: '10', usdValue: 3, trust: 'reviewed' },
+    ])
+    // An airdropped token 1Click doesn't price is only counted.
+    expect(portfolio.unpriced).toBe(1)
+    expect(portfolio.totalUsd).toBe(40 + 25 + 3)
+    expect(portfolio.gaps).toEqual([])
+
+    const down = await createPortfolioReader({ rpc: fakeRpc(VIEW), fetch: fakeFetch({ prices: PRICES, tron: 'down' }).fetch }).read({ near: ID, tron: TRON })
+    expect(down).toMatchObject({ totalUsd: 40, gaps: ['tron'] })
   })
 
   it('throws when NEAR itself can’t be read', async () => {

@@ -187,6 +187,7 @@ const GAP_LINES: Record<PortfolioGap, string> = {
   prices: 'Prices couldn’t be read, so there are no dollar values.',
   reviews: 'Some tokens couldn’t be checked with the price service, so they aren’t counted.',
   intents: 'The NEAR Intents balance couldn’t be read, so it may be missing.',
+  tron: 'The Tron account couldn’t be read, so it may be missing.',
 }
 
 const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
@@ -206,10 +207,10 @@ function change(fraction: number | null): string {
 const UNREAD_CHAINS: Record<string, string> = { bitcoin: 'Bitcoin', btc: 'Bitcoin', sui: 'Sui', aptos: 'Aptos', ton: 'TON', xrp: 'XRP' }
 
 const ZERION_LINES: Record<Exclude<ZerionState, 'ok'>, string> = {
-  off: 'EVM, Solana and Tron balances need a Zerion API key. The person can add their own in Ink’s Settings, under Wallet.',
-  'bad-key': 'Zerion turned down the person’s API key, so EVM, Solana and Tron balances are missing. They can change it in Ink’s Settings.',
-  'rate-limited': 'Zerion’s limit is used up for now, so EVM, Solana and Tron balances are missing. Try again in a minute.',
-  unavailable: 'Zerion couldn’t be reached, so EVM, Solana and Tron balances are missing. Try again in a moment.',
+  off: 'EVM and Solana balances need a Zerion API key. The person can add their own in Ink’s Settings, under Wallet.',
+  'bad-key': 'Zerion turned down the person’s API key, so EVM and Solana balances are missing. They can change it in Ink’s Settings.',
+  'rate-limited': 'Zerion’s limit is used up for now, so EVM and Solana balances are missing. Try again in a minute.',
+  unavailable: 'Zerion couldn’t be reached, so EVM and Solana balances are missing. Try again in a moment.',
 }
 
 const GROUP_NAMES: Record<HoldingGroup, string> = { near: 'NEAR', intents: 'NEAR Intents', evm: 'EVM', solana: 'Solana', tron: 'Tron' }
@@ -238,10 +239,11 @@ async function portfolioAnswer(read: McpHandlers['portfolio'], args: unknown): P
   const { near, nearPrice, unpriced, totalUsd, gaps, zerion, unread } = answer
   const showNear = chain === '' || chain === 'near'
   const tokens = answer.tokens.filter((token) => chain === '' || token.group === chain || token.network === chain)
-  // Zerion answers for every chain but NEAR and the Intents balance, which Ink reads itself.
-  const zerionReads = chain === '' || (chain !== 'near' && chain !== 'intents')
+  // Zerion answers for every chain but NEAR, the Intents balance and Tron, which Ink reads itself.
+  const zerionReads = chain === '' || (chain !== 'near' && chain !== 'intents' && chain !== 'tron')
   if (!showNear && tokens.length === 0) {
     if (chain === 'intents') return toolAnswer(gaps.includes('intents') ? GAP_LINES.intents : 'The NEAR Intents balance holds nothing with a price.')
+    if (chain === 'tron') return toolAnswer(gaps.includes('tron') ? GAP_LINES.tron : 'The Tron account holds nothing with a price.')
     return toolAnswer(zerion === 'ok' ? `Nothing with a price was found on ${chain}.` : ZERION_LINES[zerion])
   }
 
@@ -275,7 +277,7 @@ async function portfolioAnswer(read: McpHandlers['portfolio'], args: unknown): P
     ...(chain === '' && totalUsd !== null
       ? [`Total: ${dollars(totalUsd)}, counting NEAR (staked and storage included) and the tokens above. Prices from Intear${zerion === 'ok' ? ' and Zerion' : ''}.`]
       : []),
-    ...(showNear ? gaps.map((gap) => GAP_LINES[gap]) : chain === 'intents' && gaps.includes('intents') ? [GAP_LINES.intents] : []),
+    ...(showNear ? gaps.map((gap) => GAP_LINES[gap]) : (chain === 'intents' || chain === 'tron') && gaps.includes(chain) ? [GAP_LINES[chain]] : []),
     ...(zerionReads && zerion !== 'ok' ? [ZERION_LINES[zerion]] : []),
     ...(zerionReads && unread.length > 0 ? [`Zerion couldn’t read the ${unread.map((group) => GROUP_NAMES[group]).join(' or ')} account, so it’s missing.`] : []),
     ...(chain === '' ? ['Bitcoin, Sui and Aptos balances aren’t read yet.'] : []),

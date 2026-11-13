@@ -163,7 +163,7 @@ describe('handleMcpMessage', () => {
               '- Available to send: 4.99 NEAR',
               '- Staked: 5 NEAR (one.poolv1.near: 5 NEAR)',
               '- Held for storage: 0.00182 NEAR',
-              'EVM, Solana and Tron balances need a Zerion API key. The person can add their own in Ink’s Settings, under Wallet.',
+              'EVM and Solana balances need a Zerion API key. The person can add their own in Ink’s Settings, under Wallet.',
               'Bitcoin, Sui and Aptos balances aren’t read yet.',
             ].join('\n'),
           },
@@ -227,6 +227,13 @@ describe('handleMcpMessage', () => {
       expect((await portfolioOf(portfolio, { chain: 'intents' })).content[0]!.text).toBe(['Tokens:', '- 0.5 ETH in the NEAR Intents balance, from Ethereum ($1,000.00), token nep141:eth.omft.near'].join('\n'))
       expect((await portfolioOf(async () => read(HOLDING), { chain: 'intents' })).content[0]!.text).toBe('The NEAR Intents balance holds nothing with a price.')
       expect((await portfolioOf(async () => ({ ...read(HOLDING), gaps: ['intents' as const] }), { chain: 'intents' })).content[0]!.text).toContain('couldn’t be read')
+    })
+
+    it('lists Tron’s tokens, and says when Tron couldn’t be read', async () => {
+      const usdt = { ...token('USDT', '25', 25, 'reviewed'), id: 'tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', group: 'tron' as const, network: 'tron', networkName: 'Tron', contract: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' }
+      expect((await portfolioOf(async () => ({ ...read(HOLDING), tokens: [usdt] }), { chain: 'tron' })).content[0]!.text).toBe(['Tokens:', '- 25 USDT on Tron ($25.00), contract TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'].join('\n'))
+      expect((await portfolioOf(async () => read(HOLDING), { chain: 'tron' })).content[0]!.text).toBe('The Tron account holds nothing with a price.')
+      expect((await portfolioOf(async () => ({ ...read(HOLDING), gaps: ['tron' as const] }))).content[0]!.text).toContain('The Tron account couldn’t be read')
     })
 
     it('says why Zerion’s chains are missing, and which account it couldn’t read', async () => {

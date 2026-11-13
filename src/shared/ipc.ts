@@ -100,7 +100,7 @@ export interface AgentStatus {
 }
 
 /** The tools of Ink's MCP server. The server has exactly these, and the page shortens only these names. */
-export const INK_TOOLS = ['get_accounts', 'get_portfolio', 'get_quote', 'create_plan', 'get_plan', 'cancel_plan'] as const
+export const INK_TOOLS = ['get_accounts', 'get_deposit_address', 'get_portfolio', 'get_quote', 'create_plan', 'get_plan', 'cancel_plan'] as const
 
 /**
  * A plan an agent proposed, as its chat's card shows it. The agent wrote every

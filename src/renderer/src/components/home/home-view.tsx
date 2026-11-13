@@ -233,7 +233,7 @@ export function HomeView({
 
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <span className="text-[12px] text-[var(--ot-text-3)]">
-              {external.length === 0 ? 'Your agent gets six Ottopus tools, nothing else:' : 'Your agent gets six Ottopus tools, and what you turned on:'}
+              {external.length === 0 ? 'Your agent gets seven Ottopus tools, nothing else:' : 'Your agent gets seven Ottopus tools, and what you turned on:'}
             </span>
             {INK_TOOLS.map((tool) => {
               const Glyph = TOOL_GLYPHS[tool]

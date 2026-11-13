@@ -434,6 +434,7 @@ function getMcpBridge(): Promise<McpBridge> {
     accounts: ownAccounts,
     portfolio: () => ownPortfolio(),
     quote: quoteRoute,
+    receive: (ask) => ownReceive(ask),
     plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts, swapOf: swapTracker.get }),
   }).catch((error: unknown) => {
     mcpBridge = null

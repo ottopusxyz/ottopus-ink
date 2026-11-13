@@ -1,13 +1,14 @@
 import type { ComponentType } from 'react'
 import { Badge } from '@/components/ui'
 import { Ring } from '@/components/motion/ring'
-import { CancelIcon, ChevronDownIcon, EyeIcon, KeyIcon, PieIcon, PlugIcon, ReceiptIcon, RouteIcon, type IconProps } from '@/components/shell/icons'
+import { CancelIcon, ChevronDownIcon, EyeIcon, KeyIcon, PieIcon, PlugIcon, ReceiptIcon, ReceiveIcon, RouteIcon, type IconProps } from '@/components/shell/icons'
 import { inkTool, toolLabel, type ChatItem, type InkTool } from '@/lib/chats'
 import { TOOL_COPY, toolDuration, toolSummary, toolTitle, type ToolState } from '@/lib/tool-copy'
 
 /** Each of Ink's tools' glyph, shared with Home's list of what the agent can reach. */
 export const TOOL_GLYPHS: Record<InkTool, ComponentType<IconProps>> = {
   get_accounts: KeyIcon,
+  get_deposit_address: ReceiveIcon,
   get_portfolio: PieIcon,
   get_quote: RouteIcon,
   create_plan: ReceiptIcon,

@@ -19,6 +19,8 @@ export interface McpBridgeOptions {
   portfolio?: McpHandlers['portfolio']
   /** What a payment would give, for get_quote. A closure from main too. */
   quote?: McpHandlers['quote']
+  /** Where the wallet receives, for get_deposit_address. A closure from main too. */
+  receive?: McpHandlers['receive']
   /**
    * One session's plan tools. `owner` names the session, so a chat only ever sees
    * its own plans, and `typed` gives the person's own messages in it.
@@ -92,7 +94,7 @@ interface BridgeSession {
  * The socket sits in a new 0700 folder and is itself 0600. Only hashes of tokens
  * are kept, so a lookup doesn't compare against the secret.
  */
-export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, accounts, plans, portfolio, quote }: McpBridgeOptions): Promise<McpBridge> {
+export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, accounts, plans, portfolio, quote, receive }: McpBridgeOptions): Promise<McpBridge> {
   mkdirSync(parentDir, { recursive: true })
   const dir = mkdtempSync(join(parentDir, 'ottopus-ink-'))
   const socketPath = join(dir, 'mcp.sock')
@@ -148,7 +150,7 @@ export function startMcpBridge({ parentDir, version, helloTimeoutMs = 2000, acco
       inFlight++
       let response: object | null
       try {
-        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, accounts, plans: session.plans, portfolio, quote })
+        response = await handleMcpMessage(JSON.parse(line), version, { onPlan: session.onPlan, accounts, plans: session.plans, portfolio, quote, receive })
       } catch {
         response = parseErrorResponse()
       } finally {

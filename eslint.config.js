@@ -12,6 +12,11 @@ export default tseslint.config(
     files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'src/signer/**/*.ts', 'src/shim/**/*.ts', 'scripts/**/*.mjs', '*.config.{js,ts}'],
     languageOptions: { globals: globals.node },
   },
+  // The landing page: a plain script that runs in a browser, with no build step.
+  {
+    files: ['site/**/*.js'],
+    languageOptions: { globals: globals.browser, sourceType: 'script' },
+  },
   {
     files: ['src/renderer/**/*.{ts,tsx}'],
     languageOptions: { globals: globals.browser },

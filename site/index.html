@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ottopus Ink: ask for it, sign it yourself</title>
+<meta name="description" content="A desktop wallet for Mac and Linux, driven by the coding agent you already have. The agent proposes, you sign. Cross-chain through NEAR Intents.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#16213E">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Ottopus Ink: ask for it, sign it yourself">
+<meta property="og:description" content="A desktop wallet driven by the coding agent you already have. The agent proposes, you sign. Cross-chain through NEAR Intents.">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="preload" href="assets/fonts/quicksand-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/figtree-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap bar__in">
+    <a class="lockup lockup--reversed" href="#top" aria-label="Ottopus Ink, top of page">
+      <img src="assets/icon.svg" alt="" width="32" height="32">
+      <span class="lockup__word">ottopus</span>
+      <span class="lockup__tag">Ink</span>
+    </a>
+    <nav class="bar__nav" aria-label="Sections">
+      <a class="bar__link" href="#how">How it works</a>
+      <a class="bar__link" href="#intents">NEAR Intents</a>
+      <a class="bar__link" href="#safety">Safety</a>
+      <a class="bar__link" href="https://github.com/ottopusxyz/ottopus-ink" rel="noreferrer">GitHub</a>
+      <a class="btn btn--coral btn--sm" href="#download">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><use href="#i-download"/></svg>
+        Download
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section id="top" class="hero sea">
+  <div class="hero__water" aria-hidden="true">
+    <span class="caustic"></span>
+    <span class="caustic caustic--b"></span>
+    <span class="shaft" style="left: 52%; width: 150px; --tilt: 14deg"></span>
+    <span class="shaft" style="left: 68%; width: 90px; --tilt: 10deg"></span>
+    <span class="shaft" style="left: 84%; width: 180px; --tilt: 17deg"></span>
+    <span class="rise" style="left: 44%; width: 12px; height: 12px; animation-delay: 0s"></span>
+    <span class="rise" style="left: 46%; width: 7px; height: 7px; animation-delay: 2.4s"></span>
+    <span class="rise" style="left: 42%; width: 9px; height: 9px; animation-delay: 5.1s"></span>
+    <span class="rise" style="left: 48%; width: 14px; height: 14px; animation-delay: 7.3s"></span>
+    <svg class="life life--swim" viewBox="0 0 23 14" style="left: 38%; top: 14%; width: 30px; --travel: -180px; --lift: -12px; --dur: 60s"><use href="#s-fish"/></svg>
+    <svg class="life life--swim" viewBox="0 0 23 14" style="left: 12%; top: 70%; width: 44px; --travel: -120px; --lift: 10px; --dur: 70s; animation-delay: -22s"><use href="#s-fish"/></svg>
+    <svg class="life life--float" viewBox="0 0 18 24" style="left: 96%; top: 46%; width: 34px; --travel: 10px; --lift: -140px; --dur: 54s; animation-delay: -6s"><use href="#s-jelly"/></svg>
+    <svg class="life life--float" viewBox="0 0 18 24" style="left: 3%; top: 40%; width: 22px; --travel: -8px; --lift: -100px; --dur: 62s; animation-delay: -28s"><use href="#s-jelly"/></svg>
+    <svg class="life life--swim" viewBox="0 0 28 16" style="left: 24%; top: 84%; width: 50px; --travel: 240px; --lift: -18px; --dur: 88s; animation-delay: -12s"><use href="#s-turtle"/></svg>
+    <svg class="seabed" viewBox="0 0 1440 170" preserveAspectRatio="none">
+      <path d="M0 90 C 180 60 320 120 520 96 S 900 50 1100 88 S 1340 120 1440 80 L1440 170 L0 170 Z" fill="#8DB4F3"/>
+      <path d="M0 130 C 240 110 420 150 700 128 S 1160 110 1440 136 L1440 170 L0 170 Z" fill="#7BA6EF" opacity=".6"/>
+      <g fill="none" stroke="#6F9DEC" stroke-width="6" stroke-linecap="round">
+        <path d="M130 120 C 120 90 146 70 132 40 M150 124 C 162 96 140 80 156 56"/>
+        <path d="M1180 108 C 1170 80 1196 60 1182 26 M1200 112 C 1212 86 1190 70 1206 44 M1222 114 C 1214 96 1232 84 1224 64"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="wrap hero__in">
+    <div class="hero__copy">
+      <p class="built"><img src="assets/logos/chain-near.svg" alt="" width="22" height="22">Built at the NEAR hackathon</p>
+      <h1>Ask for it. <span class="coral">Sign it yourself.</span></h1>
+      <p class="lede">Ottopus Ink is a desktop wallet for Mac and Linux. Tell your agent what to pay, swap or send. NEAR Intents finds the route across chains, and nothing moves until you approve it.</p>
+      <div class="cta">
+        <a class="btn btn--coral" href="#download" data-os="mac">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16"><use href="#i-download"/></svg>
+          Download for macOS
+        </a>
+        <a class="btn btn--paper" href="#download" data-os="linux">Download for Linux</a>
+        <a class="btn btn--ghost" href="#how">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="11" cy="11" r="9"/><path d="M9 7.5v7l6-3.5-6-3.5Z" fill="currentColor"/></svg>
+          See how it works
+        </a>
+      </div>
+      <p class="fine">Version 0.1.0, hackathon build. Open source.</p>
+    </div>
+
+    <div class="hero__art">
+      <div class="win" role="img" aria-label="Ottopus Ink: a chat where an attached invoice becomes a 25 USDC payment plan on Solana">
+        <div class="win__bar">
+          <img src="assets/icon.svg" alt="" width="20" height="20">
+          <span class="win__title">Ottopus Ink</span>
+          <span class="tag tag--coral">NEAR hackathon build</span>
+          <span class="grow"></span>
+          <span class="tag tag--ok"><i class="dot"></i>Ottopus tools only</span>
+        </div>
+        <div class="win__body">
+          <div class="row row--end">
+            <div class="you">
+              <span class="file file--dark"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><use href="#i-file"/></svg>tidepool-invoice-25-usdc.pdf</span>
+              <span>pay this invoice</span>
+            </div>
+          </div>
+          <div class="tool">
+            <img src="assets/logos/agent-claude.svg" alt="" width="20" height="20">
+            <div class="tool__text"><b>Read your balances</b><code>get_portfolio</code></div>
+            <span class="tag tag--ok">Done · 1.2s</span>
+          </div>
+          <div class="plan">
+            <div class="plan__head"><span class="eyebrow">Payment plan</span><span class="tag tag--plan">To review</span></div>
+            <div class="plan__amount">
+              <img src="assets/logos/token-usdc.svg" alt="" width="30" height="30">
+              <strong>25 USDC</strong>
+              <svg aria-hidden="true" width="26" height="12" viewBox="0 0 26 12"><use href="#i-arrow"/></svg>
+              <img src="assets/logos/chain-solana.svg" alt="" width="24" height="24">
+              <span class="plan__chain">on Solana</span>
+            </div>
+            <code class="addr">5QSRmvpH imVhXh2Y P622A61v aThB8ut2 iWJW9DPm CTNj</code>
+            <div class="plan__foot"><span>To Tidepool Design Studio</span><span class="sep">·</span><span>3 parts, one approval</span></div>
+          </div>
+          <div class="composer">
+            <span class="composer__ph">Reply to your agent</span>
+            <span class="grow"></span>
+            <span class="composer__agent"><img src="assets/logos/agent-claude.svg" alt="" width="14" height="14">Claude Code</span>
+            <span class="send"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><use href="#i-up"/></svg></span>
+          </div>
+        </div>
+      </div>
+
+      <svg class="otto hero__otto" role="img" aria-label="Otto, the Ottopus mascot, waving" viewBox="-22 -22 244 244">
+        <g class="otto-bob">
+          <g class="otto-arm" style="transform-origin: 50px 126px"><path class="e" d="M50 126 C26 138 14 154 20 172"/><path class="c" d="M50 126 C26 138 14 154 20 172"/></g>
+          <g class="otto-arm" style="transform-origin: 72px 140px; animation-delay: -.35s"><path class="e" d="M72 140 C58 158 56 176 66 184"/><path class="c" d="M72 140 C58 158 56 176 66 184"/></g>
+          <g class="otto-arm" style="transform-origin: 96px 144px; animation-delay: -.7s"><path class="e" d="M96 144 C92 164 100 180 116 184"/><path class="c" d="M96 144 C92 164 100 180 116 184"/></g>
+          <g class="otto-arm" style="transform-origin: 122px 142px; animation-delay: -1.05s"><path class="e" d="M122 142 C136 160 150 172 166 172"/><path class="c" d="M122 142 C136 160 150 172 166 172"/></g>
+          <g class="otto-arm" style="transform-origin: 144px 130px; animation-delay: -1.4s"><path class="e" d="M144 130 C164 142 176 158 172 176"/><path class="c" d="M144 130 C164 142 176 158 172 176"/></g>
+          <g class="otto-wave" style="transform-origin: 154px 108px"><path class="e" d="M154 108 C174 102 188 86 198 68"/><path class="c" d="M154 108 C174 102 188 86 198 68"/></g>
+          <g class="otto-arm" style="transform-origin: 44px 112px; animation-delay: -2.1s"><path class="e" d="M44 112 C22 110 8 122 8 142"/><path class="c" d="M44 112 C22 110 8 122 8 142"/></g>
+          <path class="body" d="M100,24 C57,24 30,54 30,98 C30,126 52,146 100,146 C148,146 170,126 170,98 C170,54 143,24 100,24 Z"/>
+          <path class="shade" d="M30 100 C30 130 54 146 100 146 C146 146 170 130 170 100 C170 118 150 133 100 133 C50 133 30 118 30 100 Z"/>
+          <ellipse class="cream" cx="100" cy="131" rx="45" ry="13"/>
+          <g class="otto-arm" style="transform-origin: 62px 128px; animation-delay: -1.05s"><path class="e f" d="M62 128 C50 144 60 162 82 160"/><path class="c f" d="M62 128 C50 144 60 162 82 160"/><g class="cream"><circle cx="53" cy="140" r="3.1"/><circle cx="54" cy="152" r="3.1"/><circle cx="64" cy="160" r="3.1"/><circle cx="77" cy="162" r="3.1"/></g></g>
+          <g class="otto-blink"><circle class="eye" cx="79" cy="76" r="17"/><circle class="eye" cx="121" cy="76" r="17"/><g class="otto-look"><circle class="ink" cx="82" cy="77" r="8.5"/><circle class="ink" cx="124" cy="77" r="8.5"/><circle fill="#fff" cx="78.5" cy="72.5" r="3"/><circle fill="#fff" cx="120.5" cy="72.5" r="3"/></g></g>
+          <g class="face"><path d="M66 52 Q79 44 91 51"/><path d="M109 51 Q121 44 134 52"/><path d="M88 99 Q100 112 112 99"/></g>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap split">
+    <div class="split__copy">
+      <p class="kicker">Your agent, your sign-in</p>
+      <h2>Works with the agent you already have.</h2>
+      <p class="lede lede--sm">Ink finds the coding agents installed on your computer and runs chats on your own sign-in. No API key and no new subscription.</p>
+      <p class="muted">Claude Code runs chats today. Codex and Grok are detected, and chats with them are not ready yet. Chats that Ink starts are locked to Ottopus Ink tools: no shell, no files and no web, unless you turn one on.</p>
+    </div>
+    <ul class="agents" role="list">
+      <li class="agent agent--on"><img src="assets/logos/agent-claude.svg" alt="" width="36" height="36"><h3>Claude Code</h3><p>Ready on this computer</p><span class="chip chip--navy">Runs chats today</span></li>
+      <li class="agent"><img src="assets/logos/agent-codex.svg" alt="" width="36" height="36"><h3>Codex</h3><p>Detected on this computer</p><span class="chip">Chats not ready yet</span></li>
+      <li class="agent"><img src="assets/logos/agent-grok.svg" alt="" width="36" height="36"><h3>Grok</h3><p>Detected on this computer</p><span class="chip">Chats not ready yet</span></li>
+    </ul>
+  </div>
+</section>
+
+<section id="how" class="band band--tight">
+  <div class="wrap stack">
+    <div class="head">
+      <p class="kicker">How it works</p>
+      <h2>One invoice, from PDF to paid.</h2>
+      <p class="lede lede--sm">A real conversation from the demo: 25 USDC on Solana, paid from a wallet that held its dollars on other chains.</p>
+    </div>
+
+    <div class="replay" data-replay>
+      <div class="beats">
+        <ol class="beats__list" role="list">
+          <li><button class="beat" type="button" data-beat="0" data-start="0"><span class="beat__n">1</span><span class="beat__t"><b>Attach it and ask.</b><span>Drop in the invoice and say what you want.</span></span></button></li>
+          <li><button class="beat" type="button" data-beat="1" data-start="2"><span class="beat__n">2</span><span class="beat__t"><b>It checks what you hold.</b><span>The agent reads every balance and says plainly when they fall short.</span></span></button></li>
+          <li><button class="beat" type="button" data-beat="2" data-start="4"><span class="beat__n">3</span><span class="beat__t"><b>Top up from any chain.</b><span>Ask for a deposit address. Ink notices the moment funds arrive.</span></span></button></li>
+          <li><button class="beat" type="button" data-beat="3" data-start="8"><span class="beat__n">4</span><span class="beat__t"><b>Review every part.</b><span>A separate window shows what leaves, from where, and what arrives.</span></span></button></li>
+          <li><button class="beat" type="button" data-beat="4" data-start="10"><span class="beat__n">5</span><span class="beat__t"><b>Approve once. Watch it land.</b><span>Ink follows each part until the payee has the full amount.</span></span></button></li>
+        </ol>
+        <div class="beats__ctl" data-controls hidden>
+          <button class="btn btn--paper btn--sm" type="button" data-toggle>
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" data-icon="pause"><rect x="1.5" y="1" width="3" height="10" rx="1"/><rect x="7.5" y="1" width="3" height="10" rx="1"/></svg>
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" data-icon="play" hidden><path d="M2.5 1v10l8-5-8-5Z"/></svg>
+            <span data-toggle-label>Pause</span>
+          </button>
+          <button class="btn btn--ghost btn--sm" type="button" data-restart>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a5 5 0 1 0 1.6-3.7M2 1.5v3h3"/></svg>
+            Replay
+          </button>
+        </div>
+      </div>
+
+      <div class="win replay__win" aria-label="A conversation in Ottopus Ink, replayed">
+        <div class="win__bar">
+          <img src="assets/icon.svg" alt="" width="20" height="20">
+          <span class="win__title">pay this invoice</span>
+          <span class="win__sub">Claude Code</span>
+          <span class="grow"></span>
+          <span class="tag tag--ok"><i class="dot"></i>Ottopus tools only</span>
+        </div>
+
+        <div class="chat">
+          <div class="item" data-from="1"><div class="item__in row row--end">
+            <div class="you">
+              <span class="file file--dark"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><use href="#i-file"/></svg>tidepool-invoice-25-usdc.pdf</span>
+              <span>pay this invoice</span>
+            </div>
+          </div></div>
+
+          <div class="item" data-from="2"><div class="item__in">
+            <div class="tool">
+              <img src="assets/logos/agent-claude.svg" alt="" width="20" height="20">
+              <div class="tool__text"><b>Read your balances</b><code>get_portfolio</code></div>
+              <span class="tag tag--plan" data-from="2" data-until="2" hidden><svg class="spin" aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><use href="#i-spin"/></svg>Running</span>
+              <span class="tag tag--ok" data-from="3">Done · 1.2s</span>
+            </div>
+          </div></div>
+
+          <div class="item" data-from="3"><div class="item__in says">
+            <p>I can't pay this invoice yet. The wallet doesn't hold enough dollar stablecoins to cover 25 USDC.</p>
+            <blockquote>
+              <p><b>Invoice INV-2026-1122</b> from Tidepool Design Studio, due 28 November 2026.</p>
+              <p>25 USDC on Solana to <code class="inline">5QSRmvpH…9DPmCTNj</code></p>
+            </blockquote>
+            <p><b>What you hold in stablecoins (about $20.47):</b> 15.99 USDC on BNB Chain, 2.68 in the NEAR Intents balance, and 1.80 across three more.</p>
+            <p><b>What's missing:</b> at least about 4.53 USDC. Shall I get a deposit address?</p>
+          </div></div>
+
+          <div class="item" data-from="5"><div class="item__in row row--end">
+            <div class="you">deposit 10 usdc on base</div>
+          </div></div>
+
+          <div class="item" data-from="6"><div class="item__in gap">
+            <div class="tool">
+              <img src="assets/logos/agent-claude.svg" alt="" width="20" height="20">
+              <div class="tool__text"><b>Found where to receive</b><code>get_deposit_address</code></div>
+              <span class="tag tag--ok">Done</span>
+            </div>
+            <div class="plan plan--deposit">
+              <div class="plan__head">
+                <span class="eyebrow">Deposit</span>
+                <span class="tag tag--plan" data-from="6" data-until="6" hidden><svg class="spin" aria-hidden="true" width="11" height="11" viewBox="0 0 12 12"><use href="#i-spin"/></svg>Watching</span>
+                <span class="tag tag--ok" data-from="7">Arrived</span>
+              </div>
+              <div class="plan__amount plan__amount--sm">
+                <img src="assets/logos/token-usdc.svg" alt="" width="24" height="24">
+                <strong>10 USDC</strong>
+                <img src="assets/logos/chain-base.svg" alt="" width="18" height="18">
+                <span class="plan__note">sent on Base, lands in your Intents balance</span>
+              </div>
+              <code class="addr addr--sm">0x9c06…A481</code>
+            </div>
+          </div></div>
+
+          <div class="item" data-from="7"><div class="item__in">
+            <div class="note"><img src="assets/icon.svg" alt="" width="22" height="22"><p><b>From Ink · 10 USDC arrived.</b> 10 USDC sent on Base is in your Intents balance.</p></div>
+          </div></div>
+
+          <div class="item" data-from="8"><div class="item__in gap">
+            <div class="says"><p>Your 10 USDC has landed, so the invoice is now covered. Paying from your NEAR Intents balance first, then USDC on BNB Chain: one pay plan, one approval.</p></div>
+            <div class="tool">
+              <img src="assets/logos/agent-claude.svg" alt="" width="20" height="20">
+              <div class="tool__text"><b>Drafted a plan</b><code>create_plan</code></div>
+              <span class="tag tag--plan" data-from="8" data-until="8" hidden><svg class="spin" aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><use href="#i-spin"/></svg>Running</span>
+              <span class="tag tag--ok" data-from="9">Done</span>
+            </div>
+          </div></div>
+
+          <div class="item" data-from="9"><div class="item__in">
+            <div class="plan">
+              <div class="plan__head">
+                <span class="eyebrow">Payment plan</span>
+                <span class="tag tag--plan" data-from="9" data-until="10" hidden>To review</span>
+                <span class="tag tag--plan" data-from="11" data-until="13" hidden>Submitted</span>
+                <span class="tag tag--ok" data-from="14"><i class="dot"></i>Confirmed</span>
+              </div>
+              <div class="plan__amount plan__amount--md">
+                <img src="assets/logos/token-usdc.svg" alt="" width="26" height="26">
+                <strong>25 USDC</strong>
+                <svg aria-hidden="true" width="26" height="12" viewBox="0 0 26 12"><use href="#i-arrow"/></svg>
+                <img src="assets/logos/chain-solana.svg" alt="" width="20" height="20">
+                <code class="addr addr--sm">5QSRmvpH…9DPmCTNj</code>
+              </div>
+              <div class="item" data-from="11"><div class="item__in item__in--flush">
+                <ol class="track" role="list">
+                  <li data-land="1">Review</li>
+                  <li data-land="2">Sign</li>
+                  <li data-land="3">9.75 USDC on NEAR</li>
+                  <li data-land="4">15.67 USDC on BNB Chain</li>
+                  <li data-land="5">In your Intents balance</li>
+                  <li data-land="6">Payout on NEAR</li>
+                  <li data-land="7">Paid on Solana</li>
+                </ol>
+              </div></div>
+            </div>
+          </div></div>
+
+          <div class="item" data-from="14"><div class="item__in">
+            <div class="note"><img src="assets/icon.svg" alt="" width="22" height="22"><p><b>From Ink · Paid.</b> 25 USDC paid to Tidepool Design Studio on Solana, in one transfer.</p></div>
+          </div></div>
+
+          <span class="chat__fade" aria-hidden="true"></span>
+
+          <div class="review" data-from="9" data-until="10" data-pop hidden>
+            <div class="review__bar">Review · Ottopus Ink</div>
+            <div class="review__body">
+              <div class="review__ask">
+                <img src="assets/icon.svg" alt="" width="34" height="34">
+                <div><span class="eyebrow">Your agent asks to</span><strong>Pay 25 USDC</strong></div>
+              </div>
+              <div class="map">
+                <span class="eyebrow">How it's paid · 3 parts, one approval</span>
+                <ul class="map__out" role="list">
+                  <li>− 0.181 USDC <span>NEAR Intents</span></li>
+                  <li>− 9.7526 USDC <span>NEAR Intents</span></li>
+                  <li>− 15.6667 USDC <span>BNB Chain</span></li>
+                </ul>
+                <p class="map__via"><img src="assets/logos/chain-near.svg" alt="" width="16" height="16">through NEAR Intents<svg aria-hidden="true" width="22" height="10" viewBox="0 0 26 12"><use href="#i-arrow"/></svg></p>
+                <div class="map__in"><strong>+ 25 USDC</strong><span>exactly, on Solana · 5QSRmv…CTNj</span></div>
+              </div>
+              <p class="warn warn--sm"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><use href="#i-file"/></svg><span>Address from tidepool-invoice-25-usdc.pdf, which you attached.</span></p>
+              <div class="review__btns" data-from="9" data-until="9" hidden><span class="fake fake--paper">Reject</span><span class="fake fake--coral">Approve and send</span></div>
+              <div class="review__signing" data-from="10" data-until="10" hidden><svg class="spin" aria-hidden="true" width="13" height="13" viewBox="0 0 12 12"><use href="#i-spin"/></svg>Signing and sending</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat__foot">
+          <div class="composer">
+            <span class="file" data-from="0" data-until="0" hidden><svg aria-hidden="true" width="12" height="12" viewBox="0 0 14 14"><use href="#i-file"/></svg>tidepool-invoice-25-usdc.pdf</span>
+            <span class="typing" data-from="0" data-until="0" hidden>pay this invoice</span>
+            <span class="typing" data-from="4" data-until="4" hidden>deposit 10 usdc on base</span>
+            <span class="composer__ph" data-except="0,4">Reply to your agent</span>
+            <span class="grow"></span>
+            <span class="composer__agent"><img src="assets/logos/agent-claude.svg" alt="" width="14" height="14">Claude Code</span>
+            <span class="send"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><use href="#i-up"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="intents" class="deep">
+  <div class="deep__water" aria-hidden="true">
+    <svg class="life life--swim" viewBox="0 0 28 16" style="left: 4%; top: 82%; width: 60px; --travel: 200px; --lift: -16px; --dur: 90s"><use href="#s-turtle"/></svg>
+    <svg class="life life--float" viewBox="0 0 18 24" style="left: 94%; top: 30%; width: 30px; --travel: 12px; --lift: -120px; --dur: 58s; animation-delay: -10s"><use href="#s-jelly"/></svg>
+  </div>
+  <div class="wrap stack stack--lg">
+    <div class="deep__head">
+      <div>
+        <p class="kicker kicker--ink"><img src="assets/logos/chain-near.svg" alt="" width="22" height="22">Powered by NEAR Intents</p>
+        <h2 class="h2--xl">Hold it anywhere. Pay on any chain.</h2>
+      </div>
+      <p class="lede lede--sm lede--ink">When no single balance covers a payment, Ink combines them. Each part goes to NEAR Intents, which swaps and carries it, then pays out the exact amount on the chain the payee asked for.</p>
+    </div>
+
+    <div class="flow">
+      <div class="flow__col">
+        <p class="eyebrow">What you hold</p>
+        <div class="hold"><img src="assets/logos/chain-bsc.svg" alt="" width="28" height="28"><div><b>USDC on BNB Chain</b><span>At your wallet's address</span></div></div>
+        <div class="hold"><img src="assets/logos/chain-near.svg" alt="" width="28" height="28"><div><b>USDC in NEAR Intents</b><span>Your balance held on NEAR</span></div></div>
+        <div class="hold"><img src="assets/logos/chain-base.svg" alt="" width="28" height="28"><div><b>A top-up sent on Base</b><span>Lands in your Intents balance</span></div></div>
+      </div>
+      <svg class="flow__arrow" aria-hidden="true" width="44" height="16" viewBox="0 0 44 16"><use href="#i-arrow-lg"/></svg>
+      <div class="flow__hub">
+        <span class="hub"><img src="assets/logos/chain-near.svg" alt="" width="56" height="56"></span>
+        <b>NEAR Intents</b>
+        <span>Swaps and carries each part. One approval covers them all.</span>
+      </div>
+      <svg class="flow__arrow" aria-hidden="true" width="44" height="16" viewBox="0 0 44 16"><use href="#i-arrow-lg"/></svg>
+      <div class="flow__col">
+        <p class="eyebrow">What the payee gets</p>
+        <div class="gets"><div><img src="assets/logos/chain-solana.svg" alt="" width="30" height="30"><strong>+ 25 USDC</strong></div><span>Exactly, on Solana, as one transfer.</span></div>
+      </div>
+    </div>
+
+    <div class="trio">
+      <div><h3>The exact amount arrives.</h3><p>The payee gets what the invoice says. Every fee is listed in the review before you sign.</p></div>
+      <div><h3>Receive on any chain.</h3><p>Pick a chain and an asset. Ink shows one address: your own wallet on that chain, or one that lands in your NEAR Intents balance.</p></div>
+      <div>
+        <h3>One phrase, every chain.</h3>
+        <ul class="chains" role="list">
+          <li><img src="assets/logos/chain-near.svg" alt="" width="20" height="20">NEAR</li>
+          <li><img src="assets/logos/chain-solana.svg" alt="" width="20" height="20">Solana</li>
+          <li><img src="assets/logos/chain-base.svg" alt="" width="20" height="20">Base</li>
+          <li><img src="assets/logos/chain-ethereum.svg" alt="" width="20" height="20">Ethereum</li>
+          <li><img src="assets/logos/chain-bsc.svg" alt="" width="20" height="20">BNB Chain</li>
+          <li><img src="assets/logos/chain-arbitrum.svg" alt="" width="20" height="20">Arbitrum</li>
+          <li><img src="assets/logos/chain-bitcoin.svg" alt="" width="20" height="20">Bitcoin</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap split">
+    <div class="split__copy">
+      <p class="kicker">Not only invoices</p>
+      <h2>Say it the way you'd say it.</h2>
+      <p class="lede lede--sm">Everyday sends, swaps and staking go through the same loop: you ask, the agent proposes a plan, you review and sign.</p>
+    </div>
+    <ul class="asks" role="list">
+      <li><img src="assets/logos/chain-near.svg" alt="" width="20" height="20">Send 2 NEAR to alice.near</li>
+      <li><img src="assets/logos/token-usdc.svg" alt="" width="20" height="20">Swap 25 USDC to NEAR</li>
+      <li><img src="assets/logos/chain-near.svg" alt="" width="20" height="20">Stake 10 NEAR</li>
+      <li><img src="assets/logos/chain-base.svg" alt="" width="20" height="20">Deposit 10 USDC on Base</li>
+      <li>What's my wallet worth?</li>
+      <li class="asks__hot"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 14 14"><use href="#i-file"/></svg>Pay this invoice</li>
+    </ul>
+  </div>
+</section>
+
+<section id="safety" class="close">
+  <div class="wrap close__in">
+    <svg class="otto otto--night close__otto" role="img" aria-label="Otto" viewBox="-22 -22 244 244">
+      <g class="otto-bob">
+        <g class="otto-arm" style="transform-origin: 50px 126px"><path class="e" d="M50 126 C26 138 14 154 20 172"/><path class="c" d="M50 126 C26 138 14 154 20 172"/></g>
+        <g class="otto-arm" style="transform-origin: 72px 140px; animation-delay: -.35s"><path class="e" d="M72 140 C58 158 56 176 66 184"/><path class="c" d="M72 140 C58 158 56 176 66 184"/></g>
+        <g class="otto-arm" style="transform-origin: 96px 144px; animation-delay: -.7s"><path class="e" d="M96 144 C92 164 100 180 116 184"/><path class="c" d="M96 144 C92 164 100 180 116 184"/></g>
+        <g class="otto-arm" style="transform-origin: 122px 142px; animation-delay: -1.05s"><path class="e" d="M122 142 C136 160 150 172 166 172"/><path class="c" d="M122 142 C136 160 150 172 166 172"/></g>
+        <g class="otto-arm" style="transform-origin: 144px 130px; animation-delay: -1.4s"><path class="e" d="M144 130 C164 142 176 158 172 176"/><path class="c" d="M144 130 C164 142 176 158 172 176"/></g>
+        <g class="otto-arm" style="transform-origin: 154px 110px; animation-delay: -1.2s"><path class="e" d="M154 110 C184 100 196 72 186 48"/><path class="c" d="M154 110 C184 100 196 72 186 48"/></g>
+        <g class="otto-arm" style="transform-origin: 44px 112px; animation-delay: -2.1s"><path class="e" d="M44 112 C22 110 8 122 8 142"/><path class="c" d="M44 112 C22 110 8 122 8 142"/></g>
+        <path class="body" d="M100,24 C57,24 30,54 30,98 C30,126 52,146 100,146 C148,146 170,126 170,98 C170,54 143,24 100,24 Z"/>
+        <path class="shade" d="M30 100 C30 130 54 146 100 146 C146 146 170 130 170 100 C170 118 150 133 100 133 C50 133 30 118 30 100 Z"/>
+        <ellipse class="cream" cx="100" cy="131" rx="45" ry="13"/>
+        <g class="otto-arm" style="transform-origin: 62px 128px; animation-delay: -1.05s"><path class="e f" d="M62 128 C50 144 60 162 82 160"/><path class="c f" d="M62 128 C50 144 60 162 82 160"/><g class="cream"><circle cx="53" cy="140" r="3.1"/><circle cx="54" cy="152" r="3.1"/><circle cx="64" cy="160" r="3.1"/><circle cx="77" cy="162" r="3.1"/></g></g>
+        <g class="otto-blink"><circle class="eye" cx="79" cy="76" r="17"/><circle class="eye" cx="121" cy="76" r="17"/><g class="otto-look"><circle class="ink" cx="82" cy="78" r="8.5"/><circle class="ink" cx="124" cy="78" r="8.5"/><circle fill="#fff" cx="78.5" cy="73.5" r="3"/><circle fill="#fff" cx="120.5" cy="73.5" r="3"/></g></g>
+        <g class="face"><path d="M66 52 Q79 44 91 51"/><path d="M109 51 Q121 44 134 52"/><path d="M91 101 Q100 110 109 101"/></g>
+      </g>
+    </svg>
+    <div class="close__copy">
+      <h2 class="h2--xl">Nothing moves until you sign.</h2>
+      <ul class="promises" role="list">
+        <li><h3>The agent can't sign</h3><p>It reads and proposes. It has no tool that signs, approves or touches keys.</p></li>
+        <li><h3>Keys stay on your computer</h3><p>Encrypted with your password. No Ottopus server and no custody.</p></li>
+        <li><h3>You review the real thing</h3><p>The review window decodes what will be signed, not the agent's words.</p></li>
+        <li><h3>Open source</h3><p>Read every line on <a href="https://github.com/ottopusxyz/ottopus-ink" rel="noreferrer">GitHub</a>.</p></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="download" class="band">
+  <div class="wrap stack">
+    <div class="head">
+      <h2 class="h2--xl">Get Ottopus Ink.</h2>
+      <p class="lede lede--sm">Free and open source. Set up a wallet in a few minutes, pick your agent, and ask.</p>
+    </div>
+    <div class="gets-grid">
+      <div class="dl" data-dl="mac">
+        <h3>macOS</h3>
+        <p data-dl-note>Packaged builds are published on GitHub Releases.</p>
+        <a class="btn btn--coral btn--block" href="https://github.com/ottopusxyz/ottopus-ink/releases" rel="noreferrer" data-dl-link>
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16"><use href="#i-download"/></svg>
+          <span data-dl-label>Download for macOS</span>
+        </a>
+        <code class="dl__meta" data-dl-meta>Latest release on GitHub</code>
+      </div>
+      <div class="dl" data-dl="linux">
+        <h3>Linux</h3>
+        <p data-dl-note>Packaged builds are published on GitHub Releases.</p>
+        <a class="btn btn--coral btn--block" href="https://github.com/ottopusxyz/ottopus-ink/releases" rel="noreferrer" data-dl-link>
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16"><use href="#i-download"/></svg>
+          <span data-dl-label>Download for Linux</span>
+        </a>
+        <code class="dl__meta" data-dl-meta>Latest release on GitHub</code>
+      </div>
+      <div class="dl dl--src">
+        <h3>Build from source</h3>
+        <p>Needs Node 22.12 or newer, on Linux or macOS.</p>
+        <pre><code>git clone https://github.com/ottopusxyz/ottopus-ink
+cd ottopus-ink
+npm ci
+npm start</code></pre>
+        <a class="dl__more" href="https://github.com/ottopusxyz/ottopus-ink" rel="noreferrer">View the code on GitHub</a>
+      </div>
+    </div>
+    <p class="warn"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 18 18"><use href="#i-warn"/></svg><span>Ottopus Ink is an early hackathon build and has not been audited. Start with a new recovery phrase and small amounts.</span></p>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot__in">
+    <a class="lockup" href="#top" aria-label="Ottopus Ink, top of page">
+      <img src="assets/icon.svg" alt="" width="28" height="28">
+      <span class="lockup__word">ottopus</span>
+      <span class="lockup__tag">Ink</span>
+    </a>
+    <p>Ask for it. Sign it yourself.</p>
+    <nav aria-label="Ottopus elsewhere">
+      <a href="https://ottopus.xyz" rel="noreferrer">ottopus.xyz</a>
+      <a href="https://github.com/ottopusxyz/ottopus-ink" rel="noreferrer">GitHub</a>
+      <a href="https://x.com/ottopusxyz" rel="noreferrer">X</a>
+    </nav>
+  </div>
+</footer>
+
+<svg class="defs" aria-hidden="true" width="0" height="0">
+  <defs>
+    <symbol id="i-download" viewBox="0 0 16 16"><path d="M8 2v8M4.5 7 8 10.5 11.5 7M3 13.5h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-file" viewBox="0 0 14 14"><path d="M3 1.5h5l3 3v8H3v-11Z M8 1.5v3h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 26 12"><path d="M1 6h22M19 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-arrow-lg" viewBox="0 0 44 16"><path d="M2 8h38M34 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-up" viewBox="0 0 14 14"><path d="M7 12V2M3 6l4-4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-spin" viewBox="0 0 12 12"><path d="M6 1.5a4.5 4.5 0 1 1-4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 18 18"><path d="M9 2.5 16 15H2L9 2.5Z M9 7.5v3.5M9 13v.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="s-fish" viewBox="0 0 23 14"><ellipse cx="9" cy="7" rx="7" ry="4.4" fill="currentColor"/><path d="M15.4 7 22.5 2.8v8.4L15.4 7Z" fill="currentColor" opacity=".8"/><path d="M9 2.7 11.7.7l.5 2.6Z" fill="currentColor" opacity=".65"/></symbol>
+    <symbol id="s-jelly" viewBox="0 0 18 24"><path d="M1 10.5C1 5.8 4.6 2 9 2s8 3.8 8 8.5v1.4c0 .6-.5 1.1-1.1 1.1H2.1A1.1 1.1 0 0 1 1 11.9v-1.4Z" fill="currentColor"/><path d="M4.4 13.8c0 3-1.3 4.3-1.3 7.1M7.5 13.8c0 3.6.8 5 .2 7.9M10.5 13.8c0 3.6-.8 5-.2 7.9M13.6 13.8c0 3 1.3 4.3 1.3 7.1" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".7"/></symbol>
+    <symbol id="s-turtle" viewBox="0 0 28 16"><ellipse cx="12" cy="8" rx="8.2" ry="5.4" fill="currentColor"/><circle cx="22.6" cy="8.2" r="2.7" fill="currentColor" opacity=".9"/><path d="M7 3.4 3.6 1.2M7 12.6 3.6 14.8M17 3.6l3.2-2.2M17 12.4l3.2 2.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".8"/></symbol>
+  </defs>
+</svg>
+</body>
+</html>

@@ -10,6 +10,9 @@ import { createDepositJournal } from './intents/deposit-journal'
 import { evmChainById, type EvmChain } from '../shared/evm/chains'
 import { evmTransferOfStep } from '../shared/evm/transaction'
 import { buildEvmSend, evmFeeCeiling, isEvmSend } from './evm/build'
+import { buildSolanaSend, isSolanaSend, solanaFeeNow } from './solana/build'
+import { createSolanaRpc } from './solana/rpc'
+import { solanaTransferOfStep } from '../shared/solana/transaction'
 import { createEvmRpc, type EvmRpc } from './evm/rpc'
 import { depositEnding } from './intents/deposit-note'
 import { createDepositWatcher, type DepositJournal } from './intents/deposit-watch'
@@ -154,6 +157,9 @@ let agents: Promise<AgentStatus[]> | null = null
 /** NEAR mainnet, for balances and for building and sending transfers. */
 const nearRpc = createNearRpc()
 
+/** Solana mainnet, for building and sending transfers there. */
+const solanaRpc = createSolanaRpc()
+
 /** Each EVM chain's RPC client, made on first use. */
 const evmRpcs = new Map<string, EvmRpc>()
 function evmRpcFor(chain: EvmChain): EvmRpc {
@@ -176,6 +182,7 @@ const plans = createPlanStore({
   buildSteps: async (intent, own) => {
     if (isNearSend(intent)) return buildNearSend(intent, own, nearRpc)
     if (isEvmSend(intent)) return buildEvmSend(intent, own, { rpcFor: evmRpcFor, tokens: listedTokens })
+    if (isSolanaSend(intent)) return buildSolanaSend(intent, own, { rpc: solanaRpc, tokens: listedTokens })
     if (intent.outcome === 'pay') {
       return buildPayment(intent, own, {
         tokens: listedTokens,
@@ -495,6 +502,7 @@ async function describePlan(plan: PlanView) {
             const chain = evmChainById(transfer.chainId)
             return chain ? await evmFeeCeiling(evmRpcFor(chain), transfer.gas) : null
           }
+          if (step.chain === 'solana') return await solanaFeeNow(solanaRpc, solanaTransferOfStep(step))
           const { calls } = callsOfStep(step)
           return callsFeeCeiling(await nearRpc.gasPrice(), callsGas(calls), calls.length)
         } catch {
@@ -511,6 +519,15 @@ async function describePlan(plan: PlanView) {
       const transfer = evmTransferOfStep(first)
       const chain = evmChainById(transfer.chainId)
       if (chain) fee = await evmFeeCeiling(evmRpcFor(chain), transfer.gas).catch(() => null)
+    } catch {
+      // A step that doesn't read as Ink's own transfer isn't shown at all.
+    }
+    return describeForReview(plan, '', fee)
+  }
+  if (first?.chain === 'solana') {
+    let fee: bigint | null = null
+    try {
+      fee = await solanaFeeNow(solanaRpc, solanaTransferOfStep(first)).catch(() => null)
     } catch {
       // A step that doesn't read as Ink's own transfer isn't shown at all.
     }
@@ -545,6 +562,7 @@ const sender = createPlanSender({
     vault: { sign: (core, hash, live) => getVault().sign(core, hash, live) },
     rpc: nearRpc,
     evmRpc: evmRpcFor,
+    solanaRpc,
     payouts: { list: () => getPayoutJournal().list(), put: (entry) => getPayoutJournal().put(entry), remove: (planId) => getPayoutJournal().remove(planId) },
     onConfirmed: (plan, transactionId) => {
       if (plan.core.swap) void swapTracker.follow(plan.id, plan.core.swap, transactionId)

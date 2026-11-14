@@ -33,6 +33,7 @@ function chainOfStep(core: PlanCore, index: number): { name: string; mark: strin
     const chain = evmChainById(Number(step.fields.chainId))
     if (chain) return { name: chain.name, mark: chain.id, tx: (id) => `${chain.explorer.tx}${id}` }
   }
+  if (step?.chain === 'solana') return { name: 'Solana', mark: 'solana', tx: (id) => `https://solscan.io/tx/${encodeURIComponent(id)}` }
   return { name: 'NEAR', mark: 'near', tx: (id) => `https://nearblocks.io/txns/${encodeURIComponent(id)}` }
 }
 

@@ -5,19 +5,22 @@ import { nearTransferOf } from '../near/build'
 import { chainName } from '../routes/route'
 import { refundPlace, swapSent } from '../routes/swap-terms'
 import { evmChainById, type EvmChain } from '../../shared/evm/chains'
-import { EvmDecodeError, evmTransferOfStep, type EvmTransfer } from '../../shared/evm/transaction'
+import { EvmDecodeError, evmTransferOfStep } from '../../shared/evm/transaction'
+import { SolanaDecodeError, solanaTransferOfStep } from '../../shared/solana/transaction'
 import { formatUnits } from '../../shared/token-text'
 
-/** A plan's one EVM transfer and its chain, or null for a plan that isn't one. */
-function evmOf(core: PlanCore): { transfer: EvmTransfer; chain: EvmChain } | null {
+/** What a plan's one transfer from the wallet on an EVM chain or Solana sends, and its chain, or null for a plan that isn't one. */
+function walletTransferOf(core: PlanCore): { transfer: { amount: bigint; decimals: number; symbol: string; to: string }; chain: Pick<EvmChain, 'name'> & { explorer: { tx: string } } } | null {
   const [step, ...rest] = core.steps
-  if (!step || rest.length > 0 || step.chain !== 'evm') return null
+  if (!step || rest.length > 0) return null
   try {
+    if (step.chain === 'solana') return { transfer: solanaTransferOfStep(step), chain: { name: 'Solana', explorer: { tx: 'https://solscan.io/tx/' } } }
+    if (step.chain !== 'evm') return null
     const transfer = evmTransferOfStep(step)
     const chain = evmChainById(transfer.chainId)
     return chain ? { transfer, chain } : null
   } catch (error) {
-    if (error instanceof EvmDecodeError) return null
+    if (error instanceof EvmDecodeError || error instanceof SolanaDecodeError) return null
     throw error
   }
 }
@@ -41,8 +44,8 @@ const toAgent = (planId: string, facts: string) =>
  * Every value comes from the plan's fixed core, NEAR's answer and NEAR Intents' report.
  */
 export function planOutcome(planId: string, core: PlanCore, status: PlanStatus, transactionId: string | null, swap: ChatSwap | null): PlanOutcome | null {
-  // The chain the plan's transaction ran on: an EVM chain for an EVM step, else NEAR.
-  const evm = evmOf(core)
+  // The chain the plan's transaction ran on: an EVM chain or Solana for a step there, else NEAR.
+  const evm = walletTransferOf(core)
   const ranOn = evm?.chain.name ?? 'NEAR'
   const links = !transactionId ? [] : evm ? [{ label: `${evm.chain.name} transaction`, url: `${evm.chain.explorer.tx}${transactionId}` }] : [nearblocks(transactionId)]
   if (core.swaps) return paymentOutcome(planId, core.swaps, status, transactionId, swap)
@@ -74,7 +77,7 @@ export function planOutcome(planId: string, core: PlanCore, status: PlanStatus, 
 
   const amountIn = swapSent(terms) ?? `the ${terms.sendSymbol}`
   const yours = refundPlace(terms)
-  const theirs = terms.payFrom === 'intents' ? 'the person’s NEAR Intents balance' : terms.payFrom === 'evm' ? 'the address it came from' : 'the person’s NEAR account'
+  const theirs = terms.payFrom === 'intents' ? 'the person’s NEAR Intents balance' : terms.payFrom === 'evm' || terms.payFrom === 'solana' ? 'the address it came from' : 'the person’s NEAR account'
   const where = terms.getChain === 'intents' ? 'into the NEAR Intents balance' : `to ${terms.recipient} on ${chainName(terms.getChain)}`
   if (status === 'failed') {
     const why = transactionId ? `${ranOn} turned the deposit down or it failed on chain, so nothing reached NEAR Intents.` : 'Nothing was sent.'
@@ -127,7 +130,7 @@ function paymentOutcome(planId: string, legs: readonly PlanSwap[], status: PlanS
   const parts =
     legs
       .filter((leg) => leg.role !== 'payout')
-      .map((leg) => `${swapSent(leg) ?? leg.sendSymbol} from ${leg.payFrom === 'evm' ? 'your wallet on its chain' : 'your NEAR Intents balance'}`)
+      .map((leg) => `${swapSent(leg) ?? leg.sendSymbol} from ${leg.payFrom === 'evm' || leg.payFrom === 'solana' ? 'your wallet on its chain' : 'your NEAR Intents balance'}`)
       .join(', ') || 'your NEAR Intents balance'
   if (status === 'failed') {
     const why = 'A step failed on chain, or a part wasn’t swapped, so the payout wasn’t sent. What did arrive stays in your NEAR Intents balance, and anything refunded goes back where it came from.'

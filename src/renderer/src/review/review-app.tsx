@@ -190,7 +190,7 @@ export function ReviewApp() {
         <Section label="To" card>
           <div className="flex items-center gap-3">
             <span className="ink-avatar" aria-hidden>
-              {plan.toKind === 'named' ? plan.to.slice(0, 1).toUpperCase() : '0x'}
+              {plan.toKind === 'named' ? plan.to.slice(0, 1).toUpperCase() : plan.toKind === 'solana' ? 'S' : '0x'}
             </span>
             <div className="flex min-w-0 flex-col gap-0.5">
               <Address value={plan.to} />
@@ -469,7 +469,7 @@ function SwapTerms({ plan, swap }: { plan: ReviewPlan; swap: ReviewSwap }) {
         <span className="ink-eyebrow">Refunds go to</span>
         <Address value={swap.refundTo} small />
         <span className="text-[12px] text-[var(--ot-text-3)]">
-          {swap.from === 'intents' ? 'Back into your NEAR Intents balance' : swap.from === 'evm' ? `Back to the address it came from, on ${plan.chain}` : 'Your own NEAR account'}, if the swap can’t pay at
+          {swap.from === 'intents' ? 'Back into your NEAR Intents balance' : swap.from === 'evm' || swap.from === 'solana' ? `Back to the address it came from, on ${plan.chain}` : 'Your own NEAR account'}, if the swap can’t pay at
           least the amount above.
         </span>
       </div>

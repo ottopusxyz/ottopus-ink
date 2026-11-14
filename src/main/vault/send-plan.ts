@@ -12,6 +12,9 @@ import { evmChainById, type EvmChain } from '../../shared/evm/chains'
 import { EvmDecodeError, evmTransferOfStep } from '../../shared/evm/transaction'
 import { evmSendFees, evmSendFits } from '../evm/build'
 import { EvmRpcError, type EvmRpc } from '../evm/rpc'
+import { SolanaDecodeError, solanaTransferOfStep, type SolanaTransfer } from '../../shared/solana/transaction'
+import { solanaFeeNow, solanaSendFits } from '../solana/build'
+import { SolanaRpcError, type SolanaRpc } from '../solana/rpc'
 import type { VaultService } from './service'
 
 /** The only network Ink sends on. */
@@ -43,6 +46,8 @@ export interface PlanSenderOptions {
   rpc: NearRpc
   /** Each EVM chain's RPC, for plans that send on one. */
   evmRpc?: (chain: EvmChain) => EvmRpc
+  /** Solana's RPC, for plans that send on Solana. */
+  solanaRpc?: SolanaRpc
   /** Told of each plan its chain ran, with its transaction, so a swap can be followed from there. */
   onConfirmed?: (plan: PlanView, transactionId: string) => void
   /** Told of each step of a payment its chain ran, with its transaction, so its legs can be followed. */
@@ -58,6 +63,14 @@ export interface PlanSenderOptions {
 /** How long a send waits for its EVM transaction's receipt before leaving it submitted for the chain to decide. */
 export const EVM_RECEIPT_WAIT_MS = 3 * 60_000
 const EVM_RECEIPT_POLL_MS = 2_000
+
+/**
+ * How long a send waits for its Solana transaction to be confirmed before leaving it
+ * submitted for the chain to decide. Its blockhash lasts about a minute and a half, so by
+ * then it has almost always landed or can't any more.
+ */
+export const SOLANA_CONFIRM_WAIT_MS = 2 * 60_000
+const SOLANA_POLL_MS = 2_000
 
 /**
  * How long before a swap's deposit address dies Ink stops sending to it: time for the
@@ -107,7 +120,7 @@ export const TRANSACTION_VALIDITY_BLOCKS = 86_400n
  * nothing else, so a later send can't overtake it. One plan at a time, each
  * signed above every nonce already signed with its key, so no two share one.
  */
-export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onStepConfirmed, onStep, payouts, now = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: PlanSenderOptions) {
+export function createPlanSender({ store, vault, rpc, evmRpc, solanaRpc, onConfirmed, onStepConfirmed, onStep, payouts, now = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: PlanSenderOptions) {
   let sending = false
   /**
    * The highest nonce signed with each key. A send that got no answer, or that
@@ -135,6 +148,7 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
     const swap = plan.core.swap
     if (swap && !(now() < Date.parse(swap.deadline) - SWAP_SEND_MARGIN_MS)) return { ok: false, reason: 'cannot-move', status: plan.status }
     if (plan.core.steps[0]?.chain === 'evm') return runEvm(plan, owner, maxFee)
+    if (plan.core.steps[0]?.chain === 'solana') return runSolana(plan, owner, maxFee)
     const sendable = sendableOf(plan.core)
     if (!sendable) return { ok: false, reason: 'bad-request', status: plan.status }
 
@@ -252,6 +266,13 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
         },
       }
     }
+    if (step.chain === 'solana') {
+      const transfer = solanaTransferOfStep(step)
+      if (!solanaRpc) return 'chain-unavailable'
+      const ready = await solanaReady(transfer, maxFee)
+      if (typeof ready === 'string') return ready
+      return { live: ready.live, keyId: ready.keyId, nonce: 0n, send: (signed, signature) => solanaSendAndWait(signed, signature, ready.lastValidBlockHeight, ready.keyId) }
+    }
     const { signerId, calls } = callsOfStep(step)
     const publicKey = step.fields.publicKey as string
     const keyId = `${signerId} ${publicKey}`
@@ -307,8 +328,8 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
         read.push(one)
       }
     } catch (error) {
-      if (error instanceof EvmRpcError || error instanceof NearRpcError) return { ok: false, reason: 'chain-unavailable', status: plan.status }
-      if (error instanceof EvmDecodeError || error instanceof NearDecodeError) return { ok: false, reason: 'bad-request', status: plan.status }
+      if (error instanceof EvmRpcError || error instanceof NearRpcError || error instanceof SolanaRpcError) return { ok: false, reason: 'chain-unavailable', status: plan.status }
+      if (error instanceof EvmDecodeError || error instanceof NearDecodeError || error instanceof SolanaDecodeError) return { ok: false, reason: 'bad-request', status: plan.status }
       throw error
     }
 
@@ -322,7 +343,8 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
     if (signed.signed.length !== steps.length) return fail(id, owner, 'refused')
     for (const step of read) {
       if (step.keyId.startsWith('evm ')) evmNonces.set(step.keyId, step.nonce)
-      else signedNonces.set(step.keyId, step.nonce)
+      // Solana has no nonces: a transaction names a recent blockhash instead.
+      else if (!step.keyId.startsWith('solana ')) signedNonces.set(step.keyId, step.nonce)
     }
 
     const submitted = store.move(id, owner, 'submitted')
@@ -506,6 +528,111 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
       await wait(EVM_RECEIPT_POLL_MS)
     }
     return { ok: true, plan: submitted.plan, transactionId: hash }
+  }
+
+  /** Solana sends with no answer yet, by address: the transaction, and the last block height it could land in. */
+  const solanaPending = new Map<string, { signature: string; lastValidBlockHeight: bigint }>()
+
+  /**
+   * What a Solana transfer needs before it's signed, checked against what was approved: the
+   * balance still covers it and its fees, no earlier send from the address may still land,
+   * and a recent blockhash, with the last block height a transaction naming it can land in.
+   */
+  async function solanaReady(transfer: SolanaTransfer, maxFee: bigint): Promise<{ live: LiveInputs; keyId: string; lastValidBlockHeight: bigint } | SendFailure> {
+    const chainRpc = solanaRpc as SolanaRpc
+    const keyId = `solana ${transfer.from}`
+    const fee = await solanaFeeNow(chainRpc, transfer)
+    const unfit = await solanaSendFits(chainRpc, transfer, fee, maxFee)
+    if (unfit) return unfit
+    const earlier = solanaPending.get(keyId)
+    if (earlier) {
+      // Settled once the chain shows it, or once its blockhash is too old for it ever to land.
+      const settled = (await chainRpc.status(earlier.signature)) !== null || (await chainRpc.blockHeight()) > earlier.lastValidBlockHeight
+      if (!settled) return 'earlier-pending'
+      solanaPending.delete(keyId)
+    }
+    const { blockhash, lastValidBlockHeight } = await chainRpc.latestBlockhash()
+    return { live: { recentBlockhash: blockhash }, keyId, lastValidBlockHeight }
+  }
+
+  /**
+   * Sends a signed Solana transaction and waits for the chain: true once it ran, false if it
+   * failed or can never land (its blockhash expired unseen, so it spent nothing), null if
+   * there's no answer yet, which holds the address until there is.
+   */
+  async function solanaSendAndWait(signed: Uint8Array, signature: string, lastValidBlockHeight: bigint, keyId: string): Promise<boolean | null> {
+    const chainRpc = solanaRpc as SolanaRpc
+    try {
+      await chainRpc.send(signed)
+    } catch (error) {
+      if (!(error instanceof SolanaRpcError)) throw error
+      // Turned away before it ran: it spent nothing.
+      if (error.reason === 'rejected') return false
+      // No answer: it may have reached the chain all the same, so look for it.
+    }
+    for (const started = now(); now() - started < SOLANA_CONFIRM_WAIT_MS; ) {
+      const status = await chainRpc.status(signature).catch(() => null)
+      if (status) return status.ok
+      const height = await chainRpc.blockHeight().catch(() => null)
+      if (height !== null && height > lastValidBlockHeight) {
+        // One last look: it may have landed in the final valid block.
+        const last = await chainRpc.status(signature).catch(() => null)
+        if (last) return last.ok
+        return false
+      }
+      await wait(SOLANA_POLL_MS)
+    }
+    solanaPending.set(keyId, { signature, lastValidBlockHeight })
+    return null
+  }
+
+  /**
+   * A plan whose one step sends on Solana, from a send or a swap the wallet pays there:
+   * checks the transfer still fits against what was approved while the plan is still
+   * approved, takes a recent blockhash, has the signer sign it, sends it, and waits for the
+   * chain. A send with no answer yet stays submitted for the chain to decide.
+   */
+  async function runSolana(plan: PlanView, owner: string, maxFee: bigint): Promise<SendResult> {
+    const id = plan.id
+    const [step, ...rest] = plan.core.steps
+    let transfer: SolanaTransfer
+    try {
+      if (!step || rest.length > 0) throw new SolanaDecodeError('one step')
+      transfer = solanaTransferOfStep(step)
+    } catch (error) {
+      if (error instanceof SolanaDecodeError) return { ok: false, reason: 'bad-request', status: plan.status }
+      throw error
+    }
+    if (!solanaRpc) return { ok: false, reason: 'chain-unavailable', status: plan.status }
+    let ready: Awaited<ReturnType<typeof solanaReady>>
+    try {
+      ready = await solanaReady(transfer, maxFee)
+    } catch (error) {
+      if (error instanceof SolanaRpcError) return { ok: false, reason: 'chain-unavailable', status: plan.status }
+      throw error
+    }
+    if (typeof ready === 'string') return { ok: false, reason: ready, status: plan.status }
+
+    const signing = store.move(id, owner, 'signing')
+    if (!signing.ok) return signing
+    const signed = await vault.sign(plan.core, plan.hash, [ready.live])
+    if (!signed.ok) {
+      const reason = signed.reason === 'locked' || signed.reason === 'plan-mismatch' || signed.reason === 'refused' || signed.reason === 'signer-stopped' ? signed.reason : 'refused'
+      return fail(id, owner, reason)
+    }
+    const [signedStep] = signed.signed
+    if (!signedStep || signed.signed.length !== 1) return fail(id, owner, 'refused')
+
+    const submitted = store.move(id, owner, 'submitted')
+    if (!submitted.ok) return submitted
+    const signature = signedStep.transactionId
+    onStep?.(id, 0, 'sent', signature)
+    const ran = await solanaSendAndWait(signedStep.signed, signature, ready.lastValidBlockHeight, ready.keyId)
+    if (ran === null) return { ok: true, plan: submitted.plan, transactionId: signature }
+    onStep?.(id, 0, ran ? 'confirmed' : 'failed', signature)
+    const done = store.move(id, owner, ran ? 'confirmed' : 'failed')
+    if (done.ok && done.plan.status === 'confirmed') onConfirmed?.(done.plan, signature)
+    return done.ok ? { ok: true, plan: done.plan, transactionId: signature } : done
   }
 
   return {

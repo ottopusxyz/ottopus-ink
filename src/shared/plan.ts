@@ -107,7 +107,7 @@ export interface PlanSwap {
    * sending the coin or token to the deposit address there; a refund goes back to the same
    * address. Absent when the wallet pays in NEAR.
    */
-  payFrom?: 'intents' | 'evm'
+  payFrom?: 'intents' | 'evm' | 'solana'
   /** The decimals of what's sent. Absent for NEAR's 24. */
   sendDecimals?: string
   /** For `evm`: the chain id, and `native` or the token's contract, which the step must send. */

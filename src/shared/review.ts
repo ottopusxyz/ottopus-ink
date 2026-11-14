@@ -50,7 +50,7 @@ export interface ReviewPlan {
    * What kind of NEAR account `to` is. A transfer creates an implicit one that doesn't exist yet.
    * `other-chain` is a swap's payout address on another chain, and `evm` an address on the EVM chain that sends.
    */
-  toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain' | 'evm'
+  toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain' | 'evm' | 'solana'
   /** Why Ink lets this plan pay `to`: it's the person's own address, or they typed it in the chat. */
   toWhy: 'own' | 'typed'
   /** What's sent, in `asset`: the NEAR sent or swapped, or the token a swap moves from the Intents balance. */
@@ -86,7 +86,7 @@ export interface ReviewAction {
 export interface ReviewLeg {
   /** "10 USDC". */
   send: string
-  from: 'evm' | 'intents'
+  from: 'evm' | 'solana' | 'intents'
   /** Where it pays from, as a person reads it: "Base", "your NEAR Intents balance". */
   fromPlace: string
   /** Exactly what it puts in the Intents balance: "9.7 USDC". */
@@ -103,7 +103,7 @@ export interface ReviewSwap {
   /** "5 NEAR", "25 USDC". */
   send: string
   /** What pays: NEAR from the wallet, a coin or token from the wallet on an EVM chain, or a token in the NEAR Intents balance. A refund goes back to the same place. */
-  from: 'wallet' | 'evm' | 'intents'
+  from: 'wallet' | 'evm' | 'solana' | 'intents'
   /** What the quote expects to pay out: "17.400531 USDC". */
   get: string
   /** The least it pays out, or it's refunded. */

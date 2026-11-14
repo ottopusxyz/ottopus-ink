@@ -90,6 +90,9 @@ describe('where to receive, NEAR Intents first', () => {
     expect(await pickReceive({ chain: 'base', asset: 'DEGEN', amount: null }, deps().deps)).toMatchObject({ kind: 'own', address: EVM, why: 'not-in-intents', min: null })
     expect(await pickReceive({ chain: 'ethereum', asset: 'ETH', amount: null }, deps().deps)).toMatchObject({ kind: 'own', address: EVM, why: 'not-in-intents' })
     expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: null }, deps({ depositAddress: async () => null }).deps)).toMatchObject({ kind: 'own', why: 'intents-unavailable' })
+    // Without the bridge's list Ink can't tell what NEAR Intents takes, so it says it couldn't reach it.
+    expect(await pickReceive({ chain: 'solana', asset: 'USDC', amount: null }, deps({ bridge: null, accounts: [...ACCOUNTS, { chain: 'solana', path: "m/44'/501'/0'/0'", address: 'SoLown' }] }).deps)).toMatchObject({ kind: 'own', why: 'intents-unavailable', address: 'SoLown' })
+    expect(await pickReceive({ chain: 'xrp', asset: 'XRP', amount: null }, deps({ bridge: null }).deps)).toEqual({ ok: false, reason: 'unavailable', min: null })
   })
 
   it('says plainly when neither can take it, and refuses what isn’t a chain or an amount', async () => {

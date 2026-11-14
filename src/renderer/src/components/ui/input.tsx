@@ -22,7 +22,9 @@ export function Input({ mono = false, invalid = false, className, ...props }: In
       className={cn(
         'w-full min-w-0 rounded-[10px] border bg-[var(--ot-surface-2)] px-3 py-[10px]',
         'text-[14px] text-[var(--ot-text)] placeholder:text-[var(--ot-text-4)]',
-        'transition-colors duration-[var(--ot-dur-fast)]',
+        'transition-[border-color,box-shadow] duration-[var(--ot-dur-fast)]',
+        // The design's focus: a plan-blue edge and a soft halo, not an outline around the border.
+        'focus-visible:outline-none focus:border-[var(--ot-plan)] focus:shadow-[0_0_0_3px_var(--ot-plan-bg)]',
         mono && 'font-mono text-[13px] tabular-nums',
         invalid ? 'border-[var(--ot-block-border)]' : 'border-[var(--ot-border-strong)]',
         'disabled:cursor-not-allowed disabled:text-[var(--ot-text-4)]',

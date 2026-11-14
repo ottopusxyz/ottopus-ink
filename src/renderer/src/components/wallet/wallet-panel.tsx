@@ -9,8 +9,10 @@ export interface Guide {
   pose: PoseName
   title: string
   text: string
-  /** Big and moving on welcome and lock; smaller and still while someone types words or a password. */
+  /** Big and moving on welcome and agent; smaller and still while someone types words or a password. */
   calm?: boolean
+  /** Otto's size, when it isn't the big or the calm one: the lock screen's is in between. */
+  size?: number
 }
 
 /** The steps of making a wallet, for the progress above the form. Welcome comes before the first. */
@@ -33,13 +35,13 @@ export function WalletPanel({ guide, step, children }: { guide: Guide; step?: nu
             <span className="font-display text-[20px] leading-[1.2] font-bold">{guide.title}</span>
             <span className="text-[13.5px] leading-[1.5] text-[var(--ot-text-2)]">{guide.text}</span>
           </div>
-          <Otto pose={guide.pose} size={guide.calm ? 150 : 220} animated={!guide.calm} className="mb-2 self-center" />
+          <Otto pose={guide.pose} size={guide.size ?? (guide.calm ? 150 : 230)} animated={!guide.calm} className="mb-2 self-center" />
         </div>
       </aside>
       <main className="ink-panel" id="main">
         <Sea shafts={false} />
-        <div className="ink-panel__scroll flex justify-center px-6 py-12">
-          <div className="my-auto flex w-full max-w-[540px] flex-col gap-5">
+        <div className="ink-panel__scroll flex justify-center px-6 py-10">
+          <div className="my-auto flex w-full max-w-[540px] flex-col gap-[18px]">
             {step !== undefined ? <SetupProgress at={step} /> : null}
             {children}
           </div>
@@ -71,11 +73,13 @@ function SetupProgress({ at }: { at: number }) {
   )
 }
 
-export function WalletHeading({ title, children }: { title: string; children?: ReactNode }) {
+export function WalletHeading({ title, size = 32, children }: { title: string; size?: number; children?: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <h1 className="m-0 font-display text-[30px] leading-[1.1] font-bold tracking-[-0.02em]">{title}</h1>
-      {children ? <p className="m-0 text-[14.5px] leading-[1.55] text-[var(--ot-text-2)]">{children}</p> : null}
+      <h1 className="m-0 font-display leading-[1.1] font-bold tracking-[-0.02em] [text-wrap:balance]" style={{ fontSize: size }}>
+        {title}
+      </h1>
+      {children ? <p className="m-0 text-[14.5px] leading-[1.55] text-[var(--ot-text-2)] [text-wrap:pretty]">{children}</p> : null}
     </div>
   )
 }

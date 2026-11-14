@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import type { BackupAnswer, NewPhrase, VaultWordCount } from '../../../../shared/vault'
 import { AgentMark } from '@/components/chat/agent-picker'
 import { Ring } from '@/components/motion/ring'
-import { CheckIcon, CloseIcon, EyeIcon, KeyIcon, LockIcon } from '@/components/shell/icons'
+import { ArrowRightIcon, CheckIcon, CloseIcon, EyeIcon, KeyIcon, LockIcon } from '@/components/shell/icons'
 import { Badge, Button, Callout, ChainStack, Input, Segmented } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import {
@@ -176,12 +176,12 @@ function Welcome({
         <Badge tone="coral" className="font-bold">
           Welcome aboard
         </Badge>
-        <h1 className="m-0 font-display text-[40px] leading-[1.05] font-bold tracking-[-0.02em]">
+        <h1 className="m-0 font-display text-[40px] leading-[1.05] font-bold tracking-[-0.02em] [text-wrap:balance]">
           Your keys stay here.
           <br />
           Your agent does the legwork.
         </h1>
-        <p className="m-0 text-[15px] leading-[1.55] text-[var(--ot-text-2)]">
+        <p className="m-0 text-[15px] leading-[1.55] text-[var(--ot-text-2)] [text-wrap:pretty]">
           Ink is a wallet your AI agent can talk to. It can look and propose. Only you can sign.
         </p>
       </div>
@@ -232,6 +232,7 @@ function Welcome({
         </div>
         <Button variant="primary" size="lg" fullWidth disabled={busy} onClick={onCreate}>
           {busy ? 'Making your phrase…' : 'Create my wallet'}
+          {busy ? null : <ArrowRightIcon size={16} />}
         </Button>
       </div>
       <Button variant="secondary" disabled={busy} onClick={onRestore} className="self-start">
@@ -532,7 +533,7 @@ function Restore({
         <Button variant="ghost" disabled={busy} onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant="primary" type="submit" disabled={busy}>
+        <Button variant="primary" size="lg" type="submit" disabled={busy}>
           {busy ? 'Restoring…' : 'Restore wallet'}
         </Button>
       </div>

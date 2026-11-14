@@ -1,6 +1,7 @@
 {
   "name": "ottopus-ink",
   "productName": "Ottopus Ink",
+  "desktopName": "ottopus-ink.desktop",
   "version": "0.1.0",
   "description": "A desktop universal wallet driven by the coding agent you already have. The agent proposes, you sign.",
   "license": "MIT",
@@ -16,7 +17,8 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "desktop-entry": "node scripts/desktop-entry.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

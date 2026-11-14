@@ -25,6 +25,8 @@ npm run typecheck
 npm run build    # production bundle in out/
 ```
 
+On Linux, run `npm run desktop-entry` once to give Ink its icon in the dock and app grid. GNOME on Wayland ignores a window's own icon and shows the icon of the desktop entry named after the app (`ottopus-ink.desktop`), which this writes to `~/.local/share/applications`, pointing at this checkout.
+
 npm 11 runs only approved install scripts. Electron's (which downloads its binary) is approved in `package.json` under `allowScripts`.
 
 ## Layout

@@ -236,16 +236,20 @@ export interface ChatDeposit {
 }
 
 /** A swap Ink followed lately, for Home: what went in, what it's for, and where it stands. */
-/** A plan as the Activity page shows it: the chat's plan, with its journey, and when it was made. */
+/** A plan as the Activity page shows it: the chat's plan, with its journey, when it was made and how it ended. */
 export interface ActivityPlan {
   plan: ChatPlan
   /** ISO 8601, set by main. */
   createdAt: string
+  /** ISO 8601: past this it can't be approved. */
+  expiresAt: string
+  /** How it ended, in Ink's own words: the first line of its note in the chat. Null while it's under way. */
+  ending: string | null
 }
 
 /**
- * Everything Ink has done lately, newest first: each plan of this run that reached review,
- * and the swaps it still follows from before it last started, whose plans are gone.
+ * Everything Ink has done lately, newest first: each plan of this run, and the swaps it
+ * still follows from before it last started, whose plans are gone.
  */
 export interface Activity {
   plans: ActivityPlan[]
@@ -474,7 +478,7 @@ export interface InkBridge {
   /** The swaps Ink followed lately, newest first. Empty while Ink is locked. */
   recentSwaps(): Promise<RecentSwap[]>
   onSwapsChanged(listener: () => void): () => void
-  /** Every plan of this run that reached review, and swaps from before, newest first. Empty while Ink is locked. */
+  /** Every plan of this run, and swaps from before, newest first. Empty while Ink is locked. */
   activity(): Promise<Activity>
   onActivityChanged(listener: () => void): () => void
   /** A deposit of a kept chat, with no session now, moved on. `chatId` is the page's id for the chat. */

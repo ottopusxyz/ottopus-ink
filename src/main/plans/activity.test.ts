@@ -22,7 +22,7 @@ async function store() {
 }
 
 describe('what Activity shows', () => {
-  it('lists every chat’s plans that reached review, newest first, and no drafts', async () => {
+  it('lists every chat’s plans, newest first, drafts included', async () => {
     const { plans, made } = await store()
     const first = await made('chat-1')
     const draft = await made('chat-2')
@@ -30,12 +30,12 @@ describe('what Activity shows', () => {
     plans.move(first, 'chat-1', 'awaiting_review')
     plans.move(second, 'chat-2', 'awaiting_review')
     plans.move(second, 'chat-2', 'cancelled')
-    const activity = activityOf({ plans: plans.list(), journey: () => JOURNEY, swap: () => null, transactionId: () => null, recent: [] })
+    const activity = activityOf({ plans: plans.list(), journey: () => JOURNEY, swap: () => null, transactionId: () => null, ending: () => null, recent: [] })
     expect(activity.plans.map(({ plan }) => [plan.id, plan.status])).toEqual([
       [second, 'cancelled'],
+      [draft, 'draft'],
       [first, 'awaiting_review'],
     ])
-    expect(activity.plans.some(({ plan }) => plan.id === draft)).toBe(false)
   })
 
   it('carries each plan’s journey, swap and last transaction, in the chat’s own shape', async () => {
@@ -43,16 +43,18 @@ describe('what Activity shows', () => {
     const id = await made('chat-1')
     plans.move(id, 'chat-1', 'awaiting_review')
     const swap = { stage: 'swapping' as const, got: null, refunded: null, link: null }
-    const [entry] = activityOf({ plans: plans.list(), journey: () => JOURNEY, swap: () => swap, transactionId: () => 'Tx1', recent: [] }).plans
+    const [entry] = activityOf({ plans: plans.list(), journey: () => JOURNEY, swap: () => swap, transactionId: () => 'Tx1', ending: () => 'NEAR ran it: 1.5 NEAR to alice.near.', recent: [] }).plans
     expect(entry?.plan).toEqual({ id, status: 'awaiting_review', journey: JOURNEY, swap, transactionId: 'Tx1', outcome: 'send', asset: 'NEAR', amount: '1.5', chain: 'near', to: 'alice.near', toAsset: null, toChain: null })
+    expect(entry).toMatchObject({ ending: 'NEAR ran it: 1.5 NEAR to alice.near.' })
     expect(entry?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect(Date.parse(entry?.expiresAt ?? '')).toBeGreaterThan(Date.parse(entry?.createdAt ?? ''))
   })
 
   it('keeps the swaps Ink follows from before it last started, and leaves out this run’s, legs included', async () => {
     const { plans, made } = await store()
     const id = await made('chat-1')
     plans.move(id, 'chat-1', 'awaiting_review')
-    const activity = activityOf({ plans: plans.list(), journey: () => JOURNEY, swap: () => null, transactionId: () => null, recent: [recent(id), recent(`${id}#0`), recent('gone'), recent('gone-pay#1')] })
+    const activity = activityOf({ plans: plans.list(), journey: () => JOURNEY, swap: () => null, transactionId: () => null, ending: () => null, recent: [recent(id), recent(`${id}#0`), recent('gone'), recent('gone-pay#1')] })
     expect(activity.earlier.map((each) => each.planId)).toEqual(['gone', 'gone-pay#1'])
   })
 })

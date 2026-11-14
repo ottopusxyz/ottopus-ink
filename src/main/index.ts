@@ -278,6 +278,7 @@ function activityNow(): Activity {
     journey: journeyOfPlan,
     swap: (plan) => swapStateOf(plan.id, plan.core),
     transactionId: (plan) => [...(planTxs.get(plan.id)?.values() ?? [])].at(-1)?.id ?? null,
+    ending: (plan) => planOutcome(plan.id, plan.core, plan.status, [...(planTxs.get(plan.id)?.values() ?? [])].at(-1)?.id ?? null, swapStateOf(plan.id, plan.core))?.note.lines[0] ?? null,
     recent: recentSwaps(),
   })
 }

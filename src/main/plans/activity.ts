@@ -13,17 +13,19 @@ export interface ActivityDeps {
   swap: (plan: PlanView) => ChatSwap | null
   /** Its last transaction, once one was sent. */
   transactionId: (plan: PlanView) => string | null
+  /** How it ended, in Ink's words, once it has. */
+  ending: (plan: PlanView) => string | null
   /** The swaps Ink follows, newest first, by `<plan>` or `<plan>#<leg>`. */
   recent: readonly RecentSwap[]
 }
 
 /**
- * What the Activity page shows, all from main's own record: each plan of this run that
- * reached review (a draft was never shown to the person), with its journey; and the
- * swaps Ink still follows whose plans went with an earlier run.
+ * What the Activity page shows, all from main's own record: each plan of this run,
+ * drafts Ink couldn't send included, with its journey and how it ended; and the swaps Ink
+ * still follows whose plans went with an earlier run.
  */
-export function activityOf({ plans, journey, swap, transactionId, recent }: ActivityDeps): Activity {
-  const shown = plans.filter((plan) => plan.status !== 'draft').slice(0, ACTIVITY_MAX)
+export function activityOf({ plans, journey, swap, transactionId, ending, recent }: ActivityDeps): Activity {
+  const shown = plans.slice(0, ACTIVITY_MAX)
   const ids = new Set(plans.map((plan) => plan.id))
   return {
     plans: shown.map((plan) => {
@@ -32,6 +34,8 @@ export function activityOf({ plans, journey, swap, transactionId, recent }: Acti
       const sent = transactionId(plan)
       return {
         createdAt: plan.core.createdAt,
+        expiresAt: plan.core.expiresAt,
+        ending: ending(plan),
         plan: {
           id: plan.id,
           status: plan.status,

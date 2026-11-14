@@ -152,9 +152,19 @@ describe('searching Zerion’s tokens on a chain', () => {
       ],
     })
     expect(await zerionTokenSearch('e', 'base', { key: KEY, fetch })).toEqual([
-      { symbol: 'DEGEN', name: 'DEGEN token', icon: 'https://cdn.zerion.io/degen.png' },
-      { symbol: 'AERO', name: 'AERO token', icon: null },
-      { symbol: 'NOICON', name: 'NOICON token', icon: null },
+      { symbol: 'DEGEN', name: 'DEGEN token', icon: 'https://cdn.zerion.io/degen.png', addresses: [] },
+      { symbol: 'AERO', name: 'AERO token', icon: null, addresses: [] },
+      { symbol: 'NOICON', name: 'NOICON token', icon: null, addresses: [] },
     ])
+  })
+
+  it('gives each token’s addresses on the chain searched, so review can match an icon by contract', async () => {
+    const implementations = [
+      { chain_id: 'base', address: '0x833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', decimals: 6 },
+      { chain_id: 'ethereum', address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', decimals: 6 },
+      { chain_id: 'base', address: null, decimals: 18 },
+    ]
+    const { fetch } = fakeZerion({ '/fungibles/': [{ body: { data: [fungible('USDC', { implementations })] } }] })
+    expect((await zerionTokenSearch('usdc', 'base', { key: KEY, fetch }))[0]?.addresses).toEqual(['0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', null])
   })
 })

@@ -71,7 +71,7 @@ function Row({ row, onOpenChat }: { row: ActivityRow; onOpenChat: (chatId: strin
       </span>
       <Track dots={row.track} />
       <StatusChip status={row.status} className="min-w-[100px] flex-none justify-center" />
-      <span className="flex-[1_1_100%] pl-[54px] text-[12.5px] text-[var(--ot-text-2)] [overflow-wrap:anywhere]" role="status">
+      <span className="-mt-1 flex-[1_1_100%] pl-[54px] text-[12.5px] text-[var(--ot-text-2)] [overflow-wrap:anywhere]" role="status">
         {row.note}
         {row.link ? (
           <>

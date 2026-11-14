@@ -10,12 +10,12 @@ import { ToolsTab } from './tools-tab'
 
 /** Each section with its glyph on a pastel tile, the same tints as the tools in a chat. */
 const TABS = [
-  { id: 'general', label: 'General', Icon: SlidersIcon, tint: '#FFF0DC' },
-  { id: 'agent', label: 'Agent', Icon: BotIcon, tint: '#FFD2C2' },
-  { id: 'tools', label: 'Tools and skills', Icon: PlugIcon, tint: '#CFE0FF' },
-  { id: 'wallet', label: 'Wallet and backup', Icon: WalletIcon, tint: '#C9F2DD' },
-  { id: 'security', label: 'Security', Icon: ShieldIcon, tint: '#DDE2F0' },
-  { id: 'updates', label: 'Updates', Icon: RefreshIcon, tint: '#FDD3D4' },
+  { id: 'general', label: 'General', Icon: SlidersIcon, tint: '#FFF0DC', description: 'How Ink looks and behaves on this computer.' },
+  { id: 'agent', label: 'Agent', Icon: BotIcon, tint: '#FFD2C2', description: 'The agents Ink found on this computer, and how new chats use them.' },
+  { id: 'tools', label: 'Tools and skills', Icon: PlugIcon, tint: '#CFE0FF', description: 'What new chats can use beyond Ottopus tools.' },
+  { id: 'wallet', label: 'Wallet and backup', Icon: WalletIcon, tint: '#C9F2DD', description: 'Your keys live on this device, encrypted with your password.' },
+  { id: 'security', label: 'Security', Icon: ShieldIcon, tint: '#DDE2F0', description: 'When Ink locks, and what it asks before anything moves.' },
+  { id: 'updates', label: 'Updates', Icon: RefreshIcon, tint: '#FDD3D4', description: 'Which version of Ink this is, and when it updates.' },
 ] as const
 
 export type SettingsTab = (typeof TABS)[number]['id']
@@ -114,7 +114,7 @@ export function SettingsDialog({
           ))}
           <span className="ink-settings-nav__foot">Ink {version ?? '…'} · hackathon build</span>
         </nav>
-        <div className="min-w-0 flex-1 overflow-auto pt-[18px] pr-7 pb-6 pl-[18px]">
+        <div className="ink-settings-content min-w-0 flex-1 overflow-auto px-[26px] pt-[18px] pb-6">
           {tab === 'agent' ? (
             <AgentTab agents={agents} selectedAgent={selectedAgent} onSelectAgent={onSelectAgent} checking={checking} onCheckAgain={onCheckAgain} />
           ) : tab === 'tools' ? (
@@ -128,7 +128,7 @@ export function SettingsDialog({
           ) : tab === 'wallet' ? (
             <WalletTab onSeeAddresses={onSeeAddresses} onClearChatHistory={onClearChatHistory} />
           ) : (
-            <EmptyTab />
+            <EmptyTab tab={tab} />
           )}
         </div>
       </div>
@@ -197,12 +197,15 @@ function AgentTab({
                     </>
                   )}
                   {agent.path ? (
-                    <span className="selectable block truncate font-mono text-[11px] text-[var(--ot-text-3)]" title={agent.path}>
-                      {agent.path}
+                    // Cut from the start, so the binary's name, which tells them apart, stays in view.
+                    <span className="selectable block truncate text-left font-mono text-[11px] text-[var(--ot-text-3)] [direction:rtl]" title={agent.path}>
+                      <bdi>{agent.path.replace(/^\/(?:home|Users)\/[^/]+/, '~')}</bdi>
                     </span>
                   ) : null}
                   {on ? (
-                    <Badge tone="navy">Default</Badge>
+                    <Badge tone="navy" className="h-[29px] self-start px-3.5">
+                      Default
+                    </Badge>
                   ) : agent.state === 'ready' ? (
                     <Button size="sm" className="self-start" onClick={() => onSelectAgent(agent.id)}>
                       Make default
@@ -459,7 +462,7 @@ function ZerionKeySetting() {
         ) : null}
       </div>
       {status && !status.set ? (
-        <form className="mt-3 flex gap-2" onSubmit={(event) => void save(event)}>
+        <form className="mt-3 flex items-center gap-2" onSubmit={(event) => void save(event)}>
           <Input
             type="password"
             mono
@@ -488,12 +491,27 @@ function ZerionKeySetting() {
   )
 }
 
-function EmptyTab() {
+/** A tab with nothing to set yet: still its heading and what it's for, like every other tab, then Otto. */
+function EmptyTab({ tab }: { tab: SettingsTab }) {
+  const info = TABS.find((each) => each.id === tab)
   return (
-    <div className="flex flex-col items-center gap-2 py-10 text-center">
-      <Otto pose="base" size={96} />
-      <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Nothing to set here yet.</p>
-    </div>
+    <>
+      <SectionHeading title={info?.label ?? ''}>{info?.description}</SectionHeading>
+      <div className="flex flex-col items-center gap-2 border-t border-[var(--ot-border)] py-10 text-center">
+        <Otto pose="base" size={96} />
+        <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Nothing to set here yet.</p>
+      </div>
+    </>
+  )
+}
+
+/** Every tab's heading and the line under it, the same size on each. */
+export function SectionHeading({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <>
+      <h2 className="m-0 font-display text-[22px] font-bold tracking-[-0.02em]">{title}</h2>
+      {children ? <p className="mt-1.5 mb-3.5 text-[13px] text-[var(--ot-text-2)]">{children}</p> : null}
+    </>
   )
 }
 

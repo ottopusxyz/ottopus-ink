@@ -79,7 +79,7 @@ export function ToolsTab({ onChange }: ToolsTabProps) {
 
   return (
     <>
-      <h2 className="m-0 text-[16px] font-semibold">Tools and skills</h2>
+      <h2 className="m-0 font-display text-[22px] font-bold tracking-[-0.02em]">Tools and skills</h2>
       <p className="mt-1.5 mb-3.5 text-[13px] text-[var(--ot-text-2)]">
         What new chats can use beyond Ottopus tools. Changes apply to new chats, not ones already open.
       </p>

@@ -39,7 +39,7 @@ export function useActivity(): { activity: Activity; loaded: boolean } {
 export function whenMade(iso: string, now = new Date()): string {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
-  const time = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const time = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
   return at.toDateString() === now.toDateString() ? time : `${at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}, ${time}`
 }
 
@@ -168,7 +168,7 @@ function chatOf(chats: readonly Chat[], planId: string): Chat | null {
   return chats.find((chat) => chat.plan?.id === planId || chat.items.some((item) => item.kind === 'plan' && item.id === planId)) ?? null
 }
 
-const clock = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+const clock = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 
 /** A plan of this run as a row. */
 function planRow(entry: ActivityPlan, chats: readonly Chat[], now: Date): ActivityRow {

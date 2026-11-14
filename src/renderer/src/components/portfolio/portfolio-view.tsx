@@ -38,7 +38,8 @@ const GROUP_NAMES: Record<HoldingGroup, string> = { near: 'NEAR', intents: 'NEAR
 /** Receive's account for a holding: the Intents balance is the NEAR account's. */
 const receiveFor = (group: HoldingGroup): AccountChain => (group === 'intents' ? 'near' : group)
 
-const COLUMNS = 'grid-cols-[minmax(170px,2fr)_minmax(104px,1.2fr)_minmax(88px,1fr)_minmax(84px,.8fr)_auto]'
+/** The header and every row are separate grids, so each track is fixed or shared alike: the actions' track is a set width. */
+const COLUMNS = 'grid-cols-[minmax(170px,2fr)_minmax(104px,1.2fr)_minmax(88px,1fr)_minmax(84px,.8fr)_190px]'
 
 type Filter = 'all' | AccountChain
 
@@ -89,8 +90,8 @@ function Row({ row, onAsk, onReceive, muted = false }: { row: PortfolioRow; onAs
           </>
         )}
       </span>
-      <span className="flex justify-end gap-1">
-        <button type="button" className="ink-suggestion h-[30px] gap-1.5 pr-2.5 pl-1 text-[12px]" onClick={() => onAsk(`Tell me about my ${name}${row.contract ? ` (contract ${row.contract})` : ''}.`)}>
+      <span className="flex min-w-0 justify-end gap-1">
+        <button type="button" className="ink-suggestion min-w-0 truncate h-[30px] gap-1.5 pr-2.5 pl-1 text-[12px]" onClick={() => onAsk(`Tell me about my ${name}${row.contract ? ` (contract ${row.contract})` : ''}.`)}>
           <RowLogo row={row} size="sm" />
           Ask about {row.symbol}
         </button>
@@ -142,7 +143,13 @@ function Total({ portfolio, rows }: { portfolio: Portfolio; rows: PortfolioRow[]
             ))}
           </div>
         </>
-      ) : null}
+      ) : (
+        // Nothing to split yet: the bar's track alone, so the card doesn't sit half empty.
+        <>
+          <div className="h-3.5 rounded-full border-2 border-[var(--ot-border-strong)] bg-[var(--ot-water-2)]" aria-hidden />
+          <p className="m-0 mt-2.5 text-[12px] text-[var(--ot-text-3)]">Nothing to split yet. What you receive shows here, by token.</p>
+        </>
+      )}
     </section>
   )
 }
@@ -276,7 +283,7 @@ export function PortfolioView({ onAsk, onReceive, onSettings }: PortfolioViewPro
                       <span className="text-right">Balance</span>
                       <span className="text-right">Value</span>
                       <span className="text-right">Share</span>
-                      <span className="w-[150px]" />
+                      <span />
                     </div>
                     {rows.map((row) => (
                       <Row key={row.id} row={row} onAsk={onAsk} onReceive={() => onReceive(receiveFor(row.group))} />

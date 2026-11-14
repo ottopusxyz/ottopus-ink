@@ -16,7 +16,7 @@ import { homeSwaps, useRecentSwaps } from '@/lib/recent-swaps'
 import { SwapBanner } from './swap-banner'
 import type { ChainId } from '@/lib/logos'
 import { TOOL_COPY } from '@/lib/tool-copy'
-import { INK_TOOLS, type AgentId, type ChatPlan } from '../../../../shared/ipc'
+import { INK_TOOLS, type AgentId, type ChatAttachment, type ChatPlan } from '../../../../shared/ipc'
 
 
 /** A sentence fragment after a comma: its first letter lowered, so chain names keep their capitals ("on NEAR", not "on near"). */
@@ -85,7 +85,7 @@ function PortfolioGlance({ onOpen }: { onOpen: () => void }) {
 export interface HomeViewProps {
   draft: string
   onDraft: (value: string) => void
-  onSubmit: () => void
+  onSubmit: (files: readonly ChatAttachment[]) => boolean
   live: readonly Chat[]
   onOpenChat: (id: string) => void
   onPortfolio: () => void

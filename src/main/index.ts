@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
@@ -49,6 +50,8 @@ import { tokenIcons } from './portfolio/token-icons'
 import { checkZerionKey, zerionHoldings, zerionOptions, zerionTokenSearch, type ZerionAccess, type ZerionToken } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
+import { ATTACHMENT_EXTENSIONS, HIDDEN_CHARS, MAX_ATTACHMENT_BYTES, readAttachment } from './attachments/read'
+import { createAttachedStore } from './attachments/pending'
 import { withReviewIcons, type ReviewIconDeps } from './review/icons'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
 import { buildOneClickSwap } from './routes/swap-plan'
@@ -773,6 +776,17 @@ const savedPortfolio = async (): Promise<PortfolioResult | null> => {
   return read.ok && read.value ? { ok: true, ...read.value } : null
 }
 
+/** Files picked in the attach dialog, waiting for the message they go with. */
+const attachedFiles = createAttachedStore()
+/** The most files one message carries. */
+const MAX_FILES_PER_MESSAGE = 3
+
+/** A file's name fit to show the agent and the review window: one plain line, not too long. */
+const fileName = (name: string) => {
+  const plain = name.replace(HIDDEN_CHARS, '').trim() || 'file'
+  return plain.length > 80 ? `${plain.slice(0, 60)}…${plain.slice(-16)}` : plain
+}
+
 /** Started with the first chat, so the app opens no socket until something needs one. */
 let mcpBridge: Promise<McpBridge> | null = null
 
@@ -1143,17 +1157,45 @@ function registerIpc(): void {
     })
   })
 
-  ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {
+  ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown, ids: unknown = []) => {
     assertAppFrame(event)
     if (typeof chatId !== 'string' || typeof text !== 'string') throw new Error('Bad message')
-    sendToChat(chatId, text)
+    if (!Array.isArray(ids) || ids.length > MAX_FILES_PER_MESSAGE || !ids.every((id) => typeof id === 'string')) throw new Error('Bad attachments')
+    const files = attachedFiles.take(ids as string[])
+    if (!text.trim() && files.length === 0) throw new Error('Nothing to send')
+    sendToChat(chatId, text, files)
     const kept = historyOf.get(chatId)
     if (kept) {
+      const names = files.map((file) => file.name)
       // A chat is kept from its first message, which names it.
-      if (!getChatHistory().get(kept.id)) getChatHistory().begin(kept.id, kept.agent, text)
-      const saved = savedEventOf({ type: 'you', text })
+      if (!getChatHistory().get(kept.id)) getChatHistory().begin(kept.id, kept.agent, text.trim() || names.join(', '))
+      const saved = savedEventOf({ type: 'you', text, ...(names.length > 0 ? { files: names } : {}) })
       if (saved) getChatHistory().record(kept.id, saved)
     }
+  })
+
+  ipcMain.handle(IPC.attachFile, async (event) => {
+    assertAppFrame(event)
+    // The system's own dialog, answered by the person: the page can't pick a file, or read one.
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const options = { title: 'Attach a file', properties: ['openFile' as const], filters: [{ name: 'Invoices and text', extensions: [...ATTACHMENT_EXTENSIONS] }] }
+    const picked = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options))
+    const path = picked.filePaths[0]
+    if (picked.canceled || !path) return null
+    const name = fileName(basename(path))
+    try {
+      if ((await stat(path)).size > MAX_ATTACHMENT_BYTES) return { failed: 'too-big', name }
+      const read = await readAttachment(name, new Uint8Array(await readFile(path)))
+      if (!read.ok) return { failed: read.reason, name }
+      return { id: attachedFiles.put({ name, text: read.text, pages: read.pages, cut: read.cut }), name, pages: read.pages, cut: read.cut }
+    } catch {
+      return { failed: 'unreadable', name }
+    }
+  })
+
+  ipcMain.handle(IPC.dropAttachment, (event, id: unknown) => {
+    assertAppFrame(event)
+    if (typeof id === 'string') attachedFiles.drop(id)
   })
 
   ipcMain.handle(IPC.stopChatTurn, (event, chatId: unknown) => {

@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
+import type { ChatAttachment } from '../../../../shared/ipc'
 import { Otto } from '@/components/brand/otto'
 import { Callout, ErrorState, TokenLogo, Tooltip } from '@/components/ui'
 import { Sea } from '@/components/motion/sea'
@@ -9,7 +10,7 @@ import { chatTurns, lockStatus, trimmedPlan, type Chat, type ChatItem } from '@/
 import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { AgentMark } from './agent-picker'
-import { Composer, ComposerHint, toolsChip } from './composer'
+import { Composer, ComposerHint, FileChips, toolsChip } from './composer'
 import { DepositCard } from './deposit-card'
 import { InkNoteCard } from './ink-note'
 import { Markdown } from './markdown'
@@ -22,7 +23,7 @@ export interface ChatViewProps {
   chat: Chat
   draft: string
   onDraft: (value: string) => void
-  onSubmit: () => void
+  onSubmit: (files: readonly ChatAttachment[]) => boolean
   onStop: () => void
   onEnd: () => void
   /** Goes on with a chat kept from before a restart. */
@@ -248,7 +249,12 @@ function ChatMenu({ canEnd, onEnd, canForget, onForget }: { canEnd: boolean; onE
 const ConversationItem = memo(function ConversationItem({ item, onOpenReceive }: { item: ChatItem; onOpenReceive: (chain: string) => void }): ReactNode {
   switch (item.kind) {
     case 'user':
-      return <div className="ink-bubble">{item.text}</div>
+      return (
+        <div className="ink-bubble">
+          {item.files ? <FileChips names={item.files} /> : null}
+          {item.text}
+        </div>
+      )
     case 'agent':
       return <Markdown text={item.text} />
     case 'notice':

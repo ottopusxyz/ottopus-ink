@@ -1,6 +1,7 @@
-import { useId, type ReactNode, type Ref } from 'react'
+import { useId, useState, type ReactNode, type Ref } from 'react'
+import type { AttachmentFailure, ChatAttachment } from '../../../../shared/ipc'
 import { cn } from '@/lib/cn'
-import { ArrowUpIcon, PlusIcon, StopIcon } from '@/components/shell/icons'
+import { ArrowUpIcon, CloseIcon, PlusIcon, ReceiptIcon, StopIcon } from '@/components/shell/icons'
 import { Tooltip } from '@/components/ui'
 import { ToolsPopover, type ToolsPopoverProps } from './tools-popover'
 
@@ -9,7 +10,8 @@ export { TOOLS_HINT, toolsChip } from './tools-popover'
 export interface ComposerProps {
   value: string
   onChange: (value: string) => void
-  onSubmit: () => void
+  /** Sends what's written and the files attached. Says whether it went, so the files are let go only then. */
+  onSubmit: (files: readonly ChatAttachment[]) => boolean
   placeholder: string
   compact?: boolean
   textareaRef?: Ref<HTMLTextAreaElement>
@@ -36,6 +38,36 @@ export interface ComposerProps {
  * breaks the line. While a turn runs, writing still works and only sending waits.
  * Home and chats share one row: agent, tools, send.
  */
+/** The most files one message carries; main holds to the same. */
+const MAX_FILES = 3
+
+/** Why a file couldn't be attached, in a line. */
+const FAILED: Record<AttachmentFailure, string> = {
+  'not-supported': 'Ink reads PDFs and text files (.txt, .md, .csv, .json).',
+  'too-big': 'That file is over 10 MB.',
+  'no-text': 'Ink found no text in it. A scanned invoice has none; try the PDF the sender made.',
+  unreadable: 'Ink couldn’t read it. The file may be damaged or locked with a password.',
+}
+
+/** Files attached to a message, by name: in the composer, removable, and on a sent message. */
+export function FileChips({ names, onRemove }: { names: readonly string[]; onRemove?: (index: number) => void }) {
+  return (
+    <ul className="ink-file-chips">
+      {names.map((name, index) => (
+        <li key={`${name}-${index}`} className="ink-file-chip">
+          <ReceiptIcon size={13} />
+          <span className="truncate">{name}</span>
+          {onRemove ? (
+            <button type="button" className="ink-file-chip__remove" aria-label={`Remove ${name}`} onClick={() => onRemove(index)}>
+              <CloseIcon size={11} />
+            </button>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export function Composer({
   value,
   onChange,
@@ -53,14 +85,48 @@ export function Composer({
   tools = { scope: 'new' },
 }: ComposerProps) {
   const id = useId()
-  const sendable = canSend && !disabled && !onStop && value.trim().length > 0
+  const [files, setFiles] = useState<ChatAttachment[]>([])
+  const [fileNote, setFileNote] = useState<string | null>(null)
+  const [picking, setPicking] = useState(false)
+  const sendable = canSend && !disabled && !onStop && (value.trim().length > 0 || files.length > 0)
+  const submit = () => {
+    if (!sendable) return
+    if (onSubmit(files)) {
+      setFiles([])
+      setFileNote(null)
+    }
+  }
+  // Main shows the system's file dialog and reads the file; the page gets its name and an id.
+  const attach = async () => {
+    if (picking || disabled || files.length >= MAX_FILES) return
+    setPicking(true)
+    try {
+      const picked = await window.ink.attachFile()
+      if (!picked) return
+      if ('failed' in picked) setFileNote(`${picked.name}: ${FAILED[picked.failed]}`)
+      else {
+        setFiles((all) => [...all, picked])
+        setFileNote(picked.cut ? `${picked.name} is long, so your agent gets the start of it.` : null)
+      }
+    } catch {
+      setFileNote('Ink couldn’t open the file dialog.')
+    } finally {
+      setPicking(false)
+    }
+  }
+  const remove = (index: number) => {
+    const file = files[index]
+    if (file) void window.ink.dropAttachment(file.id).catch(() => undefined)
+    setFiles((all) => all.filter((_, i) => i !== index))
+    setFileNote(null)
+  }
 
   return (
     <form
       className={cn('ink-composer', compact && 'ink-composer--compact', prominent && 'ink-composer--prominent')}
       onSubmit={(event) => {
         event.preventDefault()
-        if (sendable) onSubmit()
+        submit()
       }}
     >
       <label htmlFor={id} className="sr-only">
@@ -76,13 +142,21 @@ export function Composer({
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault()
-            if (sendable) onSubmit()
+            submit()
           }
         }}
       />
+      {files.length > 0 ? <FileChips names={files.map((file) => file.name)} onRemove={remove} /> : null}
+      {fileNote ? <p className="ink-composer__note m-0">{fileNote}</p> : null}
       <div className="ink-composer__row">
-        <Tooltip text="Adding files or context isn't available yet.">
-          <button type="button" className="ink-round" aria-label="Add files or context" aria-disabled>
+        <Tooltip text={files.length >= MAX_FILES ? `Up to ${MAX_FILES} files a message.` : 'Attach an invoice: a PDF or a text file. Ink reads it here, on your computer.'}>
+          <button
+            type="button"
+            className="ink-round"
+            aria-label="Attach a file"
+            aria-disabled={disabled || files.length >= MAX_FILES || picking}
+            onClick={() => void attach()}
+          >
             <PlusIcon />
           </button>
         </Tooltip>

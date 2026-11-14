@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentStatus, ChatDeposit, ChatEvent, ChatSwap, DepositProgress, InkNote, PlanJourney, ReceiveAnswer } from '../../shared/ipc'
-import type { PlanStatus } from '../../shared/plan'
+import type { PlanStatus, Sent } from '../../shared/plan'
+import { messageWithFiles, type Attached } from '../attachments/pending'
 import { looksLikeItMovesFunds } from '../external/catalog'
 import { itemsNeedingSignIn, type SessionExternal } from '../external/session'
 import type { McpBridge } from '../mcp/bridge'
@@ -64,7 +65,7 @@ const chats = new Map<string, ChatSession>()
  * choosing the recipient, but proving a person chose it is left to the review
  * window, outside the page, where they confirm the recipient before signing.
  */
-const typedIn = new Map<string, string[]>()
+const typedIn = new Map<string, Sent[]>()
 /** Enough of a conversation for the addresses someone gave; older messages make way. */
 const TYPED_KEPT = 50
 
@@ -99,7 +100,7 @@ export function startChat(
   let over = false
   // Nothing an unchecked session proposes reaches the person.
   let locked = false
-  const typed: string[] = []
+  const typed: Sent[] = []
   typedIn.set(chatId, typed)
   // Free until the first message, from the person or from Ink, starts a turn.
   const turn: Turn = { busy: false, forAgent: [], told: () => onEvent(chatId, { type: 'ink-told' }) }
@@ -185,17 +186,22 @@ export function startChat(
   return chatId
 }
 
-export function sendToChat(chatId: string, text: string): void {
-  if (text.length > MAX_MESSAGE_CHARS) throw new Error('That message is too long')
+/**
+ * Sends the person's message, with the text of any files they attached. Both join what
+ * they sent, so an address in either may be paid: one from a file is marked as such.
+ */
+export function sendToChat(chatId: string, text: string, files: readonly Attached[] = []): void {
+  const message = messageWithFiles(text, files)
+  if (message.length > MAX_MESSAGE_CHARS) throw new Error('That message is too long')
   const chat = chatById(chatId)
   const typed = typedIn.get(chatId)
   if (typed) {
-    typed.push(text)
+    typed.push(text, ...files.map((file) => ({ file: file.name, text: file.text })))
     if (typed.length > TYPED_KEPT) typed.splice(0, typed.length - TYPED_KEPT)
   }
   const turn = turns.get(chatId)
   if (turn) turn.busy = true
-  chat.send(text)
+  chat.send(message)
 }
 
 /**

@@ -6,7 +6,7 @@ export type ChatStatus = 'idle' | 'live' | 'settled'
 
 /** One row of a conversation. Everything but `user` holds what an untrusted agent sent, so it renders as text. */
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; files?: string[] }
   | { kind: 'agent'; id: string; text: string }
   | {
       kind: 'tool'
@@ -83,10 +83,10 @@ function withItem(chat: Chat, item: NewItem): Chat {
 }
 
 /** A chat that is starting, with the message that started it. */
-export function newChat(id: string, agent: AgentId, text: string): Chat {
+export function newChat(id: string, agent: AgentId, text: string, files: string[] = []): Chat {
   const chat: Chat = {
     id,
-    title: chatTitle(text),
+    title: chatTitle(text.trim() || files.join(', ')),
     status: 'idle',
     agent,
     sessionId: null,
@@ -100,7 +100,7 @@ export function newChat(id: string, agent: AgentId, text: string): Chat {
     trimmed: false,
     nextItem: 0,
   }
-  return withItem(chat, { kind: 'user', text })
+  return withItem(chat, { kind: 'user', text, ...(files.length > 0 ? { files } : {}) })
 }
 
 /**
@@ -110,7 +110,7 @@ export function newChat(id: string, agent: AgentId, text: string): Chat {
 export function restoredChat(saved: SavedChat): Chat {
   const start: Chat = { ...newChat(saved.id, saved.agent, saved.opening), items: [], nextItem: 0, phase: 'ready', lock: 'locked' }
   const rebuilt = saved.events.reduce((chat, event) => {
-    if (event.type === 'you') return withItem(chat, { kind: 'user', text: event.text })
+    if (event.type === 'you') return withItem(chat, { kind: 'user', text: event.text, ...(event.files ? { files: event.files } : {}) })
     if (event.type === 'continued') return withItem(chat, { kind: 'notice', severity: 'info', title: 'Continued after a restart', text: null })
     return applyChatEvent(chat, event)
   }, start)
@@ -137,8 +137,8 @@ export function chatStarted(chat: Chat, sessionId: string): Chat {
 }
 
 /** The person sent another message. */
-export function messageSent(chat: Chat, text: string): Chat {
-  return { ...withItem(chat, { kind: 'user', text }), phase: 'answering' }
+export function messageSent(chat: Chat, text: string, files: string[] = []): Chat {
+  return { ...withItem(chat, { kind: 'user', text, ...(files.length > 0 ? { files } : {}) }), phase: 'answering' }
 }
 
 /** An error, which often has no full stop, followed by what didn't happen. */

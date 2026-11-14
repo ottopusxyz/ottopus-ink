@@ -1437,3 +1437,44 @@ button.ink-connector { cursor: pointer; }
   scrollbar-width: thin;
   scrollbar-color: var(--ot-text-4) transparent;
 }
+
+/* Files attached to a message: in the composer, where each can be taken back, and on a sent message. */
+.ink-file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ink-composer .ink-file-chips { padding: 2px 4px 6px; }
+.ink-bubble .ink-file-chips { margin-bottom: 6px; }
+.ink-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 4px 6px 4px 9px;
+  border: 1px solid var(--ot-border-strong);
+  border-radius: var(--ot-radius-pill);
+  background: var(--ot-surface-2);
+  color: var(--ot-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ink-bubble .ink-file-chip { padding-right: 9px; }
+.ink-file-chip__remove {
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ot-text-3);
+  cursor: pointer;
+}
+.ink-file-chip__remove:hover { background: var(--ot-surface-3); color: var(--ot-text); }
+.ink-composer__note {
+  padding: 0 6px 6px;
+  color: var(--ot-text-2);
+  font-size: 12px;
+}

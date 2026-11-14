@@ -48,13 +48,17 @@ function isNote(value: unknown): value is InkNote {
 }
 
 /** One kept event, only in the shape this version writes. Anything else is dropped, not trusted. */
+const isFileNames = (value: unknown): value is string[] => Array.isArray(value) && value.length > 0 && value.length <= 5 && value.every((name) => typeof name === 'string' && name.length > 0 && name.length <= 120)
+
 function eventOf(value: unknown): SavedEvent | null {
   const event = record(value)
   if (!event || !SAVED_EVENT_TYPES.has(event.type as SavedEvent['type'])) return null
   switch (event.type) {
     case 'you':
     case 'text':
-      return isText(event.text) ? ({ type: event.type, text: event.text } as SavedEvent) : null
+      if (!isText(event.text)) return null
+      // A message's files, by name only: their text isn't kept.
+      return event.type === 'you' && isFileNames(event.files) ? ({ type: 'you', text: event.text, files: event.files } as SavedEvent) : ({ type: event.type, text: event.text } as SavedEvent)
     case 'continued':
       return isAgent(event.agent) && typeof event.at === 'number' ? { type: 'continued', agent: event.agent, at: event.at } : null
     case 'tool-call':

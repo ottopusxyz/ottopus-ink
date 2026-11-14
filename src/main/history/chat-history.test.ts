@@ -54,6 +54,18 @@ describe('the chat history', () => {
     })
   })
 
+  it('keeps the names of a message’s files, never their text, and drops names in any other shape', () => {
+    const { kept, file, write } = history()
+    kept.begin(ID, 'claude-code', 'invoice.pdf')
+    kept.record(ID, { type: 'you', text: 'Pay this', files: ['invoice.pdf'] })
+    kept.record(ID, { type: 'you', text: 'And this', files: [] })
+    write()
+    expect(history(file).kept.get(ID)?.events).toEqual([
+      { type: 'you', text: 'Pay this', files: ['invoice.pdf'] },
+      { type: 'you', text: 'And this' },
+    ])
+  })
+
   it('keeps a deposit card, where it got to and Ink’s note, and drops one in any other shape', () => {
     const { kept, file, write } = history()
     const deposit = { id: 'd1', kind: 'intents' as const, chain: 'base', chainName: 'Base', mark: 'base', asset: 'USDC', icon: null, amount: '25', address: '0x8f436D184823B77188DE973322278686c3780C2c', memo: null, min: '1', account: 'a'.repeat(64), why: null, progress: { stage: 'watching' as const, got: null, tx: null, link: null, until: 5 } }

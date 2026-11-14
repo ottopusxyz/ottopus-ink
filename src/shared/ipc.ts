@@ -77,7 +77,7 @@ export interface AppInfo {
 }
 
 /** The agents Ink drives in the first release, in the order pickers list them. */
-export const AGENT_IDS = ['claude-code', 'codex', 'opencode'] as const
+export const AGENT_IDS = ['claude-code', 'codex', 'grok'] as const
 export type AgentId = (typeof AGENT_IDS)[number]
 
 /**

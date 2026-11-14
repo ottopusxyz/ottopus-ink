@@ -24,7 +24,7 @@ export const SHELL_ENV_NAMES = [
   'PATH',
   'CLAUDE_CONFIG_DIR',
   'CODEX_HOME',
-  'OPENCODE_CONFIG_DIR',
+  'GROK_HOME',
   'XDG_CONFIG_HOME',
   'XDG_DATA_HOME',
   'XDG_STATE_HOME',
@@ -58,7 +58,7 @@ const FALLBACK_DIRS = [
   join(home, '.local/bin'),
   join(home, '.bun/bin'),
   join(home, '.npm-global/bin'),
-  join(home, '.opencode/bin'),
+  join(home, '.grok/bin'),
   '/opt/homebrew/bin',
   '/usr/local/bin',
 ]

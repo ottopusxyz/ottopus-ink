@@ -16,7 +16,7 @@ describe('describeAgent', () => {
       label: 'Ready',
       hint: 'Version 1.2.3, signed in.',
     })
-    expect(describeAgent(status({ id: 'opencode', state: 'ready', signedIn: null })).hint).toMatch(/couldn't read/)
+    expect(describeAgent(status({ id: 'grok', state: 'ready', signedIn: null })).hint).toMatch(/couldn't read/)
   })
 
   it('gives the command that fixes each problem', () => {
@@ -40,11 +40,11 @@ describe('chooseAgent', () => {
   const agents = [
     status({ id: 'claude-code', state: 'signed-out' }),
     status({ id: 'codex', state: 'ready' }),
-    status({ id: 'opencode', state: 'ready' }),
+    status({ id: 'grok', state: 'ready' }),
   ]
 
   it('keeps the picked agent while it is ready', () => {
-    expect(chooseAgent(agents, 'opencode')).toBe('opencode')
+    expect(chooseAgent(agents, 'grok')).toBe('grok')
   })
 
   it('falls back to the first ready agent', () => {

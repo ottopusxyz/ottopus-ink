@@ -39,14 +39,14 @@ export const AGENTS: readonly AgentInfo[] = [
     update: 'npm install -g @openai/codex@latest',
   },
   {
-    id: 'opencode',
-    name: 'OpenCode',
-    mark: 'OC',
-    fill: '#DDE2F0',
-    ink: '#16213E',
-    install: 'curl -fsSL https://opencode.ai/install | bash',
-    signIn: 'opencode auth login',
-    update: 'opencode upgrade',
+    id: 'grok',
+    name: 'Grok',
+    mark: 'Gk',
+    fill: '#16213E',
+    ink: '#F5F0E6',
+    install: 'curl -fsSL https://x.ai/cli/install.sh | bash',
+    signIn: 'grok login',
+    update: 'grok update',
   },
 ]
 
@@ -57,7 +57,7 @@ export function agentInfo(id: AgentId): AgentInfo {
 }
 
 /** Named in the pickers so nobody goes looking for them yet. */
-export const LATER_AGENTS = ['Grok', 'Cursor', 'Cline'] as const
+export const LATER_AGENTS = ['Cursor', 'Cline'] as const
 
 export interface AgentCopy {
   /** A short state: "Ready", "Not installed". */

@@ -6,6 +6,7 @@ import { isChainId } from '@/lib/logos'
 import { StatusChip } from '@/components/ui/status-chip'
 import { planHeadline } from '@/lib/chats'
 import { trackerSteps, trackerSummary, type TrackerIcon, type TrackerStep } from '@/lib/plan-tracker'
+import { shortAmounts } from '@/lib/amounts'
 import { cn } from '@/lib/cn'
 
 const DOT: Record<TrackerStep['state'], string> = {
@@ -68,24 +69,33 @@ export function PlanSteps({ plan }: { plan: ChatPlan }) {
         </span>
         <StatusChip status={plan.status} />
       </div>
-      <ol className="m-0 flex list-none flex-wrap items-start gap-x-1 gap-y-2 p-0">
+      {/* Each step is a column: its dot and the line to the next on top, its words below with the column's whole width. */}
+      <ol className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(84px,1fr))] items-start gap-y-3 p-0">
         {steps.map((step, index) => (
-          <li key={step.label} className="flex min-w-[96px] flex-1 items-start gap-1.5">
-            <StepDot state={step.state} />
-            <span className="flex min-w-0 flex-col">
-              <span className={cn('flex items-center gap-1 text-[12.5px] font-semibold', step.state === 'pending' && 'text-[var(--ot-text-3)]')}>
-                <StepIcon icon={step.icon} />
-                {step.label}
+          <li key={step.label} className="flex min-w-0 flex-col gap-1.5">
+            <span className="flex items-center gap-1.5" aria-hidden>
+              <StepDot state={step.state} />
+              {index < steps.length - 1 ? <span className={cn('h-[2px] flex-1 rounded', step.state === 'done' ? 'bg-[var(--ot-ok)]' : 'bg-[var(--ot-border)]')} /> : null}
+            </span>
+            <span className="flex min-w-0 flex-col gap-0.5 pr-2.5">
+              <span className={cn('text-[12.5px] leading-[1.35] font-semibold [overflow-wrap:anywhere]', step.state === 'pending' && 'text-[var(--ot-text-3)]')} title={step.label}>
+                <span className="mr-1 inline-flex align-[-2px]">
+                  <StepIcon icon={step.icon} />
+                </span>
+                {shortAmounts(step.label)}
               </span>
-              {step.detail ? <span className="selectable text-[11.5px] text-[var(--ot-text-2)] [overflow-wrap:anywhere]">{step.detail}</span> : null}
+              {step.detail ? (
+                <span className="selectable text-[11.5px] leading-[1.35] text-[var(--ot-text-2)] [overflow-wrap:anywhere]" title={step.detail}>
+                  {shortAmounts(step.detail)}
+                </span>
+              ) : null}
               {step.link ? (
-                <a className="flex items-center gap-1 text-[11.5px] underline" href={step.link.url} target="_blank" rel="noreferrer">
+                <a className="flex w-fit items-center gap-1 text-[11.5px] underline" href={step.link.url} target="_blank" rel="noreferrer">
                   {step.link.label}
                   <ExternalIcon size={10} />
                 </a>
               ) : null}
             </span>
-            {index < steps.length - 1 ? <span className="mt-[10px] hidden h-[2px] flex-1 rounded bg-[var(--ot-border)] sm:block" aria-hidden /> : null}
           </li>
         ))}
       </ol>

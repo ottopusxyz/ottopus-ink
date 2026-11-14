@@ -42,10 +42,11 @@ export const AGENT_SPECS: readonly AgentSpec[] = [
     auth: { args: ['login', 'status'], parse: parseCodexAuth },
   },
   {
-    id: 'opencode',
-    binary: 'opencode',
-    requires: ['acp'],
-    auth: { args: ['auth', 'list'], parse: parseOpenCodeAuth },
+    id: 'grok',
+    binary: 'grok',
+    // `grok agent stdio` runs it headless, speaking ACP; `grok mcp` adds Ink's tools.
+    requires: ['agent', 'mcp'],
+    auth: { args: ['--version'], parse: parseGrokAuth },
   },
 ]
 
@@ -58,7 +59,7 @@ export function parseVersion(text: string): string | null {
  * The required flags and commands that `--help` doesn't list. Both must start a
  * help line, so a mention in another item's description doesn't count: flags
  * after any short form ("-c, --config"), commands after any program name, which
- * yargs prints ("  opencode acp") and others don't ("  app-server").
+ * yargs prints ("  some-cli acp") and others don't ("  app-server").
  */
 export function missingFromHelp(help: string, required: readonly string[], binary: string): string[] {
   return required.filter((item) => {
@@ -94,19 +95,12 @@ export function parseCodexAuth({ code, stdout, stderr }: RunResult): boolean | n
 }
 
 /**
- * `opencode auth list` differs by release. 1.x counts stored credentials and the
- * provider keys it finds in the environment; the newer CLI prints one row per
- * connection, or "No authenticated integrations". Any connection counts as
- * signed in.
+ * Grok's CLI has no command that says whether it's signed in: `grok usage` needs its
+ * background service, and `grok login` starts a sign-in. So Ink can't tell, and says so,
+ * rather than read Grok's own credentials file.
  */
-export function parseOpenCodeAuth({ code, stdout, stderr }: RunResult): boolean | null {
-  if (code !== 0) return null
-  const text = `${stdout}\n${stderr}`
-  if (/no authenticated integrations/i.test(text)) return false
-  if (/\s(?:stored|environment)\s*$/im.test(text)) return true
-  const counts = [...text.matchAll(/(\d+)\s+(?:credentials?|environment variables?)\b/gi)].map((m) => Number(m[1]))
-  if (counts.length === 0) return null
-  return counts.some((count) => count > 0)
+export function parseGrokAuth(): boolean | null {
+  return null
 }
 
 /** The state an agent's probes add up to. Order matters: the first problem wins. */

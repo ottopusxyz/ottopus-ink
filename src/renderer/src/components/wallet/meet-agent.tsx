@@ -49,7 +49,7 @@ export function MeetAgent({
         </Badge>
         <WalletHeading title="Meet your agent">
           {agents === null
-            ? 'Looking for Claude Code, Codex and OpenCode on this computer…'
+            ? 'Looking for Claude Code, Codex and Grok on this computer…'
             : 'Ink found these on this computer. It uses your agent’s own login, and never asks for an API key.'}
         </WalletHeading>
       </div>
@@ -80,7 +80,7 @@ export function MeetAgent({
         {agents !== null && found.length === 0 ? (
           <li className="ink-meet-agent">
             <span className="min-w-0 flex-1 text-[13px] text-[var(--ot-text-2)]">
-              No agent yet. Install Claude Code, Codex or OpenCode and sign in, then check again from Settings.
+              No agent yet. Install Claude Code, Codex or Grok and sign in, then check again from Settings.
             </span>
           </li>
         ) : null}

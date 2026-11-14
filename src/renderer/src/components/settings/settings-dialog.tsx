@@ -175,7 +175,7 @@ function AgentTab({
           </Button>
         </div>
         {agents === null ? (
-          <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Looking for Claude Code, Codex and OpenCode…</p>
+          <p className="m-0 text-[13px] text-[var(--ot-text-2)]">Looking for Claude Code, Codex and Grok…</p>
         ) : (
           <div className="ink-agent-grid">
             {agents.map((agent) => {

@@ -2,6 +2,7 @@ import { useId, useRef, type CSSProperties } from 'react'
 import type { AgentId, AgentStatus } from '../../../../shared/ipc'
 import claudeLogo from '@/assets/agents/claude.svg'
 import codexLogo from '@/assets/agents/codex.svg'
+import grokLogo from '@/assets/agents/grok.svg'
 import { ChevronDownIcon } from '@/components/shell/icons'
 import { agentInfo, describeAgent } from '@/lib/agents'
 
@@ -92,6 +93,7 @@ export function AgentPicker({ agents, selected, onSelect }: AgentPickerProps) {
 const LOGOS: Partial<Record<AgentId, string>> = {
   'claude-code': claudeLogo,
   codex: codexLogo,
+  grok: grokLogo,
 }
 
 /**

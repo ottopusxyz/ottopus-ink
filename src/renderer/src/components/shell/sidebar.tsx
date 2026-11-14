@@ -140,14 +140,18 @@ export function Sidebar({
             aria-current={view.kind === 'page' && view.page === page.id ? 'page' : undefined}
             onClick={() => onPage(page.id)}
           >
-            <Icon />
+            <span className="ink-side-item__slot" aria-hidden>
+              <Icon />
+            </span>
             <span className="ink-side-item__label">{page.label}</span>
             {page.id === 'receive' ? <ChainStack chains={RECEIVE_CHAINS} size="xs" /> : null}
           </button>
         )
       })}
       <button type="button" className="ink-side-item ink-side-item--page" onClick={onSettings}>
-        <SlidersIcon />
+        <span className="ink-side-item__slot" aria-hidden>
+          <SlidersIcon />
+        </span>
         <span className="ink-side-item__label">Settings</span>
         <kbd className="ink-kbd">{shortcutLabel('settings', mac)}</kbd>
       </button>

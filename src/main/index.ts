@@ -616,7 +616,18 @@ function getMcpBridge(): Promise<McpBridge> {
     portfolio: () => ownPortfolio(),
     quote: quoteRoute,
     receive: (ask) => ownReceive(ask),
-    plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts, swapOf: swapTracker.get }),
+    plans: ({ owner, typed }) =>
+      agentPlanTools({
+        store: plans,
+        owner,
+        typed,
+        accounts: ownAccounts,
+        // A swap's progress, or a payment's legs together: they're followed as `<plan>#<leg>`, never by the plan's own id.
+        swapOf: (id) => {
+          const plan = plans.get(id, owner)
+          return plan ? swapStateOf(id, plan.core) : null
+        },
+      }),
   }).catch((error: unknown) => {
     mcpBridge = null
     throw error

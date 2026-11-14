@@ -135,12 +135,21 @@ const STATUS_WORDS: Record<PlanStatus, string> = {
 
 /** Where a swap stands once its deposit landed, for get_plan. Main wrote every value from NEAR Intents' report. */
 const SWAP_WORDS: Record<ChatSwap['stage'], (swap: ChatSwap) => string> = {
-  deposited: () => 'NEAR ran the deposit; NEAR Intents is picking it up.',
+  deposited: () => 'The deposit went through; NEAR Intents is picking it up and hasn’t paid it out yet.',
   swapping: () => 'NEAR Intents is swapping it now.',
-  done: (swap) => `NEAR Intents finished the swap${swap.got ? ` and paid out ${swap.got}` : ''}.`,
-  refunded: (swap) => `NEAR Intents couldn’t swap it and refunded ${swap.refunded ?? 'it'} to the NEAR account.`,
-  failed: () => 'NEAR Intents couldn’t finish the swap; any refund goes to the NEAR account.',
+  done: (swap) => `NEAR Intents finished${swap.got ? ` and paid out ${swap.got}` : ''}.`,
+  refunded: (swap) => `NEAR Intents couldn’t swap it and refunded ${swap.refunded ?? 'it'} where it came from.`,
+  failed: () => 'NEAR Intents couldn’t finish it; any refund goes back where it came from.',
   unknown: () => 'Ink stopped checking; NEAR Intents still finishes or refunds it on its own.',
+}
+
+/**
+ * A swap or payment whose deposit ran but whose payout Ink hasn't heard of yet isn't
+ * finished: NEAR Intents still has to pay it out. Said so the agent doesn't report it done.
+ */
+function payoutPending(plan: PlanSummary): string {
+  if (plan.status !== 'confirmed' || (plan.intent.outcome !== 'swap' && plan.intent.outcome !== 'pay')) return ''
+  return ' The deposit went through, but NEAR Intents hasn’t paid it out yet, so it isn’t finished: tell the person it’s on its way, and Ink tells you when it lands.'
 }
 
 /** Why a plan tool said no, worded for the agent to act on. */
@@ -599,7 +608,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         if (!id) return result(toolAnswer('plan_id must be the id create_plan gave.', true))
         const answered =
           params.name === 'get_plan'
-            ? await planAnswer(() => plans.get(id), id, (plan) => `Plan ${plan.id} is ${STATUS_WORDS[plan.status]}: ${plan.summary}.${plan.swap ? ` ${SWAP_WORDS[plan.swap.stage](plan.swap)}` : ''}`)
+            ? await planAnswer(() => plans.get(id), id, (plan) => `Plan ${plan.id} is ${STATUS_WORDS[plan.status]}: ${plan.summary}.${plan.swap ? ` ${SWAP_WORDS[plan.swap.stage](plan.swap)}` : payoutPending(plan)}`)
             : await planAnswer(() => plans.cancel(id), id, (plan) => `Plan ${plan.id} is cancelled. Nothing was signed.`)
         return result(answered.answer)
       }

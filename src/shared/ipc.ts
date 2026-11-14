@@ -197,10 +197,23 @@ export interface ReceiveChain {
  * Intents balance; or the wallet's own address, and why (`not-in-intents`, `below-minimum`
  * or `intents-unavailable`); or why neither can take it.
  */
+/**
+ * Which address to receive at: `auto` is NEAR Intents first, as Ink picks; `own` is the
+ * wallet's own address on the chain; `intents` is NEAR Intents' deposit address, so what
+ * arrives lands in the Intents balance.
+ */
+export type ReceiveRoute = 'auto' | 'own' | 'intents'
+
+/** Which routes a chain and token can take at all: the wallet has an address there, and NEAR Intents takes the token there. */
+export interface ReceiveRoutes {
+  own: boolean
+  intents: boolean
+}
+
 export type ReceiveAnswer =
-  | { ok: true; kind: 'intents'; chain: string; chainName: string; asset: string; address: string; memo: string | null; min: string; account: string }
-  | { ok: true; kind: 'own'; chain: string; chainName: string; asset: string; address: string; path: string; why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable'; min: string | null }
-  | { ok: false; reason: 'locked' | 'unavailable' | 'unknown-chain' | 'bad-amount' | 'below-minimum' | 'not-supported'; min?: string | null }
+  | { ok: true; kind: 'intents'; chain: string; chainName: string; asset: string; address: string; memo: string | null; min: string; account: string; routes?: ReceiveRoutes }
+  | { ok: true; kind: 'own'; chain: string; chainName: string; asset: string; address: string; path: string; why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable' | 'chosen'; min: string | null; routes?: ReceiveRoutes }
+  | { ok: false; reason: 'locked' | 'unavailable' | 'unknown-chain' | 'bad-amount' | 'below-minimum' | 'not-supported'; min?: string | null; routes?: ReceiveRoutes }
 
 /**
  * Where a deposit Ink watches stands: watching for it, seen on its chain but not yet
@@ -431,9 +444,9 @@ export interface InkBridge {
   /** A chain's tokens matching a search: NEAR Intents' first, then Zerion's. */
   searchReceiveTokens(chain: string, query: string): Promise<ReceiveToken[]>
   /** Where to receive a token, NEAR Intents first. Only while Ink is unlocked. */
-  receiveAddress(ask: { chain: string; asset: string; amount: string | null }): Promise<ReceiveAnswer>
+  receiveAddress(ask: { chain: string; asset: string; amount: string | null; route?: ReceiveRoute }): Promise<ReceiveAnswer>
   /** Copies that address or its memo, as main worked it out, never text from the page. */
-  copyReceive(ask: { chain: string; asset: string; amount: string | null }, part: 'address' | 'memo'): Promise<{ ok: boolean }>
+  copyReceive(ask: { chain: string; asset: string; amount: string | null; route?: ReceiveRoute }, part: 'address' | 'memo'): Promise<{ ok: boolean }>
   /** Watches a deposit card's address for another day, once Ink stopped. */
   watchDepositAgain(id: string): Promise<{ ok: boolean }>
   /** Chats Ink kept from before, newest first. Empty while Ink is locked. */

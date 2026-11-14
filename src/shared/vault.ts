@@ -75,7 +75,7 @@ export interface NewPhrase {
  * next nonce and a recent block's hash; an EVM step its address's next nonce and today's fee
  * caps per unit of gas, in wei.
  */
-export type LiveInputs = { nonce: string; blockHash: string } | { nonce: string; maxFeePerGas: string; maxPriorityFeePerGas: string }
+export type LiveInputs = { nonce: string; blockHash: string } | { nonce: string; maxFeePerGas: string; maxPriorityFeePerGas: string } | { recentBlockhash: string }
 
 /** A signed step: the bytes to send, and the transaction's id, which NEAR also calls its hash. */
 export interface SignedStep {

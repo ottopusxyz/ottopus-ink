@@ -36,6 +36,7 @@ import { startMcpBridge, type McpBridge } from './mcp/bridge'
 import { buildNearSend, callsFeeCeiling, isNearSend, nearCallsFit, nearSendFeeCeiling, nearTransferOf } from './near/build'
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
+import appIcon from '../../resources/icon.png?asset'
 import { agentPlanTools } from './plans/agent-tools'
 import { planOutcome } from './plans/outcome'
 import { createNotifier } from './notify'
@@ -145,6 +146,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: 640,
     show: false,
     title: 'Ottopus Ink',
+    icon: appIcon,
     backgroundColor: '#F7F2EA',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs'), {
@@ -547,6 +549,7 @@ const reviewWindow = createReviewWindow({
   entry: reviewEntry,
   load: (win) => void (devServerUrl ? win.loadURL(reviewEntry) : win.loadFile(reviewIndex)),
   devTools: Boolean(devServerUrl),
+  icon: appIcon,
 })
 
 /** What the review window shows for a plan: its own step decoded, and today's fee ceiling if NEAR answers. */
@@ -1158,6 +1161,9 @@ void app.whenReady().then(() => {
   // ask for. Features that need one are granted from main, not by the page.
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
   session.defaultSession.setPermissionCheckHandler(() => false)
+
+  // A packaged Mac app takes its dock icon from its bundle; this covers dev, where the bundle is Electron's.
+  if (process.platform === 'darwin') app.dock?.setIcon(appIcon)
 
   // Dev keeps Electron's default menu, with Reload and DevTools.
   if (!devServerUrl) Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate(process.platform)))

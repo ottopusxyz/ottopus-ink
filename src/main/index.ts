@@ -15,6 +15,7 @@ import { depositEnding } from './intents/deposit-note'
 import { createDepositWatcher, type DepositJournal } from './intents/deposit-watch'
 import { depositAddress, depositChains, recentDeposits } from './intents/deposits'
 import { pickReceive, receiveChainOf, receiveChains, searchTokens, type ReceiveAsk } from './intents/receive'
+import { lastGood } from './last-good'
 import { CHAT_ID, type SavedChat } from '../shared/history'
 import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
@@ -332,21 +333,11 @@ function getChatHistory(): ChatHistory {
   return chatHistory
 }
 
-/** The bridge's chains and tokens change rarely, so Receive reuses them for a while. */
-const DEPOSIT_CHAINS_MS = 10 * 60_000
-let depositChainList: { at: number; list: Promise<IntentsDepositChain[] | null> } | null = null
-
-function listedDepositChains(): Promise<IntentsDepositChain[] | null> {
-  if (!depositChainList || Date.now() - depositChainList.at > DEPOSIT_CHAINS_MS) {
-    const list = depositChains()
-    depositChainList = { at: Date.now(), list }
-    // A failed read isn't kept, so the next look asks again.
-    void list.then((read) => {
-      if (!read && depositChainList?.list === list) depositChainList = null
-    })
-  }
-  return depositChainList.list
-}
+/**
+ * The bridge's chains and tokens change rarely, so Receive reuses them for a while, and
+ * keeps the last good copy when the bridge is slow or down.
+ */
+const listedDepositChains: () => Promise<IntentsDepositChain[] | null> = lastGood(() => depositChains(), { maxAgeMs: 10 * 60_000 })
 
 /** Token icons fetched for the page's searches, kept for the session. */
 const icons = tokenIcons()
@@ -651,21 +642,11 @@ const ownPortfolio = async ({ fresh = false }: { fresh?: boolean } = {}): Promis
   return read.value
 }
 
-/** 1Click's token list changes rarely, so a quote reuses it for a few minutes. */
-const TOKEN_LIST_MS = 5 * 60_000
-let tokenList: { at: number; tokens: Promise<OneClickToken[] | null> } | null = null
-
-function listedTokens(): Promise<OneClickToken[] | null> {
-  if (!tokenList || Date.now() - tokenList.at > TOKEN_LIST_MS) {
-    const tokens = oneClickTokens()
-    tokenList = { at: Date.now(), tokens }
-    // A failed read isn't kept, so the next quote asks again.
-    void tokens.then((listed) => {
-      if (!listed && tokenList?.tokens === tokens) tokenList = null
-    })
-  }
-  return tokenList.tokens
-}
+/**
+ * 1Click's token list changes rarely, so a quote reuses it for a few minutes, and keeps
+ * the last good copy when 1Click is slow or down.
+ */
+const listedTokens: () => Promise<OneClickToken[] | null> = lastGood(() => oneClickTokens(), { maxAgeMs: 5 * 60_000 })
 
 /** get_quote: the route main picks for a payment, and what it would give. Only while unlocked, since it reads the addresses. */
 const quoteRoute = createQuoter({

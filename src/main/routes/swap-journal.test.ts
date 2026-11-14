@@ -76,6 +76,15 @@ describe('the swap journal', () => {
     expect(createSwapJournal({ file, box, now: () => NOW }).list().map((kept) => [kept.planId, kept.swap.payFrom])).toEqual([['p1', 'intents']])
   })
 
+  it('keeps swaps paid on an EVM chain or Solana, by their transaction hash or signature', () => {
+    const file = fileIn()
+    const journal = createSwapJournal({ file, box, now: () => NOW })
+    journal.put(entry('evm', { txHash: `0x${'ab'.repeat(32)}`, swap: { ...SWAP, payFrom: 'evm', sendDecimals: '6', sendChainId: '8453', sendToken: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' } }))
+    journal.put(entry('sol', { txHash: '5'.repeat(88), swap: { ...SWAP, payFrom: 'solana', sendDecimals: '6', sendToken: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' } }))
+    journal.put(entry('long', { txHash: '5'.repeat(101) }))
+    expect(createSwapJournal({ file, box, now: () => NOW }).list().map((kept) => kept.planId)).toEqual(['sol', 'evm'])
+  })
+
   it('keeps nothing on disk without a keyring', () => {
     const file = fileIn()
     const journal = createSwapJournal({ file, box: noKeyring, now: () => NOW })

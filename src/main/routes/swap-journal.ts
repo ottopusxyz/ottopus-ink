@@ -36,11 +36,12 @@ const isText = (value: unknown, max = 300): value is string => typeof value === 
 function entryOf(value: unknown): JournalEntry | null {
   if (typeof value !== 'object' || value === null) return null
   const { planId, swap, txHash, startedAt, progress } = value as Record<string, unknown>
-  if (!isText(planId, 64) || !isText(txHash, 64) || typeof startedAt !== 'number' || typeof swap !== 'object' || swap === null) return null
+  // A NEAR transaction's hash, an EVM one (66 characters with its 0x) or a Solana signature (up to 88).
+  if (!isText(planId, 64) || !isText(txHash, 100) || typeof startedAt !== 'number' || typeof swap !== 'object' || swap === null) return null
   if (!SWAP_FIELDS.every((field) => isText((swap as Record<string, unknown>)[field]))) return null
   const { payFrom, sendDecimals, sendChainId, sendToken } = swap as Record<string, unknown>
-  if (!(payFrom === undefined || payFrom === 'intents' || payFrom === 'evm') || !(sendDecimals === undefined || (isText(sendDecimals, 2) && /^[0-9]{1,2}$/.test(sendDecimals)))) return null
-  if (!(sendChainId === undefined || (isText(sendChainId, 12) && /^[0-9]+$/.test(sendChainId))) || !(sendToken === undefined || (isText(sendToken, 42) && /^(native|0x[0-9a-f]{40})$/.test(sendToken)))) return null
+  if (!(payFrom === undefined || payFrom === 'intents' || payFrom === 'evm' || payFrom === 'solana') || !(sendDecimals === undefined || (isText(sendDecimals, 2) && /^[0-9]{1,2}$/.test(sendDecimals)))) return null
+  if (!(sendChainId === undefined || (isText(sendChainId, 12) && /^[0-9]+$/.test(sendChainId))) || !(sendToken === undefined || (isText(sendToken, 44) && /^(native|0x[0-9a-f]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})$/.test(sendToken)))) return null
   let kept: ChatSwap | null = null
   if (progress !== null) {
     const { stage, got, refunded, link } = (progress ?? {}) as Record<string, unknown>

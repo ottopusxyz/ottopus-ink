@@ -195,6 +195,13 @@ function planRow(entry: ActivityPlan, chats: readonly Chat[], now: Date): Activi
   }
 }
 
+/** The chain a swap pays out on, from its phrase ("on Base", "on BNB Chain"), as the logos name it; null for the Intents balance. */
+function chainOfWhere(where: string): string | null {
+  if (!where.startsWith('on ')) return null
+  const name = where.slice(3).toLowerCase()
+  return name === 'bnb chain' ? 'bsc' : name
+}
+
 /** Where a swap NEAR Intents is handling stands, in a line, from its report. */
 function swapNote(progress: ChatSwap | null): string {
   switch (progress?.stage) {
@@ -217,9 +224,10 @@ function swapNote(progress: ChatSwap | null): string {
 /**
  * The swaps Ink follows from an earlier run as rows: one for each swap, and one for each
  * payment, whose parts (`<plan>#<n>`) are folded together and headed by its payout to a
- * chain. Each was sent already, since Ink follows only deposits a chain ran.
+ * chain. Each was sent already, since Ink follows only deposits a chain ran. Its chat and
+ * agent come from the kept chat that holds its plan, when Ink kept one.
  */
-function earlierRows(earlier: readonly RecentSwap[]): ActivityRow[] {
+function earlierRows(earlier: readonly RecentSwap[], chats: readonly Chat[]): ActivityRow[] {
   const byPlan = new Map<string, RecentSwap[]>()
   for (const swap of earlier) {
     const base = swap.planId.split('#')[0] as string
@@ -235,14 +243,16 @@ function earlierRows(earlier: readonly RecentSwap[]): ActivityRow[] {
     const sent = head.send.split(' ').at(-1) ?? head.get
     const got = head.progress?.stage === 'done' ? (head.progress.got ?? head.get) : head.get
     const others = parts.length - 1
+    const chat = chatOf(chats, base)
     return {
       id: base,
       shortId: base.slice(0, 8),
       title: payment ? `Pay ${got} ${head.where}` : `Swap ${head.send} → ${got} ${head.where}`,
-      token: { symbol: payment ? head.get : sent, chain: null },
+      // A payment pays the token on its chain; a swap's own chain isn't kept, so its token shows alone.
+      token: { symbol: payment ? head.get : sent, chain: payment ? chainOfWhere(head.where) : null },
       status: failed ? 'failed' : done ? 'confirmed' : 'submitted',
-      chatId: null,
-      agent: null,
+      chatId: chat?.id ?? null,
+      agent: chat?.agent ?? null,
       earlier: true,
       at: Math.min(...parts.map((part) => part.startedAt)),
       time: clock(Math.min(...parts.map((part) => part.startedAt))),
@@ -261,7 +271,7 @@ function earlierRows(earlier: readonly RecentSwap[]): ActivityRow[] {
  * has them; and the swaps Ink follows from an earlier run, among them by when they started.
  */
 export function activityGroups(activity: Activity, chats: readonly Chat[], tab: ActivityTab, now = new Date()): { day: string; rows: ActivityRow[] }[] {
-  const rows = [...activity.plans.map((entry) => planRow(entry, chats, now)), ...earlierRows(activity.earlier)]
+  const rows = [...activity.plans.map((entry) => planRow(entry, chats, now)), ...earlierRows(activity.earlier, chats)]
     .filter((row) => tab === 'all' || row.tab === tab)
     .sort((a, b) => b.at - a.at)
   const groups: { day: string; rows: ActivityRow[] }[] = []

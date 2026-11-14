@@ -79,6 +79,12 @@ describe('Activity’s rows', () => {
     expect(groups[1]?.rows[0]).toMatchObject({ status: 'failed', note: 'Refunded: 6 USDC went back where it came from.' })
     expect(groups[1]?.rows[0]?.track.map((dot) => dot.state)).toEqual(['done', 'done', 'done', 'failed'])
     expect(activityGroups({ plans: [], earlier }, [], 'drafts', NOW)).toEqual([])
+    expect(pay?.token).toEqual({ symbol: 'USDC', chain: 'base' })
+    // The kept chat that holds a plan names its agent and opens on a click, payments included.
+    const kept = { id: 'kept-1', agent: 'codex', plan: null, items: [{ kind: 'plan', id: 'pay', plan: SEND }] } as unknown as Chat
+    const named = activityGroups({ plans: [], earlier }, [kept], 'all', NOW)[0]?.rows
+    expect(named?.find((each) => each.id === 'pay')).toMatchObject({ chatId: 'kept-1', agent: 'codex' })
+    expect(named?.find((each) => each.id === 's1')).toMatchObject({ chatId: null, agent: null })
   })
 
   it('titles each plan by what it does', () => {

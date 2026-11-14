@@ -43,15 +43,14 @@ function StepIcon({ icon }: { icon: TrackerIcon }) {
 }
 
 /**
- * Where this chat's plan stands, pinned above the conversation: each step from review
- * through signing and NEAR to, for a swap, NEAR Intents' payout, with explorer links as
- * they arrive. Earlier plans of the chat fold away below it. Every state comes from
- * main's events, never from the agent's words.
+ * A plan's headline, where it stands, and each of its steps from review through signing
+ * and its chains to the money landing, with explorer links as they arrive. Shared by the
+ * chat's tracker and the Activity page. `when` is shown beside the status, if given.
  */
-export function PlanTracker({ plan, earlier }: { plan: ChatPlan; earlier: readonly ChatPlan[] }) {
+export function PlanSteps({ plan, when }: { plan: ChatPlan; when?: string }) {
   const steps = trackerSteps(plan)
   return (
-    <section className="ink-review-card relative mx-auto mt-3 flex w-[calc(100%-48px)] max-w-[760px] flex-col gap-3 py-3" aria-label="Where this plan stands">
+    <>
       <div className="flex items-center gap-2.5">
         <span className="flex flex-none items-center gap-1" aria-hidden>
           <TokenLogo symbol={plan.asset} chain={plan.chain} size="md" />
@@ -68,6 +67,7 @@ export function PlanTracker({ plan, earlier }: { plan: ChatPlan; earlier: readon
             {trackerSummary(plan)}
           </span>
         </span>
+        {when ? <span className="flex-none text-[12px] text-[var(--ot-text-3)]">{when}</span> : null}
         <StatusChip status={plan.status} />
       </div>
       <ol className="m-0 flex list-none flex-wrap items-start gap-x-1 gap-y-2 p-0">
@@ -91,6 +91,18 @@ export function PlanTracker({ plan, earlier }: { plan: ChatPlan; earlier: readon
           </li>
         ))}
       </ol>
+    </>
+  )
+}
+
+/**
+ * Where this chat's plan stands, pinned above the conversation, with earlier plans of the
+ * chat folded away below it. Every state comes from main's events, never from the agent's words.
+ */
+export function PlanTracker({ plan, earlier }: { plan: ChatPlan; earlier: readonly ChatPlan[] }) {
+  return (
+    <section className="ink-review-card relative mx-auto mt-3 flex w-[calc(100%-48px)] max-w-[760px] flex-col gap-3 py-3" aria-label="Where this plan stands">
+      <PlanSteps plan={plan} />
       {earlier.length > 0 ? (
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center gap-1 text-[12px] text-[var(--ot-text-3)]">

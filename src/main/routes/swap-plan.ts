@@ -4,6 +4,9 @@ import { isAddressOn, isEvmAddress } from '../../shared/addresses'
 import { evmChainOfOneClick, type EvmChain } from '../../shared/evm/chains'
 import { buildEvmTransfer, evmTokenOf } from '../evm/build'
 import type { EvmRpc } from '../evm/rpc'
+import { isSolanaAddress } from '../../shared/addresses'
+import { buildSolanaTransfer, SOLANA_ONE_CLICK, solanaTokenOf } from '../solana/build'
+import type { SolanaRpc } from '../solana/rpc'
 import { isNearAccountId, nearAccountKind } from '../../shared/near/account-id'
 import { callsDeposit, callsGas, INTENTS_NEAR, nearCallStep, WRAP_NEAR, type NearCall } from '../../shared/near/calls'
 import { nearPublicKey } from '../../shared/near/transaction'
@@ -23,6 +26,8 @@ export interface SwapPlanDeps {
   tokens: () => Promise<OneClickToken[] | null>
   /** Each EVM chain's RPC, for a swap the wallet pays on an EVM chain. */
   evmRpc?: (chain: EvmChain) => EvmRpc
+  /** Solana's RPC, for a swap the wallet pays on Solana. */
+  solanaRpc?: SolanaRpc
   /** What the Intents balance holds now, as `intents:<asset id>`. Null when it can't be read. */
   held: () => Promise<ReadonlyMap<string, bigint> | null>
   quote: (request: OneClickQuoteRequest) => Promise<OneClickQuoteResult>
@@ -56,7 +61,7 @@ const QUOTE_FAILURES: Record<OneClickFailure, PlanFailure> = {
  * Anything else, such as a token on NEAR outside the Intents balance, isn't built yet:
  * the plan stays a draft.
  */
-export async function buildOneClickSwap(intent: PlanIntent, own: readonly Account[], { tokens, held, quote, fits, evmRpc, now = Date.now }: SwapPlanDeps): Promise<SwapPlanResult> {
+export async function buildOneClickSwap(intent: PlanIntent, own: readonly Account[], { tokens, held, quote, fits, evmRpc, solanaRpc, now = Date.now }: SwapPlanDeps): Promise<SwapPlanResult> {
   const NOT_YET: SwapPlanResult = { ok: true, steps: [] }
   if (intent.outcome !== 'swap' || !intent.toAsset) return NOT_YET
   const near = own.find((account) => account.chain === 'near')?.address
@@ -73,16 +78,22 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
   )
   if (route.kind === 'none') return route.reason === 'bad-amount' ? { ok: false, reason: 'bad-request' } : route.reason === 'cannot-sign' || route.reason === 'direct-not-built' ? NOT_YET : { ok: false, reason: 'no-route' }
   if (route.kind !== 'intents') return NOT_YET
-  // The first leg the route prefers that Ink can pay from: NEAR from the wallet, or anything in the Intents balance.
-  // The first leg the route prefers that Ink can pay from: NEAR or a coin or token on an EVM chain from the wallet, or anything in the Intents balance.
+  // The first leg the route prefers that Ink can pay from: NEAR, SOL or a Solana token, or a coin or token on an EVM chain
+  // from the wallet, or anything in the Intents balance.
   const evmFrom = own.find((account) => account.chain === 'evm')?.address
+  const solanaFrom = own.find((account) => account.chain === 'solana')?.address
   const leg = route.legs.find((candidate) =>
-    candidate.source === 'intents' ? true : candidate.from.assetId === `nep141:${WRAP_NEAR}` || (evmChainOfOneClick(candidate.from.blockchain) !== null && evmFrom !== undefined && evmRpc !== undefined),
+    candidate.source === 'intents'
+      ? true
+      : candidate.from.assetId === `nep141:${WRAP_NEAR}` ||
+        (evmChainOfOneClick(candidate.from.blockchain) !== null && evmFrom !== undefined && evmRpc !== undefined) ||
+        (candidate.from.blockchain === SOLANA_ONE_CLICK && solanaFrom !== undefined && solanaRpc !== undefined),
   )
   if (!leg) return NOT_YET
   const fromIntents = leg.source === 'intents'
   const evmChain = leg.source === 'wallet' ? evmChainOfOneClick(leg.from.blockchain) : null
-  // A refund goes back where the deposit came from: the wallet's EVM address on that chain, or its NEAR account.
+  const onSolana = leg.source === 'wallet' && leg.from.blockchain === SOLANA_ONE_CLICK
+  // A refund goes back where the deposit came from: the wallet's address on that chain, or its NEAR account.
   if (fromIntents && !holdings) return { ok: false, reason: 'chain-unavailable' }
   if (fromIntents && leg.held < leg.amount) return { ok: false, reason: 'insufficient-funds' }
 
@@ -103,7 +114,7 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
     destinationAsset: route.to.assetId,
     amount: leg.amount,
     depositType: fromIntents ? 'INTENTS' : 'ORIGIN_CHAIN',
-    refundTo: evmChain && evmFrom ? evmFrom : near,
+    refundTo: evmChain && evmFrom ? evmFrom : onSolana && solanaFrom ? solanaFrom : near,
     recipient: payout,
     recipientType: route.toIntents ? 'INTENTS' : 'DESTINATION_CHAIN',
     dry: false,
@@ -114,7 +125,7 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
   const { depositAddress, deadline } = quoted.quote
   // On NEAR the deposit goes by ft_transfer or mt_transfer, so the address must be a NEAR account; on an EVM chain an
   // address there. Either way it must outlive the plan.
-  const depositOk = evmChain ? isEvmAddress(depositAddress ?? '') : isNearAccountId(depositAddress ?? '')
+  const depositOk = evmChain ? isEvmAddress(depositAddress ?? '') : onSolana ? isSolanaAddress(depositAddress ?? '') : isNearAccountId(depositAddress ?? '')
   if (!depositAddress || !depositOk || !deadline || deadline.getTime() < now() + PLAN_TTL_MS + SWAP_DEADLINE_MARGIN_MS) return { ok: false, reason: 'chain-unavailable' }
 
   const terms = {
@@ -145,6 +156,20 @@ export async function buildOneClickSwap(intent: PlanIntent, own: readonly Accoun
       ok: true,
       steps: built.steps,
       swap: { ...terms, sendSymbol: token.symbol, refundTo: evmFrom, payFrom: 'evm', sendDecimals: String(token.decimals), sendChainId: String(evmChain.chainId), sendToken: token.token },
+      payout: { address: payout, chain: payoutChain },
+    }
+  }
+
+  if (onSolana && solanaFrom && solanaRpc) {
+    // SOL or the token 1Click lists, sent from the wallet's Solana address to the deposit address there.
+    const token = await solanaTokenOf(leg.from.contract ?? 'SOL', solanaRpc, [leg.from])
+    if ('failure' in token) return { ok: false, reason: token.failure }
+    const built = await buildSolanaTransfer(solanaRpc, { from: solanaFrom, to: depositAddress, ...token, amount: leg.amount })
+    if (!built.ok) return built
+    return {
+      ok: true,
+      steps: built.steps,
+      swap: { ...terms, sendSymbol: token.symbol, refundTo: solanaFrom, payFrom: 'solana', sendDecimals: String(token.decimals), sendToken: token.token },
       payout: { address: payout, chain: payoutChain },
     }
   }

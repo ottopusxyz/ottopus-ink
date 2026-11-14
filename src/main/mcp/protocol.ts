@@ -54,7 +54,7 @@ const TOOLS = [
   {
     name: 'create_plan',
     description:
-      'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself. A send works on NEAR and on EVM chains such as base, ethereum, arbitrum, optimism, polygon, bsc and avalanche, for the chain’s own coin or a token by symbol or contract. A swap can pay from the wallet on those EVM chains too. A swap with chain intents pays from the NEAR Intents balance; to take a token out of that balance to a chain, swap it to the same token with to_chain set, such as USDC from intents to USDC on base. A pay delivers exactly amount of asset on to_chain to the address in to (or the person’s own there): Ink pays it from what the wallet holds of that token, or of any dollar stablecoin for one, at its EVM addresses and in the NEAR Intents balance, in up to three parts, for one approval. Use pay when no one balance covers a payment.',
+      'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself. A send works on NEAR, on EVM chains such as base, ethereum, arbitrum, optimism, polygon, bsc and avalanche, and on solana, for the chain’s own coin or a token by symbol or contract (on Solana, a token NEAR Intents lists, such as USDC or USDT, by symbol or mint). A swap can pay from the wallet on those EVM chains and on Solana too. A swap with chain intents pays from the NEAR Intents balance; to take a token out of that balance to a chain, swap it to the same token with to_chain set, such as USDC from intents to USDC on base. A pay delivers exactly amount of asset on to_chain to the address in to (or the person’s own there): Ink pays it from what the wallet holds of that token, or of any dollar stablecoin for one, at its EVM and Solana addresses and in the NEAR Intents balance, in up to three parts, for one approval. Use pay when no one balance covers a payment.',
     inputSchema: objectSchema(
       {
         outcome: { type: 'string', enum: ['send', 'swap', 'stake', 'pay'] },
@@ -611,7 +611,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         const intent = intentFrom(params.arguments)
         if (!intent) return result(toolAnswer(PLAN_SCHEMA_HELP, true))
         if (!plans) return result(NOT_BUILT.create_plan ?? NOT_SET_UP)
-        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is made: ${plan.summary}. If Ink can send it (so far, NEAR sent on NEAR, and NEAR swapped through NEAR Intents to the person’s own address, or to one they typed on an EVM chain, Solana or NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.`)
+        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is made: ${plan.summary}. If Ink can send it (a send on NEAR, an EVM chain or Solana; a swap or payment through NEAR Intents paid from NEAR, an EVM chain, Solana or the Intents balance, to the person’s own address or one they typed on an EVM chain, Solana or NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.`)
         if (made.plan) onPlan?.(chatPlanOf(made.plan))
         return result(made.answer)
       }

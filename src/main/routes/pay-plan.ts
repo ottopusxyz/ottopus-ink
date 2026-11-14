@@ -1,6 +1,6 @@
 import { hexToBytes } from '@noble/hashes/utils.js'
 import type { Account } from '../../shared/accounts'
-import { isAddressOn, isEvmAddress } from '../../shared/addresses'
+import { isAddressOn, isEvmAddress, isSolanaAddress } from '../../shared/addresses'
 import { evmChainOfOneClick, type EvmChain } from '../../shared/evm/chains'
 import { isNearAccountId, nearAccountKind } from '../../shared/near/account-id'
 import { callsDeposit, callsGas, INTENTS_NEAR, nearCallStep, type NearCall } from '../../shared/near/calls'
@@ -10,6 +10,8 @@ import type { ChatSwap } from '../../shared/ipc'
 import { formatUnits, parseUnits } from '../../shared/token-text'
 import { buildEvmTransfer, evmTokenOf } from '../evm/build'
 import type { EvmRpc } from '../evm/rpc'
+import { buildSolanaTransfer, SOLANA_ONE_CLICK, solanaTokenOf } from '../solana/build'
+import type { SolanaRpc } from '../solana/rpc'
 import { PLAN_TTL_MS, SWAP_DEADLINE_MARGIN_MS, type BuiltSwap } from '../plans/store'
 import type { OneClickQuote, OneClickQuoteRequest, OneClickQuoteResult, OneClickToken } from './one-click'
 import { SLIPPAGE_BPS } from './quoter'
@@ -18,18 +20,18 @@ import { SWAP_DEADLINE_AFTER_PLAN_MS } from './swap-plan'
 
 /**
  * Which swaps a payment's step pays, by their place in `swaps`. The builder writes the
- * Intents legs first, all paid by the first step when there are any, then each EVM leg paid
- * by its own step, and last the payout, paid by the last step.
+ * Intents legs first, all paid by the first step when there are any, then each leg paid on
+ * an EVM chain or on Solana by its own step, and last the payout, paid by the last step.
  */
 export function legsOfStep(core: { steps: readonly PlanStep[]; swaps?: readonly PlanSwap[] }, step: number): number[] {
   const swaps = core.swaps ?? []
   const payout = swaps.findIndex((swap) => swap.role === 'payout')
   if (payout >= 0 && step === core.steps.length - 1) return [payout]
   const intents = swaps.flatMap((swap, index) => (swap.payFrom === 'intents' && swap.role !== 'payout' ? [index] : []))
-  const evm = swaps.flatMap((swap, index) => (swap.payFrom === 'evm' ? [index] : []))
+  const onChain = swaps.flatMap((swap, index) => (swap.payFrom === 'evm' || swap.payFrom === 'solana' ? [index] : []))
   if (intents.length > 0 && step === 0) return intents
-  const evmIndex = step - (intents.length > 0 ? 1 : 0)
-  return evm[evmIndex] === undefined ? [] : [evm[evmIndex] as number]
+  const chainIndex = step - (intents.length > 0 ? 1 : 0)
+  return onChain[chainIndex] === undefined ? [] : [onChain[chainIndex] as number]
 }
 
 /** The most legs one payment is split into. */
@@ -53,14 +55,16 @@ export interface PayPlanDeps {
   /** Whether the NEAR account covers what the calls attach and the most their fees could take. */
   fits: (from: string, deposit: bigint, gas: bigint, calls: number) => Promise<'insufficient-funds' | 'fee-rose' | null>
   evmRpc: (chain: EvmChain) => EvmRpc
+  /** Solana's RPC, for a leg the wallet pays on Solana. */
+  solanaRpc?: SolanaRpc
   now?: () => number
 }
 
 export type PayPlanResult = ({ ok: true; steps: PlanStep[] } & BuiltSwap) | { ok: false; reason: PlanFailure }
 
-/** One way to pay part of it: a token in the Intents balance, or at the wallet's address on an EVM chain. */
+/** One way to pay part of it: a token in the Intents balance, or at the wallet's address on an EVM chain or Solana. */
 interface Source {
-  from: 'intents' | 'evm'
+  from: 'intents' | 'evm' | 'solana'
   token: OneClickToken
   held: bigint
   chain: EvmChain | null
@@ -89,10 +93,11 @@ const whole = (raw: bigint, decimals: number) => Number(raw) / 10 ** decimals
  * transaction, signed with the rest but sent only once the legs have landed. A refund goes
  * back where each came from.
  */
-export async function buildPayment(intent: PlanIntent, own: readonly Account[], { tokens, held, quote, fits, evmRpc, now = Date.now }: PayPlanDeps): Promise<PayPlanResult> {
+export async function buildPayment(intent: PlanIntent, own: readonly Account[], { tokens, held, quote, fits, evmRpc, solanaRpc, now = Date.now }: PayPlanDeps): Promise<PayPlanResult> {
   if (intent.outcome !== 'pay' || !intent.toChain) return { ok: false, reason: 'bad-request' }
   const near = own.find((account) => account.chain === 'near')?.address
   const evmFrom = own.find((account) => account.chain === 'evm')?.address
+  const solanaFrom = own.find((account) => account.chain === 'solana')?.address
   if (!near || nearAccountKind(near) !== 'implicit') return { ok: false, reason: 'chain-unavailable' }
   const listed = await tokens().catch(() => null)
   if (!listed) return { ok: false, reason: 'chain-unavailable' }
@@ -146,10 +151,17 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
       const inIntents = token.assetId === target.assetId ? 0n : (holdings.get(`intents:${token.assetId}`) ?? 0n)
       const chain = evmChainOfOneClick(token.blockchain)
       const atWallet = chain && token.contract && evmFrom ? (holdings.get(`wallet:${token.assetId}`) ?? 0n) : 0n
-      return [...(inIntents > 0n ? [{ from: 'intents' as const, token, held: inIntents, chain: null }] : []), ...(atWallet > 0n ? [{ from: 'evm' as const, token, held: atWallet, chain }] : [])]
+      const onSolana = token.blockchain === SOLANA_ONE_CLICK && token.contract && solanaFrom && solanaRpc ? (holdings.get(`wallet:${token.assetId}`) ?? 0n) : 0n
+      return [
+        ...(inIntents > 0n ? [{ from: 'intents' as const, token, held: inIntents, chain: null }] : []),
+        ...(atWallet > 0n ? [{ from: 'evm' as const, token, held: atWallet, chain }] : []),
+        ...(onSolana > 0n ? [{ from: 'solana' as const, token, held: onSolana, chain: null }] : []),
+      ]
     })
     .sort((a, b) => whole(b.held, b.token.decimals) - whole(a.held, a.token.decimals))
 
+  // A refund goes back where each leg came from: the wallet's address on its chain, or its NEAR account.
+  const refundOf = (source: Source) => (source.from === 'evm' && evmFrom ? evmFrom : source.from === 'solana' && solanaFrom ? solanaFrom : near)
   // Each leg pays exactly its part into the wallet's own Intents balance, as the token the payout moves.
   const ask = (source: Source, swapType: 'EXACT_INPUT' | 'EXACT_OUTPUT', value: bigint, dry: boolean) =>
     quote({
@@ -158,7 +170,7 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
       swapType,
       amount: value,
       depositType: source.from === 'intents' ? 'INTENTS' : 'ORIGIN_CHAIN',
-      refundTo: source.from === 'evm' && evmFrom ? evmFrom : near,
+      refundTo: refundOf(source),
       recipient: near,
       recipientType: 'INTENTS',
       dry,
@@ -172,6 +184,8 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
     if (left === 0n || legs.length === MAX_LEGS) break
     // One leg on each EVM chain, so no two transactions there wait on each other's nonce.
     if (source.chain && legs.some((leg) => leg.source.chain?.chainId === source.chain?.chainId)) continue
+    // One leg on Solana too, so one transfer there pays it.
+    if (source.from === 'solana' && legs.some((leg) => leg.source.from === 'solana')) continue
     const best = await ask(source, 'EXACT_INPUT', source.held, true)
     if (!best.ok) continue
     let out = best.quote.amountOut >= left ? left : (best.quote.amountOut * PART_OF_BEST) / 100n
@@ -183,7 +197,7 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
     }
     if (!bound.ok || bound.quote.amountIn > source.held || out === 0n) continue
     const { depositAddress, deadline: closes } = bound.quote
-    const addressOk = source.from === 'evm' ? isEvmAddress(depositAddress ?? '') : isNearAccountId(depositAddress ?? '')
+    const addressOk = source.from === 'evm' ? isEvmAddress(depositAddress ?? '') : source.from === 'solana' ? isSolanaAddress(depositAddress ?? '') : isNearAccountId(depositAddress ?? '')
     if (!depositAddress || !addressOk || !alive(closes)) continue
     legs.push({ source, quote: bound.quote, out })
     left -= out
@@ -204,7 +218,7 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
     getDecimals: String(target.decimals),
     getChain: 'intents',
     recipient: near,
-    refundTo: leg.source.from === 'evm' && evmFrom ? evmFrom : near,
+    refundTo: refundOf(leg.source),
     feeBps: String(leg.quote.feeBps),
     seconds: String(Math.round(leg.quote.seconds)),
     payFrom: leg.source.from,
@@ -219,7 +233,7 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
   }
   const nearStep = (calls: NearCall[]) => nearCallStep({ signerId: near, publicKey: nearPublicKey(hexToBytes(near)), receiverId: INTENTS_NEAR, calls })
 
-  // The Intents legs first, in one NEAR transaction; then each EVM leg's transfer; then the payout.
+  // The Intents legs first, in one NEAR transaction; then each EVM leg's transfer, then the Solana leg's; then the payout.
   const steps: PlanStep[] = []
   const swaps: PlanSwap[] = []
   const fromIntents = legs.filter((leg) => leg.source.from === 'intents')
@@ -239,6 +253,15 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
     if (!built.ok) return built
     steps.push(...built.steps)
     swaps.push({ ...termsOf(leg), sendChainId: String(chain.chainId), sendToken: token.token })
+  }
+  for (const leg of legs.filter((each) => each.source.from === 'solana')) {
+    const rpc = solanaRpc as SolanaRpc
+    const token = await solanaTokenOf(leg.source.token.contract as string, rpc, [leg.source.token])
+    if ('failure' in token) return { ok: false, reason: token.failure }
+    const built = await buildSolanaTransfer(rpc, { from: solanaFrom as string, to: leg.quote.depositAddress as string, ...token, amount: leg.quote.amountIn })
+    if (!built.ok) return built
+    steps.push(...built.steps)
+    swaps.push({ ...termsOf(leg), sendToken: token.token })
   }
   const payoutCalls: NearCall[] = [{ method: 'mt_transfer', receiverId: payoutAddress, tokenId: target.assetId, amount: payoutIn }]
   const unfit = await nearFits(payoutCalls)

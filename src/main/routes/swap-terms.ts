@@ -10,4 +10,4 @@ export function swapSent(swap: Pick<PlanSwap, 'amountIn' | 'sendSymbol' | 'sendD
 
 /** Where a swap's refund goes, in a phrase: "your NEAR account", "your NEAR Intents balance". */
 export const refundPlace = (swap: Pick<PlanSwap, 'payFrom'>): string =>
-  swap.payFrom === 'intents' ? 'your NEAR Intents balance' : swap.payFrom === 'evm' ? 'the address it came from' : 'your NEAR account'
+  swap.payFrom === 'intents' ? 'your NEAR Intents balance' : swap.payFrom === 'evm' || swap.payFrom === 'solana' ? 'the address it came from' : 'your NEAR account'

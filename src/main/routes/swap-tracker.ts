@@ -68,7 +68,7 @@ export function createSwapTracker({ submit, status, onUpdate, journal, now = Dat
   async function follow(planId: string, swap: PlanSwap, txHash: string): Promise<ChatSwap> {
     update(planId, { stage: 'deposited', got: null, refunded: null, link: null })
     // A deposit sent on an EVM chain has no NEAR sender to name.
-    const told = await submit({ txHash, depositAddress: swap.depositAddress, ...(swap.payFrom === 'evm' ? {} : { nearSenderAccount: swap.refundTo }) }).catch(() => null)
+    const told = await submit({ txHash, depositAddress: swap.depositAddress, ...(swap.payFrom === 'evm' || swap.payFrom === 'solana' ? {} : { nearSenderAccount: swap.refundTo }) }).catch(() => null)
     if (told) update(planId, progressOf(told, swap))
     const until = Date.parse(swap.deadline) + SWAP_FOLLOW_AFTER_DEADLINE_MS
     while (!FINAL.has(latest.get(planId)?.stage ?? 'deposited')) {

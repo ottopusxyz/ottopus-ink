@@ -187,6 +187,7 @@ const plans = createPlanStore({
       return buildPayment(intent, own, {
         tokens: listedTokens,
         evmRpc: evmRpcFor,
+        solanaRpc,
         held: async () => {
           const read = await ownPortfolio({ fresh: true })
           return read.ok ? holdingsOf(read, (await listedTokens()) ?? []) : null
@@ -199,6 +200,7 @@ const plans = createPlanStore({
       return buildOneClickSwap(intent, own, {
         tokens: listedTokens,
         evmRpc: evmRpcFor,
+        solanaRpc,
         // Read afresh, so a deposit that just landed can pay; only while the vault stays unlocked.
         held: async () => {
           const read = await ownPortfolio({ fresh: true })

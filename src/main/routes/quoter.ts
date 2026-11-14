@@ -95,6 +95,11 @@ export function holdingsOf(portfolio: PortfolioResult, listed: readonly OneClick
       const asset = code ? listed.find((each) => each.blockchain === code && (each.contract?.toLowerCase() ?? null) === contract) : undefined
       if (asset) held.set(`wallet:${asset.assetId}`, raw)
     }
+    // A Solana token as 1Click lists it there, by its mint, which is case-sensitive.
+    if (token.group === 'solana') {
+      const asset = listed.find((each) => each.blockchain === 'sol' && each.contract === token.contract)
+      if (asset) held.set(`wallet:${asset.assetId}`, raw)
+    }
   }
   return held
 }

@@ -10,8 +10,8 @@ import type { OneClickToken } from './one-click'
  */
 export type RouteSource = 'wallet' | 'intents'
 
-/** The chains Ink can sign a payment on from the wallet, by 1Click's names: NEAR, and every EVM chain it takes deposits from. */
-export const SIGNS_ON: ReadonlySet<string> = new Set(['near', ...EVM_CHAIN_LIST.flatMap((chain) => (chain.oneClick ? [chain.oneClick] : []))])
+/** The chains Ink can sign a payment on from the wallet, by 1Click's names: NEAR, Solana, and every EVM chain it takes deposits from. */
+export const SIGNS_ON: ReadonlySet<string> = new Set(['near', 'sol', ...EVM_CHAIN_LIST.flatMap((chain) => (chain.oneClick ? [chain.oneClick] : []))])
 
 /** 1Click's names for EVM chains, which all share the wallet's one EVM address. */
 const EVM_CHAINS = new Set(['eth', 'base', 'arb', 'op', 'pol', 'bsc', 'avax', 'gnosis', 'bera', 'scroll', 'monad', 'plasma', 'abs', 'hood', 'xlayer', 'adi'])

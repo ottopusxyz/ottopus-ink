@@ -1,4 +1,5 @@
 import type { AccountChain } from '../../shared/accounts'
+import { EVM_CHAINS as EVM_CHAIN_LIST } from '../../shared/evm/chains'
 import { parseUnits } from '../../shared/token-text'
 import { originName } from '../portfolio/intents'
 import type { OneClickToken } from './one-click'
@@ -9,8 +10,8 @@ import type { OneClickToken } from './one-click'
  */
 export type RouteSource = 'wallet' | 'intents'
 
-/** The chains Ink can sign a payment on from the wallet. More join as each signing half lands. */
-export const SIGNS_ON: ReadonlySet<string> = new Set(['near'])
+/** The chains Ink can sign a payment on from the wallet, by 1Click's names: NEAR, Solana, and every EVM chain it takes deposits from. */
+export const SIGNS_ON: ReadonlySet<string> = new Set(['near', 'sol', ...EVM_CHAIN_LIST.flatMap((chain) => (chain.oneClick ? [chain.oneClick] : []))])
 
 /** 1Click's names for EVM chains, which all share the wallet's one EVM address. */
 const EVM_CHAINS = new Set(['eth', 'base', 'arb', 'op', 'pol', 'bsc', 'avax', 'gnosis', 'bera', 'scroll', 'monad', 'plasma', 'abs', 'hood', 'xlayer', 'adi'])
@@ -188,6 +189,8 @@ export function pickRoute(ask: RouteAsk, tokens: readonly OneClickToken[], held:
     const homes = new Set((natives.length > 0 ? natives : named).map((token) => token.blockchain))
     const [home] = homes
     if (homes.size === 1 && home) to = tokenOn(ask.toAsset, home, tokens)
+    // NEAR's own coin, which 1Click lists only as wNEAR on NEAR.
+    if (!to && ask.toAsset.trim().toLowerCase() === 'near') to = tokenOn('NEAR', 'near', tokens)
   }
   if (to === 'ambiguous') return { kind: 'none', reason: 'ambiguous-asset', name: ask.toAsset, chain: toLookup }
   if (!to) return { kind: 'none', reason: 'unknown-asset', name: ask.toAsset, chain: toChainAsked ? toChain : null }

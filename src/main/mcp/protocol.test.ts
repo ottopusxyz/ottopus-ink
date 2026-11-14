@@ -497,7 +497,7 @@ describe('handleMcpMessage', () => {
       expect(asked).toEqual([intent])
       expect(plans).toEqual([{ id: 'plan-1', status: 'draft', ...intent }])
       expect(result).toEqual({
-        content: [{ type: 'text', text: 'Plan plan-1 is made: Swap 0.1 ETH to USDC on base. If Ink can send it (so far, NEAR sent on NEAR, and NEAR swapped through NEAR Intents to the person’s own address, or to one they typed on an EVM chain, Solana or NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.' }],
+        content: [{ type: 'text', text: 'Plan plan-1 is made: Swap 0.1 ETH to USDC on base. If Ink can send it (a send on NEAR, an EVM chain or Solana; a swap or payment through NEAR Intents paid from NEAR, an EVM chain, Solana or the Intents balance, to the person’s own address or one they typed on an EVM chain, Solana or NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.' }],
         isError: false,
       })
     })
@@ -522,7 +522,31 @@ describe('handleMcpMessage', () => {
       it('says where a swap stands once its deposit landed', async () => {
         const swap = { stage: 'done' as const, got: '17.4 USDC', refunded: null, link: null }
         const result = await call('get_plan', { plan_id: 'abc-1' }, tools({ get: async (id) => ({ ok: true, plan: { ...plan, id, status: 'confirmed', summary: 'Swap 5 NEAR on near to USDC on base', swap } }) }))
-        expect(result.content[0]?.text).toBe('Plan abc-1 is confirmed: Swap 5 NEAR on near to USDC on base. NEAR Intents finished the swap and paid out 17.4 USDC.')
+        expect(result.content[0]?.text).toBe('Plan abc-1 is confirmed: Swap 5 NEAR on near to USDC on base. NEAR Intents finished and paid out 17.4 USDC.')
+      })
+
+      it('names the step a plan is on while its journey runs', async () => {
+        const journey = {
+          steps: [
+            { id: 'review', label: 'Review', icon: { kind: 'review' as const }, state: 'done' as const, detail: 'Approved', link: null },
+            { id: 'legs', label: 'In your Intents balance', icon: { kind: 'swap' as const }, state: 'active' as const, detail: '1 of 2 parts landed', link: null },
+          ],
+          done: false,
+          failed: false,
+        }
+        const result = await call('get_plan', { plan_id: 'abc-1' }, tools({ get: async (id) => ({ ok: true, plan: { ...plan, id, status: 'submitted', summary: 'Pay 15 USDC on solana', journey, swap: { stage: 'deposited', got: null, refunded: null, link: null } } }) }))
+        expect(result.content[0]?.text).toContain('Now: In your Intents balance, 1 of 2 parts landed. It isn’t finished until the last step is done')
+      })
+
+      it('says a confirmed swap or payment isn’t finished until NEAR Intents pays it out', async () => {
+        const pay = { ...plan, status: 'confirmed' as const, summary: 'Pay 2 USDC on solana', intent: { ...plan.intent, outcome: 'pay' as const } }
+        const waiting = await call('get_plan', { plan_id: 'abc-1' }, tools({ get: async (id) => ({ ok: true, plan: { ...pay, id } }) }))
+        expect(waiting.content[0]?.text).toContain('hasn’t paid it out yet, so it isn’t finished')
+        const landing = await call('get_plan', { plan_id: 'abc-1' }, tools({ get: async (id) => ({ ok: true, plan: { ...pay, id, swap: { stage: 'deposited', got: null, refunded: null, link: null } } }) }))
+        expect(landing.content[0]?.text).toContain('hasn’t paid it out yet')
+        // A plain send is finished once confirmed.
+        const sent = await call('get_plan', { plan_id: 'abc-1' }, tools({ get: async (id) => ({ ok: true, plan: { ...plan, id, status: 'confirmed', intent: { ...plan.intent, outcome: 'send' } } }) }))
+        expect(sent.content[0]?.text).not.toContain('paid it out')
       })
 
       it('cancels a plan and says nothing was signed', async () => {

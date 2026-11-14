@@ -147,8 +147,12 @@ export async function pickReceive(
   const near = accounts.find((account) => account.chain === 'near')?.address
   const token = bridge?.find((each) => each.key === chain.bridge)?.tokens.find((each) => each.symbol.toLowerCase() === ask.asset.trim().toLowerCase())
   const ownAnswer = (why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable'): ReceiveAnswer =>
-    own ? { ok: true, kind: 'own', chain: chain.id, chainName: chain.name, asset: token?.symbol ?? ask.asset.trim(), address: own.address, path: own.path, why, min: token?.min ?? null } : { ok: false, reason: why === 'below-minimum' ? 'below-minimum' : 'not-supported', min: token?.min ?? null }
+    own
+      ? { ok: true, kind: 'own', chain: chain.id, chainName: chain.name, asset: token?.symbol ?? ask.asset.trim(), address: own.address, path: own.path, why, min: token?.min ?? null }
+      : { ok: false, reason: why === 'below-minimum' ? 'below-minimum' : why === 'intents-unavailable' ? 'unavailable' : 'not-supported', min: token?.min ?? null }
 
+  // Without the bridge's list, Ink can't tell whether NEAR Intents takes the token, so it doesn't say it doesn't.
+  if (bridge === null && chain.bridge) return ownAnswer('intents-unavailable')
   if (token && chain.bridge && near) {
     if (ask.amount !== null && below(ask.amount, token.min)) return ownAnswer('below-minimum')
     const deposit = await depositAddress(near, chain.bridge).catch(() => null)

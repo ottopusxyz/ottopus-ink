@@ -246,14 +246,41 @@ export interface RecentSwap {
   startedAt: number
 }
 
+/** What a journey step's icon shows: Ink's own steps, a chain, or the token a step lands. */
+export type JourneyIcon = { kind: 'review' } | { kind: 'sign' } | { kind: 'swap' } | { kind: 'chain'; chain: string } | { kind: 'token'; symbol: string; chain: string | null }
+
+/** One step of a plan's way from review to its money landing, as main follows it. */
+export interface JourneyStep {
+  /** Stable for the plan: `review`, `sign`, `tx:1`, `legs`, `payout`. */
+  id: string
+  label: string
+  icon: JourneyIcon
+  state: 'pending' | 'active' | 'done' | 'failed'
+  /** A few words on where it stands. */
+  detail: string | null
+  /** Its transaction or payout on an explorer, once there is one. Always https. */
+  link: { label: string; url: string } | null
+}
+
+/** Every step of a plan, in order, from main: the chat's tracker draws exactly this. */
+export interface PlanJourney {
+  steps: JourneyStep[]
+  /** The last step is done: the money landed. */
+  done: boolean
+  /** A step failed, or the plan stopped before it was sent. */
+  failed: boolean
+}
+
 export interface ChatPlan {
   id: string
   status: PlanStatus
   /** Where its swap stands, once a swap's deposit landed. */
   swap?: ChatSwap
+  /** Every step, from review to the money landing, as main last reported it. */
+  journey?: PlanJourney
   /** The NEAR transaction that sent it, once signed and sent. */
   transactionId?: string
-  outcome: 'send' | 'swap' | 'stake'
+  outcome: 'send' | 'swap' | 'stake' | 'pay'
   asset: string
   amount: string
   chain: string | null
@@ -332,6 +359,8 @@ export type ChatEvent =
   /** A plan of this chat's moved on, in the review window or on the chain. From main, like `plan`. */
   | { type: 'plan-status'; id: string; status: PlanStatus; transactionId?: string }
   | { type: 'plan-swap'; id: string; swap: ChatSwap }
+  /** A plan of this chat's moved on anywhere along its way, with every step as main now sees it. */
+  | { type: 'plan-journey'; id: string; journey: PlanJourney }
   /** How a plan of this chat ended, from main. */
   | { type: 'plan-note'; id: string; note: InkNote }
   /** Where to send a deposit, from main when the agent asked; again when it's watched anew. */

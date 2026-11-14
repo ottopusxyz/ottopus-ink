@@ -24,7 +24,7 @@ describe('allowedRecipient', () => {
 
   it('allows the own EVM address on any EVM chain by name, whatever the case of either', () => {
     const lower = own('evm').toLowerCase()
-    for (const chain of ['base', 'Ethereum', 'arbitrum', 'evm']) expect(allowedRecipient(lower, chain, OWN, [])).toEqual({ address: lower, why: 'own' })
+    for (const chain of ['base', 'Ethereum', 'arbitrum', 'evm', 'scroll', 'BNB Chain', 'monad', 'linea']) expect(allowedRecipient(lower, chain, OWN, [])).toEqual({ address: lower, why: 'own' })
   })
 
   it('refuses an own address on another chain, untyped, even when the formats look alike', () => {

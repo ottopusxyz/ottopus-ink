@@ -9,22 +9,48 @@ import type { PlanStatus } from './plan'
 /** One plan as the review window draws it. Amounts are NEAR decimals, written by main. */
 export interface ReviewPlan {
   id: string
-  /** A plain NEAR send, or a swap through NEAR Intents. */
-  kind: 'send' | 'swap'
+  /** A plain send, a swap through NEAR Intents, or a payment of an exact amount made of several swaps. */
+  kind: 'send' | 'swap' | 'pay'
   /** What a swap's quote promised, for a swap. Null for a send. */
   swap: ReviewSwap | null
+  /** A payment's legs, each an exact swap into the Intents balance. Absent from anything else. */
+  legs?: ReviewLeg[]
+  /**
+   * A payment's one payout to the recipient: exactly what it pays, how much of what it moves
+   * was in the Intents balance already, and NEAR Intents' fee. Ink sends it once the legs land.
+   */
+  payout?: { get: string; fromBalance: string | null; fee: string; seconds: number }
+  /**
+   * For a payment, whose steps run on more than one chain: each step's chain and the most
+   * its fees could take, in its own coin. Main sends only while no step's fees can cost
+   * more than its own. Absent from anything else, which has one fee, `maxFee`.
+   */
+  stepFees?: { chain: string; feeAsset: string; maxFee: string | null; maxFeeYocto: string | null }[]
   /** The hash the person approves. The signer signs only a plan that hashes to it. */
   hash: string
-  /** The network banner, such as `NEAR mainnet`. */
+  /** The network banner, such as `NEAR mainnet` or `Base mainnet`. */
   network: string
+  /** The chain that runs it, as people say it: `NEAR`, `Base`. */
+  chain: string
+  /** The coin that pays its fees and anything the actions attach: `NEAR`, `ETH`, `BNB`. */
+  feeAsset: string
+  /** Ink's name for the chain, for its logo: `near`, `base`, `bsc`. */
+  chainMark: string
+  /** For a payment: Ink's name for the chain it pays out on, for the amount's badge, and that chain as people say it. */
+  payChain?: { mark: string; name: string }
+  /** Where the chain shows a transaction: the explorer's name, and the page a transaction id is added to. */
+  explorer: { name: string; tx: string }
   /** The account that pays: the person's own. */
   from: string
   /** The key that signs for it. */
   publicKey: string
   /** Who gets paid, in full: for a swap, who NEAR Intents pays out to. */
   to: string
-  /** What kind of NEAR account `to` is. A transfer creates an implicit one that doesn't exist yet. `other-chain` is a swap's payout address on another chain. */
-  toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain'
+  /**
+   * What kind of NEAR account `to` is. A transfer creates an implicit one that doesn't exist yet.
+   * `other-chain` is a swap's payout address on another chain, and `evm` an address on the EVM chain that sends.
+   */
+  toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain' | 'evm' | 'solana'
   /** Why Ink lets this plan pay `to`: it's the person's own address, or they typed it in the chat. */
   toWhy: 'own' | 'typed'
   /** What's sent, in `asset`: the NEAR sent or swapped, or the token a swap moves from the Intents balance. */
@@ -33,9 +59,9 @@ export interface ReviewPlan {
   amountYocto: string
   /** `NEAR`, or the symbol of the token a swap pays from the Intents balance. */
   asset: string
-  /** The most the fees could take up front at today's gas price, in NEAR. Null when the chain couldn't be asked. */
+  /** The most the fees could take up front at today's gas price, in `feeAsset`. Null when the chain couldn't be asked. */
   maxFee: string | null
-  /** The same in yoctoNEAR. Main signs only while the fees can't cost more than this, and asks again if they could. */
+  /** The same in its smallest unit: yoctoNEAR, or wei. Main signs only while the fees can't cost more than this, and asks again if they could. */
   maxFeeYocto: string | null
   /** The deposit and that fee ceiling together, the most that can leave the account. Null without the fee. */
   maxTotal: string | null
@@ -48,7 +74,7 @@ export interface ReviewPlan {
 /** One decoded action. A transfer calls no contract, so `method` is null for it. */
 export interface ReviewAction {
   kind: 'Transfer' | 'FunctionCall'
-  /** What it attaches, in NEAR. */
+  /** What it attaches, in `feeAsset`. */
   amount: string
   /** The contract method a call action runs. */
   method: string | null
@@ -56,12 +82,28 @@ export interface ReviewAction {
   summary: string
 }
 
+/** One leg of a payment: what pays, from where, and exactly what it pays out. */
+export interface ReviewLeg {
+  /** "10 USDC". */
+  send: string
+  from: 'evm' | 'solana' | 'intents'
+  /** Where it pays from, as a person reads it: "Base", "your NEAR Intents balance". */
+  fromPlace: string
+  /** Exactly what it puts in the Intents balance: "9.7 USDC". */
+  get: string
+  depositAddress: string
+  /** Where a refund of anything unswapped goes. */
+  refundTo: string
+  fee: string
+  seconds: number
+}
+
 /** A swap through NEAR Intents, as main read it from the plan's fixed terms. */
 export interface ReviewSwap {
   /** "5 NEAR", "25 USDC". */
   send: string
-  /** What pays: NEAR from the wallet, or a token in the NEAR Intents balance, where a refund goes back too. */
-  from: 'wallet' | 'intents'
+  /** What pays: NEAR from the wallet, a coin or token from the wallet on an EVM chain, or a token in the NEAR Intents balance. A refund goes back to the same place. */
+  from: 'wallet' | 'evm' | 'solana' | 'intents'
   /** What the quote expects to pay out: "17.400531 USDC". */
   get: string
   /** The least it pays out, or it's refunded. */

@@ -4,6 +4,7 @@ import { formatUnits, usdValue } from '../../shared/token-text'
 import { nearBalance, type NearBalance } from '../near/balance'
 import type { NearRpc } from '../near/rpc'
 import { nearPriceList, nearTokenReview, WRAPPED_NEAR, type NearTokenPrice, type NearTokenReview } from './near-prices'
+import { lastGood } from '../last-good'
 import { intentsBalances, intentsTokenList, type IntentsBalance, type IntentsToken } from './intents'
 import { tronHoldings, type TronHoldings } from './tron'
 import { nearTokenBalances, type NearTokenBalance } from './near-tokens'
@@ -161,6 +162,8 @@ function nearTotal(balance: NearBalance): bigint {
 export function createPortfolioReader({ rpc, zerionAccess = () => null, fetch = globalThis.fetch, now = Date.now }: PortfolioReaderOptions): PortfolioReader {
   const reads = new Map<string, { at: number; read: Promise<Portfolio> }>()
   const reviews = new Map<string, { at: number; review: NearTokenReview }>()
+  // 1Click's list names and prices the Intents balance. It's slow at times, so the last good copy stands in.
+  const tokenList = lastGood(() => intentsTokenList({ fetch }), { maxAgeMs: 60_000, now })
 
   async function reviewOf(contract: string): Promise<NearTokenReview | null> {
     const kept = reviews.get(contract)
@@ -202,7 +205,7 @@ export function createPortfolioReader({ rpc, zerionAccess = () => null, fetch = 
       nearPriceList({ fetch }),
       readZerion(accounts, access),
       intentsBalances(accountId, { rpc }),
-      intentsTokenList({ fetch }),
+      tokenList(),
       accounts.tron ? tronHoldings(accounts.tron, { fetch }) : null,
     ])
     const gaps: PortfolioGap[] = []

@@ -1,12 +1,20 @@
-import { bytesToHex } from '@noble/hashes/utils.js'
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js'
 import type { PlanFailure, PlanStatus } from '../../shared/plan'
-import type { VaultFailure } from '../../shared/vault'
+import type { LiveInputs, SignedStep, VaultFailure } from '../../shared/vault'
 import { callsDeposit, callsGas, callsOfStep } from '../../shared/near/calls'
 import { NearDecodeError } from '../../shared/near/transaction'
-import type { PlanCore } from '../../shared/plan'
+import type { PlanCore, PlanSwap } from '../../shared/plan'
+import type { PayoutJournal } from '../routes/payout-journal'
 import { nearCallsFit, nearSendFits, nearTransferOf } from '../near/build'
 import { NearRpcError, type NearRpc } from '../near/rpc'
 import type { PlanStore, PlanView } from '../plans/store'
+import { evmChainById, type EvmChain } from '../../shared/evm/chains'
+import { EvmDecodeError, evmTransferOfStep } from '../../shared/evm/transaction'
+import { evmSendFees, evmSendFits } from '../evm/build'
+import { EvmRpcError, type EvmRpc } from '../evm/rpc'
+import { SolanaDecodeError, solanaTransferOfStep, type SolanaTransfer } from '../../shared/solana/transaction'
+import { solanaFeeNow, solanaSendFits } from '../solana/build'
+import { SolanaRpcError, type SolanaRpc } from '../solana/rpc'
 import type { VaultService } from './service'
 
 /** The only network Ink sends on. */
@@ -36,10 +44,33 @@ export interface PlanSenderOptions {
   store: PlanStore
   vault: Pick<VaultService, 'sign'>
   rpc: NearRpc
-  /** Told of each plan NEAR ran, with its transaction, so a swap can be followed from there. */
+  /** Each EVM chain's RPC, for plans that send on one. */
+  evmRpc?: (chain: EvmChain) => EvmRpc
+  /** Solana's RPC, for plans that send on Solana. */
+  solanaRpc?: SolanaRpc
+  /** Told of each plan its chain ran, with its transaction, so a swap can be followed from there. */
   onConfirmed?: (plan: PlanView, transactionId: string) => void
+  /** Told of each step of a payment its chain ran, with its transaction, so its legs can be followed. */
+  onStepConfirmed?: (plan: PlanView, step: number, transactionId: string) => void
+  /** Told of each step's transaction as it's sent, and once its chain ran it or turned it down: for tracking every plan. */
+  onStep?: (planId: string, step: number, state: 'sent' | 'confirmed' | 'failed', transactionId: string) => void
+  /** Where held payouts are kept, so one survives a restart and is still sent once its legs land. */
+  payouts?: PayoutJournal
   now?: () => number
+  wait?: (ms: number) => Promise<void>
 }
+
+/** How long a send waits for its EVM transaction's receipt before leaving it submitted for the chain to decide. */
+export const EVM_RECEIPT_WAIT_MS = 3 * 60_000
+const EVM_RECEIPT_POLL_MS = 2_000
+
+/**
+ * How long a send waits for its Solana transaction to be confirmed before leaving it
+ * submitted for the chain to decide. Its blockhash lasts about a minute and a half, so by
+ * then it has almost always landed or can't any more.
+ */
+export const SOLANA_CONFIRM_WAIT_MS = 2 * 60_000
+const SOLANA_POLL_MS = 2_000
 
 /**
  * How long before a swap's deposit address dies Ink stops sending to it: time for the
@@ -89,7 +120,7 @@ export const TRANSACTION_VALIDITY_BLOCKS = 86_400n
  * nothing else, so a later send can't overtake it. One plan at a time, each
  * signed above every nonce already signed with its key, so no two share one.
  */
-export function createPlanSender({ store, vault, rpc, onConfirmed, now = Date.now }: PlanSenderOptions) {
+export function createPlanSender({ store, vault, rpc, evmRpc, solanaRpc, onConfirmed, onStepConfirmed, onStep, payouts, now = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: PlanSenderOptions) {
   let sending = false
   /**
    * The highest nonce signed with each key. A send that got no answer, or that
@@ -106,15 +137,20 @@ export function createPlanSender({ store, vault, rpc, onConfirmed, now = Date.no
     return { ok: false, reason, status: moved.ok ? moved.plan.status : undefined }
   }
 
-  async function run(id: string, owner: string, maxFee: bigint): Promise<SendResult> {
+  async function run(id: string, owner: string, maxFee: bigint | readonly bigint[]): Promise<SendResult> {
     const plan = store.get(id, owner)
     if (!plan) return { ok: false, reason: 'not-found' }
     if (plan.status !== 'approved') return { ok: false, reason: 'cannot-move', status: plan.status }
-    const sendable = sendableOf(plan.core)
-    if (!sendable) return { ok: false, reason: 'bad-request', status: plan.status }
+    // A payment has a fee limit for each step; anything else one.
+    if (plan.core.swaps) return typeof maxFee === 'bigint' ? { ok: false, reason: 'bad-request', status: plan.status } : runPayment(plan, owner, maxFee)
+    if (typeof maxFee !== 'bigint') return { ok: false, reason: 'bad-request', status: plan.status }
     // A swap's deposit address must still be alive when the deposit lands, with time to spare.
     const swap = plan.core.swap
     if (swap && !(now() < Date.parse(swap.deadline) - SWAP_SEND_MARGIN_MS)) return { ok: false, reason: 'cannot-move', status: plan.status }
+    if (plan.core.steps[0]?.chain === 'evm') return runEvm(plan, owner, maxFee)
+    if (plan.core.steps[0]?.chain === 'solana') return runSolana(plan, owner, maxFee)
+    const sendable = sendableOf(plan.core)
+    if (!sendable) return { ok: false, reason: 'bad-request', status: plan.status }
 
     const { signerId, publicKey } = sendable
     const keyId = `${signerId} ${publicKey}`
@@ -157,8 +193,10 @@ export function createPlanSender({ store, vault, rpc, onConfirmed, now = Date.no
 
     const submitted = store.move(id, owner, 'submitted')
     if (!submitted.ok) return submitted
+    onStep?.(id, 0, 'sent', step.transactionId)
     try {
       const outcome = await rpc.sendTransaction(step.signed)
+      onStep?.(id, 0, outcome.ok ? 'confirmed' : 'failed', step.transactionId)
       const done = store.move(id, owner, outcome.ok ? 'confirmed' : 'failed')
       if (done.ok && done.plan.status === 'confirmed') onConfirmed?.(done.plan, step.transactionId)
       return done.ok ? { ok: true, plan: done.plan, transactionId: step.transactionId } : done
@@ -166,6 +204,7 @@ export function createPlanSender({ store, vault, rpc, onConfirmed, now = Date.no
       if (!(error instanceof NearRpcError)) throw error
       // NEAR turned the transaction away, so it never ran and spent nothing.
       if (error.reason === 'rejected') {
+        onStep?.(id, 0, 'failed', step.transactionId)
         const failed = store.move(id, owner, 'failed')
         return failed.ok ? { ok: true, plan: failed.plan, transactionId: step.transactionId } : failed
       }
@@ -175,9 +214,494 @@ export function createPlanSender({ store, vault, rpc, onConfirmed, now = Date.no
     }
   }
 
+  /** The highest nonce signed on each EVM chain for each address, so two plans never share one. */
+  const evmNonces = new Map<string, bigint>()
+
+  /** One step of a payment, read and checked: what it needs from its chain before signing, and how it's sent. */
+  interface PaymentStep {
+    live: LiveInputs
+    keyId: string
+    nonce: bigint
+    /** For a NEAR step: the block its transaction was built on, which bounds how long it stays valid. */
+    blockHeight?: bigint
+    /** Sends the signed step and waits for its chain's answer: true once it ran, false if it failed, null if no answer yet. */
+    send: (signed: Uint8Array, transactionId: string) => Promise<boolean | null>
+  }
+
+  /** Reads a payment's step: checks its chain, balance and fees against its own limit, and takes its nonce. */
+  async function paymentStep(step: PlanCore['steps'][number], maxFee: bigint, nonceAfter: Map<string, bigint>): Promise<PaymentStep | SendFailure> {
+    if (step.chain === 'evm') {
+      const transfer = evmTransferOfStep(step)
+      const chain = evmChainById(transfer.chainId)
+      if (!chain || !evmRpc) return 'chain-unavailable'
+      const chainRpc = evmRpc(chain)
+      const keyId = `evm ${chain.chainId} ${transfer.from.toLowerCase()}`
+      const fees = await evmSendFees(chainRpc, transfer.gas)
+      const unfit = await evmSendFits(chainRpc, transfer, fees.ceiling, maxFee)
+      if (unfit) return unfit
+      const pending = await chainRpc.nonce(transfer.from)
+      const lastSigned = evmNonces.get(keyId)
+      if (lastSigned !== undefined && lastSigned >= pending) return 'earlier-pending'
+      const before = nonceAfter.get(keyId)
+      const nonce = before !== undefined && before >= pending ? before + 1n : pending
+      nonceAfter.set(keyId, nonce)
+      return {
+        live: { nonce: nonce.toString(), maxFeePerGas: fees.maxFeePerGas.toString(), maxPriorityFeePerGas: fees.maxPriorityFeePerGas.toString() },
+        keyId,
+        nonce,
+        send: async (signed, hash) => {
+          try {
+            await chainRpc.send(signed)
+          } catch (error) {
+            if (error instanceof EvmRpcError && error.reason === 'rejected') return false
+            if (error instanceof EvmRpcError) return null
+            throw error
+          }
+          for (const started = now(); now() - started < EVM_RECEIPT_WAIT_MS; ) {
+            const receipt = await chainRpc.receipt(hash).catch(() => null)
+            if (receipt) return receipt.ok
+            await wait(EVM_RECEIPT_POLL_MS)
+          }
+          return null
+        },
+      }
+    }
+    if (step.chain === 'solana') {
+      const transfer = solanaTransferOfStep(step)
+      if (!solanaRpc) return 'chain-unavailable'
+      const ready = await solanaReady(transfer, maxFee)
+      if (typeof ready === 'string') return ready
+      return { live: ready.live, keyId: ready.keyId, nonce: 0n, send: (signed, signature) => solanaSendAndWait(signed, signature, ready.lastValidBlockHeight, ready.keyId) }
+    }
+    const { signerId, calls } = callsOfStep(step)
+    const publicKey = step.fields.publicKey as string
+    const keyId = `${signerId} ${publicKey}`
+    if ((await rpc.chainId()) !== NEAR_NETWORK) return 'wrong-network'
+    const unfit = await nearCallsFit(rpc, signerId, callsDeposit(calls), callsGas(calls), calls.length, maxFee)
+    if (unfit) return unfit
+    const key = await rpc.viewAccessKey(signerId, publicKey)
+    if (!key) return 'insufficient-funds'
+    if (unanswered.has(keyId)) return 'earlier-pending'
+    const lastSigned = signedNonces.get(keyId) ?? 0n
+    const before = nonceAfter.get(keyId) ?? 0n
+    const floor = [key.nonce, lastSigned, before].reduce((top, value) => (value > top ? value : top), 0n)
+    const nonce = floor + 1n
+    nonceAfter.set(keyId, nonce)
+    return {
+      live: { nonce: nonce.toString(), blockHash: bytesToHex(key.blockHash) },
+      keyId,
+      nonce,
+      blockHeight: key.blockHeight,
+      send: async (signed) => {
+        try {
+          return (await rpc.sendTransaction(signed)).ok
+        } catch (error) {
+          if (error instanceof NearRpcError && error.reason === 'rejected') return false
+          if (error instanceof NearRpcError) {
+            unanswered.set(keyId, { nonce, blockHeight: key.blockHeight })
+            return null
+          }
+          throw error
+        }
+      },
+    }
+  }
+
+  /**
+   * A payment's steps, each on its own chain: every one is checked against its own fee
+   * limit, and given its nonce, before any is signed; the signer signs them together under
+   * the approved hash; then they're sent in order, each waiting for its chain's answer. A
+   * step that fails stops the rest, which are never sent. A step with no answer yet leaves
+   * the plan submitted, with the rest unsent.
+   */
+  async function runPayment(plan: PlanView, owner: string, maxFees: readonly bigint[]): Promise<SendResult> {
+    const id = plan.id
+    const steps = plan.core.steps
+    if (maxFees.length !== steps.length) return { ok: false, reason: 'bad-request', status: plan.status }
+    if ((plan.core.swaps ?? []).some((leg) => !(now() < Date.parse(leg.deadline) - SWAP_SEND_MARGIN_MS))) return { ok: false, reason: 'cannot-move', status: plan.status }
+    const read: PaymentStep[] = []
+    const nonceAfter = new Map<string, bigint>()
+    try {
+      for (const [index, step] of steps.entries()) {
+        const one = await paymentStep(step, maxFees[index] as bigint, nonceAfter)
+        if (typeof one === 'string') return { ok: false, reason: one, status: plan.status }
+        read.push(one)
+      }
+    } catch (error) {
+      if (error instanceof EvmRpcError || error instanceof NearRpcError || error instanceof SolanaRpcError) return { ok: false, reason: 'chain-unavailable', status: plan.status }
+      if (error instanceof EvmDecodeError || error instanceof NearDecodeError || error instanceof SolanaDecodeError) return { ok: false, reason: 'bad-request', status: plan.status }
+      throw error
+    }
+
+    const signing = store.move(id, owner, 'signing')
+    if (!signing.ok) return signing
+    const signed = await vault.sign(plan.core, plan.hash, read.map((step) => step.live))
+    if (!signed.ok) {
+      const reason = signed.reason === 'locked' || signed.reason === 'plan-mismatch' || signed.reason === 'refused' || signed.reason === 'signer-stopped' ? signed.reason : 'refused'
+      return fail(id, owner, reason)
+    }
+    if (signed.signed.length !== steps.length) return fail(id, owner, 'refused')
+    for (const step of read) {
+      if (step.keyId.startsWith('evm ')) evmNonces.set(step.keyId, step.nonce)
+      // Solana has no nonces: a transaction names a recent blockhash instead.
+      else if (!step.keyId.startsWith('solana ')) signedNonces.set(step.keyId, step.nonce)
+    }
+
+    const submitted = store.move(id, owner, 'submitted')
+    if (!submitted.ok) return submitted
+    // A payout, last, waits for the legs before it: it's kept signed, and sent once they've landed.
+    const payoutLast = plan.core.swaps?.at(-1)?.role === 'payout' && read.length > 1
+    const sendNow = payoutLast ? read.length - 1 : read.length
+    let last = ''
+    for (const [index, step] of read.slice(0, sendNow).entries()) {
+      const { signed: bytes, transactionId } = signed.signed[index] as SignedStep
+      last = transactionId
+      onStep?.(id, index, 'sent', transactionId)
+      const ran = await step.send(bytes, transactionId)
+      if (ran === null) return { ok: true, plan: submitted.plan, transactionId }
+      onStep?.(id, index, ran ? 'confirmed' : 'failed', transactionId)
+      if (!ran) {
+        const failed = store.move(id, owner, 'failed')
+        return failed.ok ? { ok: true, plan: failed.plan, transactionId } : failed
+      }
+      onStepConfirmed?.(plan, index, transactionId)
+    }
+    if (payoutLast) {
+      const step = read[sendNow] as PaymentStep
+      const { signed: bytes, transactionId } = signed.signed[sendNow] as SignedStep
+      const swaps = plan.core.swaps ?? []
+      const kept: Held = {
+        owner,
+        keyId: step.keyId,
+        nonce: step.nonce,
+        blockHeight: step.blockHeight ?? 0n,
+        step: sendNow,
+        swap: swaps.length - 1,
+        legIds: swaps.slice(0, -1).map((_, leg) => `${id}#${leg}`),
+        payout: swaps.at(-1) as PlanSwap,
+        bytes,
+        transactionId,
+      }
+      hold(id, kept)
+      return { ok: true, plan: submitted.plan, transactionId: last }
+    }
+    return finish(plan, owner, last)
+  }
+
+  /** Moves a sent payment to confirmed and says so. */
+  const finish = (plan: PlanView, owner: string, transactionId: string): SendResult => {
+    const done = store.move(plan.id, owner, 'confirmed')
+    if (done.ok) onConfirmed?.(done.plan, transactionId)
+    return done.ok ? { ok: true, plan: done.plan, transactionId } : done
+  }
+
+  /**
+   * A payout signed with its payment and kept until its legs land: its transaction and the
+   * key that signed it, which legs it waits for, and its terms. `owner` is null for one picked
+   * up after a restart, whose plan is gone with the run that made it.
+   */
+  interface Held {
+    owner: string | null
+    keyId: string
+    nonce: bigint
+    blockHeight: bigint
+    step: number
+    swap: number
+    legIds: string[]
+    payout: PlanSwap
+    bytes: Uint8Array
+    transactionId: string
+  }
+  const held = new Map<string, Held>()
+
+  /** Keeps a payout, in the journal too, and sends nothing else from its key meanwhile: a later nonce landing first would void it. */
+  const hold = (id: string, kept: Held) => {
+    held.set(id, kept)
+    unanswered.set(kept.keyId, { nonce: kept.nonce, blockHeight: kept.blockHeight })
+    payouts?.put({
+      planId: id,
+      signed: bytesToHex(kept.bytes),
+      transactionId: kept.transactionId,
+      keyId: kept.keyId,
+      nonce: kept.nonce.toString(),
+      blockHeight: kept.blockHeight.toString(),
+      step: kept.step,
+      swap: kept.swap,
+      legIds: kept.legIds,
+      payout: kept.payout,
+      heldAt: now(),
+    })
+  }
+
+  const unhold = (id: string, kept: Held) => {
+    held.delete(id)
+    unanswered.delete(kept.keyId)
+    payouts?.remove(id)
+  }
+
+  /** Sends a signed NEAR transaction: true once it ran, false if it failed, null with no answer, when it may still land. */
+  async function sendNear(kept: Held): Promise<boolean | null> {
+    try {
+      return (await rpc.sendTransaction(kept.bytes)).ok
+    } catch (error) {
+      if (error instanceof NearRpcError && error.reason === 'rejected') return false
+      if (error instanceof NearRpcError) {
+        unanswered.set(kept.keyId, { nonce: kept.nonce, blockHeight: kept.blockHeight })
+        return null
+      }
+      throw error
+    }
+  }
+
+  /**
+   * An EVM plan's one transfer, the same way: checks the chain, the balance and today's fees
+   * against what was approved while the plan is still approved, reads the next nonce, has
+   * the signer sign it, sends it, and waits a while for its receipt. A send with no answer,
+   * or no receipt yet, stays submitted for the chain to decide.
+   */
+  async function runEvm(plan: PlanView, owner: string, maxFee: bigint): Promise<SendResult> {
+    const id = plan.id
+    const [step, ...rest] = plan.core.steps
+    let transfer: ReturnType<typeof evmTransferOfStep>
+    try {
+      if (!step || rest.length > 0) throw new EvmDecodeError('one step')
+      transfer = evmTransferOfStep(step)
+    } catch (error) {
+      if (error instanceof EvmDecodeError) return { ok: false, reason: 'bad-request', status: plan.status }
+      throw error
+    }
+    const chain = evmChainById(transfer.chainId)
+    if (!chain || !evmRpc) return { ok: false, reason: 'chain-unavailable', status: plan.status }
+    const chainRpc = evmRpc(chain)
+    const keyId = `evm ${chain.chainId} ${transfer.from.toLowerCase()}`
+    let live: { nonce: string; maxFeePerGas: string; maxPriorityFeePerGas: string }
+    try {
+      const fees = await evmSendFees(chainRpc, transfer.gas)
+      const unfit = await evmSendFits(chainRpc, transfer, fees.ceiling, maxFee)
+      if (unfit) return { ok: false, reason: unfit, status: plan.status }
+      const pending = await chainRpc.nonce(transfer.from)
+      const lastSigned = evmNonces.get(keyId)
+      // A transaction signed here that the chain doesn't show yet: a new one would wait behind it, or be stuck if it never lands.
+      if (lastSigned !== undefined && lastSigned >= pending) return { ok: false, reason: 'earlier-pending', status: plan.status }
+      live = { nonce: pending.toString(), maxFeePerGas: fees.maxFeePerGas.toString(), maxPriorityFeePerGas: fees.maxPriorityFeePerGas.toString() }
+    } catch (error) {
+      if (error instanceof EvmRpcError) return { ok: false, reason: 'chain-unavailable', status: plan.status }
+      throw error
+    }
+
+    const signing = store.move(id, owner, 'signing')
+    if (!signing.ok) return signing
+    const signed = await vault.sign(plan.core, plan.hash, [live])
+    if (!signed.ok) {
+      const reason = signed.reason === 'locked' || signed.reason === 'plan-mismatch' || signed.reason === 'refused' || signed.reason === 'signer-stopped' ? signed.reason : 'refused'
+      return fail(id, owner, reason)
+    }
+    const [signedStep] = signed.signed
+    if (!signedStep || signed.signed.length !== 1) return fail(id, owner, 'refused')
+    evmNonces.set(keyId, BigInt(live.nonce))
+
+    const submitted = store.move(id, owner, 'submitted')
+    if (!submitted.ok) return submitted
+    const hash = signedStep.transactionId
+    onStep?.(id, 0, 'sent', hash)
+    try {
+      await chainRpc.send(signedStep.signed)
+    } catch (error) {
+      if (!(error instanceof EvmRpcError)) throw error
+      if (error.reason === 'rejected') {
+        onStep?.(id, 0, 'failed', hash)
+        // Turned away before it ran: it spent nothing, and its nonce is free again.
+        evmNonces.delete(keyId)
+        const failed = store.move(id, owner, 'failed')
+        return failed.ok ? { ok: true, plan: failed.plan, transactionId: hash } : failed
+      }
+      return { ok: true, plan: submitted.plan, transactionId: hash }
+    }
+    for (const started = now(); now() - started < EVM_RECEIPT_WAIT_MS; ) {
+      const receipt = await chainRpc.receipt(hash).catch(() => null)
+      if (receipt) {
+        onStep?.(id, 0, receipt.ok ? 'confirmed' : 'failed', hash)
+        const done = store.move(id, owner, receipt.ok ? 'confirmed' : 'failed')
+        if (done.ok && done.plan.status === 'confirmed') onConfirmed?.(done.plan, hash)
+        return done.ok ? { ok: true, plan: done.plan, transactionId: hash } : done
+      }
+      await wait(EVM_RECEIPT_POLL_MS)
+    }
+    return { ok: true, plan: submitted.plan, transactionId: hash }
+  }
+
+  /** Solana sends with no answer yet, by address: the transaction, and the last block height it could land in. */
+  const solanaPending = new Map<string, { signature: string; lastValidBlockHeight: bigint }>()
+
+  /**
+   * What a Solana transfer needs before it's signed, checked against what was approved: the
+   * balance still covers it and its fees, no earlier send from the address may still land,
+   * and a recent blockhash, with the last block height a transaction naming it can land in.
+   */
+  async function solanaReady(transfer: SolanaTransfer, maxFee: bigint): Promise<{ live: LiveInputs; keyId: string; lastValidBlockHeight: bigint } | SendFailure> {
+    const chainRpc = solanaRpc as SolanaRpc
+    const keyId = `solana ${transfer.from}`
+    const fee = await solanaFeeNow(chainRpc, transfer)
+    const unfit = await solanaSendFits(chainRpc, transfer, fee, maxFee)
+    if (unfit) return unfit
+    const earlier = solanaPending.get(keyId)
+    if (earlier) {
+      // Settled once the chain shows it, or once its blockhash is too old for it ever to land.
+      const settled = (await chainRpc.status(earlier.signature)) !== null || (await chainRpc.blockHeight()) > earlier.lastValidBlockHeight
+      if (!settled) return 'earlier-pending'
+      solanaPending.delete(keyId)
+    }
+    const { blockhash, lastValidBlockHeight } = await chainRpc.latestBlockhash()
+    return { live: { recentBlockhash: blockhash }, keyId, lastValidBlockHeight }
+  }
+
+  /**
+   * Sends a signed Solana transaction and waits for the chain: true once it ran, false if it
+   * failed or can never land (its blockhash expired unseen, so it spent nothing), null if
+   * there's no answer yet, which holds the address until there is.
+   */
+  async function solanaSendAndWait(signed: Uint8Array, signature: string, lastValidBlockHeight: bigint, keyId: string): Promise<boolean | null> {
+    const chainRpc = solanaRpc as SolanaRpc
+    try {
+      await chainRpc.send(signed)
+    } catch (error) {
+      if (!(error instanceof SolanaRpcError)) throw error
+      // Turned away before it ran: it spent nothing.
+      if (error.reason === 'rejected') return false
+      // No answer: it may have reached the chain all the same, so look for it.
+    }
+    for (const started = now(); now() - started < SOLANA_CONFIRM_WAIT_MS; ) {
+      const status = await chainRpc.status(signature).catch(() => null)
+      if (status) return status.ok
+      const height = await chainRpc.blockHeight().catch(() => null)
+      if (height !== null && height > lastValidBlockHeight) {
+        // One last look: it may have landed in the final valid block.
+        const last = await chainRpc.status(signature).catch(() => null)
+        if (last) return last.ok
+        return false
+      }
+      await wait(SOLANA_POLL_MS)
+    }
+    solanaPending.set(keyId, { signature, lastValidBlockHeight })
+    return null
+  }
+
+  /**
+   * A plan whose one step sends on Solana, from a send or a swap the wallet pays there:
+   * checks the transfer still fits against what was approved while the plan is still
+   * approved, takes a recent blockhash, has the signer sign it, sends it, and waits for the
+   * chain. A send with no answer yet stays submitted for the chain to decide.
+   */
+  async function runSolana(plan: PlanView, owner: string, maxFee: bigint): Promise<SendResult> {
+    const id = plan.id
+    const [step, ...rest] = plan.core.steps
+    let transfer: SolanaTransfer
+    try {
+      if (!step || rest.length > 0) throw new SolanaDecodeError('one step')
+      transfer = solanaTransferOfStep(step)
+    } catch (error) {
+      if (error instanceof SolanaDecodeError) return { ok: false, reason: 'bad-request', status: plan.status }
+      throw error
+    }
+    if (!solanaRpc) return { ok: false, reason: 'chain-unavailable', status: plan.status }
+    let ready: Awaited<ReturnType<typeof solanaReady>>
+    try {
+      ready = await solanaReady(transfer, maxFee)
+    } catch (error) {
+      if (error instanceof SolanaRpcError) return { ok: false, reason: 'chain-unavailable', status: plan.status }
+      throw error
+    }
+    if (typeof ready === 'string') return { ok: false, reason: ready, status: plan.status }
+
+    const signing = store.move(id, owner, 'signing')
+    if (!signing.ok) return signing
+    const signed = await vault.sign(plan.core, plan.hash, [ready.live])
+    if (!signed.ok) {
+      const reason = signed.reason === 'locked' || signed.reason === 'plan-mismatch' || signed.reason === 'refused' || signed.reason === 'signer-stopped' ? signed.reason : 'refused'
+      return fail(id, owner, reason)
+    }
+    const [signedStep] = signed.signed
+    if (!signedStep || signed.signed.length !== 1) return fail(id, owner, 'refused')
+
+    const submitted = store.move(id, owner, 'submitted')
+    if (!submitted.ok) return submitted
+    const signature = signedStep.transactionId
+    onStep?.(id, 0, 'sent', signature)
+    const ran = await solanaSendAndWait(signedStep.signed, signature, ready.lastValidBlockHeight, ready.keyId)
+    if (ran === null) return { ok: true, plan: submitted.plan, transactionId: signature }
+    onStep?.(id, 0, ran ? 'confirmed' : 'failed', signature)
+    const done = store.move(id, owner, ran ? 'confirmed' : 'failed')
+    if (done.ok && done.plan.status === 'confirmed') onConfirmed?.(done.plan, signature)
+    return done.ok ? { ok: true, plan: done.plan, transactionId: signature } : done
+  }
+
   return {
-    /** Sends the plan, if the fees can't cost more than `maxFee`, the most the person was shown when they approved, in yoctoNEAR. */
-    async send(id: string, owner: string, maxFee: bigint): Promise<SendResult> {
+    /** Whether a payment's payout is signed and waiting for its legs. */
+    holds: (id: string): boolean => held.has(id),
+
+    /** The legs each held payout waits for, by plan id, so they can be watched with or without the plan. */
+    heldLegs: (): ReadonlyMap<string, readonly string[]> => new Map([...held].map(([id, kept]) => [id, kept.legIds])),
+
+    /** Picks up the payouts a restart left held, from the journal, so they're still sent once their legs land. */
+    resumePayouts(): void {
+      for (const entry of payouts?.list() ?? []) {
+        if (held.has(entry.planId)) continue
+        const kept: Held = {
+          owner: null,
+          keyId: entry.keyId,
+          nonce: BigInt(entry.nonce),
+          blockHeight: BigInt(entry.blockHeight),
+          step: entry.step,
+          swap: entry.swap,
+          legIds: entry.legIds,
+          payout: entry.payout,
+          bytes: hexToBytes(entry.signed),
+          transactionId: entry.transactionId,
+        }
+        held.set(entry.planId, kept)
+        unanswered.set(kept.keyId, { nonce: kept.nonce, blockHeight: kept.blockHeight })
+      }
+    },
+
+    /**
+     * Sends a payment's kept payout, once its legs have landed in the Intents balance, and
+     * moves its plan to confirmed when NEAR runs it, or failed. `ran` is null with no answer
+     * yet, when it may still land. Gives the payout's terms, so it can be followed to the
+     * recipient whether or not its plan is still here.
+     */
+    async releasePayout(id: string): Promise<{ ran: boolean | null; transactionId: string; payout: PlanSwap; swap: number; plan: PlanView | null } | null> {
+      const kept = held.get(id)
+      if (!kept) return null
+      unhold(id, kept)
+      onStep?.(id, kept.step, 'sent', kept.transactionId)
+      const ran = await sendNear(kept)
+      if (ran !== null) onStep?.(id, kept.step, ran ? 'confirmed' : 'failed', kept.transactionId)
+      const plan = kept.owner ? store.get(id, kept.owner) : null
+      let after = plan
+      if (plan && kept.owner && ran !== null) {
+        const moved = store.move(id, kept.owner, ran ? 'confirmed' : 'failed')
+        if (moved.ok) after = moved.plan
+        if (moved.ok && ran) onConfirmed?.(moved.plan, kept.transactionId)
+      }
+      return { ran, transactionId: kept.transactionId, payout: kept.payout, swap: kept.swap, plan: after }
+    },
+
+    /**
+     * Throws away a payment's kept payout, never sent, once a leg failed or was refunded:
+     * what did land stays in the Intents balance. Its plan, if still here, moves to failed.
+     */
+    dropPayout(id: string): void {
+      const kept = held.get(id)
+      if (!kept) return
+      unhold(id, kept)
+      if (kept.owner) store.move(id, kept.owner, 'failed')
+    },
+
+    /**
+     * Sends the plan, if the fees can't cost more than `maxFee`, the most the person was shown
+     * when they approved: in yoctoNEAR for NEAR, in the chain's wei for an EVM chain.
+     */
+    async send(id: string, owner: string, maxFee: bigint | readonly bigint[]): Promise<SendResult> {
       if (sending) return { ok: false, reason: 'busy' }
       sending = true
       try {

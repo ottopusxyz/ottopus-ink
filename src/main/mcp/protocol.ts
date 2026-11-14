@@ -54,10 +54,10 @@ const TOOLS = [
   {
     name: 'create_plan',
     description:
-      'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself. A swap with chain intents pays from the NEAR Intents balance; to take a token out of that balance to a chain, swap it to the same token with to_chain set, such as USDC from intents to USDC on base.',
+      'Proposes a send, swap or stake for the person to review and sign. You cannot sign it, and it moves nothing by itself. A send works on NEAR, on EVM chains such as base, ethereum, arbitrum, optimism, polygon, bsc and avalanche, and on solana, for the chain’s own coin or a token by symbol or contract (on Solana, a token NEAR Intents lists, such as USDC or USDT, by symbol or mint). A swap can pay from the wallet on those EVM chains and on Solana too. A swap with chain intents pays from the NEAR Intents balance; to take a token out of that balance to a chain, swap it to the same token with to_chain set, such as USDC from intents to USDC on base. A pay delivers exactly amount of asset on to_chain to the address in to (or the person’s own there): Ink pays it from what the wallet holds of that token, or of any dollar stablecoin for one, at its EVM and Solana addresses and in the NEAR Intents balance, in up to three parts, for one approval. Use pay when no one balance covers a payment.',
     inputSchema: objectSchema(
       {
-        outcome: { type: 'string', enum: ['send', 'swap', 'stake'] },
+        outcome: { type: 'string', enum: ['send', 'swap', 'stake', 'pay'] },
         asset: text,
         chain: text,
         amount: text,
@@ -135,12 +135,33 @@ const STATUS_WORDS: Record<PlanStatus, string> = {
 
 /** Where a swap stands once its deposit landed, for get_plan. Main wrote every value from NEAR Intents' report. */
 const SWAP_WORDS: Record<ChatSwap['stage'], (swap: ChatSwap) => string> = {
-  deposited: () => 'NEAR ran the deposit; NEAR Intents is picking it up.',
+  deposited: () => 'The deposit went through; NEAR Intents is picking it up and hasn’t paid it out yet.',
   swapping: () => 'NEAR Intents is swapping it now.',
-  done: (swap) => `NEAR Intents finished the swap${swap.got ? ` and paid out ${swap.got}` : ''}.`,
-  refunded: (swap) => `NEAR Intents couldn’t swap it and refunded ${swap.refunded ?? 'it'} to the NEAR account.`,
-  failed: () => 'NEAR Intents couldn’t finish the swap; any refund goes to the NEAR account.',
+  done: (swap) => `NEAR Intents finished${swap.got ? ` and paid out ${swap.got}` : ''}.`,
+  refunded: (swap) => `NEAR Intents couldn’t swap it and refunded ${swap.refunded ?? 'it'} where it came from.`,
+  failed: () => 'NEAR Intents couldn’t finish it; any refund goes back where it came from.',
   unknown: () => 'Ink stopped checking; NEAR Intents still finishes or refunds it on its own.',
+}
+
+/** Where a plan is along its way, for get_plan: the step under way while its journey runs, else its swap's or payout's word. */
+function planProgress(plan: PlanSummary): string {
+  if (plan.journey && !plan.journey.done) {
+    const now = payoutPending(plan)
+    if (now) return now
+  }
+  return plan.swap ? ` ${SWAP_WORDS[plan.swap.stage](plan.swap)}` : payoutPending(plan)
+}
+
+/**
+ * A swap or payment whose deposit ran but whose payout Ink hasn't heard of yet isn't
+ * finished: NEAR Intents still has to pay it out. Said so the agent doesn't report it done.
+ */
+function payoutPending(plan: PlanSummary): string {
+  // With its journey, the step under way says exactly where it is.
+  const now = plan.journey && !plan.journey.done ? (plan.journey.steps.find((step) => step.state === 'failed') ?? plan.journey.steps.find((step) => step.state === 'active')) : undefined
+  if (now) return ` Now: ${now.label}${now.detail ? `, ${now.detail}` : ''}. It isn’t finished until the last step is done; Ink tells you when it lands.`
+  if (plan.status !== 'confirmed' || (plan.intent.outcome !== 'swap' && plan.intent.outcome !== 'pay')) return ''
+  return ' The deposit went through, but NEAR Intents hasn’t paid it out yet, so it isn’t finished: tell the person it’s on its way, and Ink tells you when it lands.'
 }
 
 /** Why a plan tool said no, worded for the agent to act on. */
@@ -515,7 +536,7 @@ const MAX_PLAN_FIELD_CHARS = 256
 const PLAN_FIELD = /^[!-~]+$/
 
 const PLAN_FIELDS = ['outcome', 'asset', 'chain', 'amount', 'to', 'to_asset', 'to_chain']
-const PLAN_OUTCOMES = ['send', 'swap', 'stake'] as const
+const PLAN_OUTCOMES = ['send', 'swap', 'stake', 'pay'] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -590,7 +611,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         const intent = intentFrom(params.arguments)
         if (!intent) return result(toolAnswer(PLAN_SCHEMA_HELP, true))
         if (!plans) return result(NOT_BUILT.create_plan ?? NOT_SET_UP)
-        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is made: ${plan.summary}. If Ink can send it (so far, NEAR sent on NEAR, and NEAR swapped through NEAR Intents to the person’s own address, or to one they typed on an EVM chain, Solana or NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.`)
+        const made = await planAnswer(() => plans.create(intent), null, (plan) => `Plan ${plan.id} is made: ${plan.summary}. If Ink can send it (a send on NEAR, an EVM chain or Solana; a swap or payment through NEAR Intents paid from NEAR, an EVM chain, Solana or the Intents balance, to the person’s own address or one they typed on an EVM chain, Solana or NEAR), Ink shows it to the person in its review window, and nothing is signed unless they approve it there. Anything else stays a draft. Call get_plan to see what became of it.`)
         if (made.plan) onPlan?.(chatPlanOf(made.plan))
         return result(made.answer)
       }
@@ -599,7 +620,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         if (!id) return result(toolAnswer('plan_id must be the id create_plan gave.', true))
         const answered =
           params.name === 'get_plan'
-            ? await planAnswer(() => plans.get(id), id, (plan) => `Plan ${plan.id} is ${STATUS_WORDS[plan.status]}: ${plan.summary}.${plan.swap ? ` ${SWAP_WORDS[plan.swap.stage](plan.swap)}` : ''}`)
+            ? await planAnswer(() => plans.get(id), id, (plan) => `Plan ${plan.id} is ${STATUS_WORDS[plan.status]}: ${plan.summary}.${planProgress(plan)}`)
             : await planAnswer(() => plans.cancel(id), id, (plan) => `Plan ${plan.id} is cancelled. Nothing was signed.`)
         return result(answered.answer)
       }

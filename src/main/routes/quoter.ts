@@ -1,3 +1,4 @@
+import { EVM_CHAINS, evmChainOfOneClick } from '../../shared/evm/chains'
 import type { Account } from '../../shared/accounts'
 import type { PortfolioResult } from '../../shared/portfolio'
 import { formatUnits, parseUnits } from '../../shared/token-text'
@@ -77,7 +78,7 @@ function failureOf(route: Extract<Route, { kind: 'none' }>): QuoteOutcome {
 }
 
 /** What each source holds of each token, from the last portfolio read: `wallet:<asset id>` and `intents:<asset id>`. */
-export function holdingsOf(portfolio: PortfolioResult): Map<string, bigint> {
+export function holdingsOf(portfolio: PortfolioResult, listed: readonly OneClickToken[] = []): Map<string, bigint> {
   const held = new Map<string, bigint>()
   if (!portfolio.ok) return held
   const nearAvailable = parseUnits(portfolio.near.available, 24)
@@ -87,6 +88,18 @@ export function holdingsOf(portfolio: PortfolioResult): Map<string, bigint> {
     if (raw === null || !token.contract) continue
     if (token.group === 'near') held.set(`wallet:nep141:${token.contract}`, raw)
     if (token.group === 'intents') held.set(`intents:${token.contract}`, raw)
+    if (token.group === 'evm') {
+      // The same token as 1Click lists it on that chain, by contract, or the chain's own coin.
+      const code = EVM_CHAINS.find((chain) => chain.zerion === token.network)?.oneClick
+      const contract = token.contract?.toLowerCase() ?? null
+      const asset = code ? listed.find((each) => each.blockchain === code && (each.contract?.toLowerCase() ?? null) === contract) : undefined
+      if (asset) held.set(`wallet:${asset.assetId}`, raw)
+    }
+    // A Solana token as 1Click lists it there, by its mint, which is case-sensitive.
+    if (token.group === 'solana') {
+      const asset = listed.find((each) => each.blockchain === 'sol' && each.contract === token.contract)
+      if (asset) held.set(`wallet:${asset.assetId}`, raw)
+    }
   }
   return held
 }
@@ -105,7 +118,7 @@ export function createQuoter({ accounts, portfolio, tokens, quote, nearFee, now 
     const listed = await tokens().catch(() => null)
     if (!near || !listed) return { ok: false, reason: 'tokens-unavailable' }
     const read = await portfolio().catch((): PortfolioResult => ({ ok: false, reason: 'unavailable' }))
-    const route = pickRoute(ask, listed, holdingsOf(read))
+    const route = pickRoute(ask, listed, holdingsOf(read, listed))
     if (route.kind === 'none') return failureOf(route)
 
     if (route.kind === 'direct') {
@@ -129,7 +142,8 @@ export function createQuoter({ accounts, portfolio, tokens, quote, nearFee, now 
         destinationAsset: route.to.assetId,
         amount: leg.amount,
         depositType: leg.source === 'wallet' ? 'ORIGIN_CHAIN' : 'INTENTS',
-        refundTo: near,
+        // Paid on an EVM chain, a refund goes back to the wallet's address there; otherwise to its NEAR account.
+        refundTo: leg.source === 'wallet' && evmChainOfOneClick(leg.from.blockchain) ? (own.accounts.find((account) => account.chain === 'evm')?.address ?? near) : near,
         recipient: paidTo === 'own-address' && ownAddress ? ownAddress : near,
         recipientType: paidTo === 'own-address' ? 'DESTINATION_CHAIN' : 'INTENTS',
         dry: true,

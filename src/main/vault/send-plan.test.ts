@@ -214,7 +214,7 @@ describe('sending an approved plan', () => {
     const { store, id, vault, sender } = await setup()
     expect((await sender.send(id, OWNER, MAX_FEE)).ok).toBe(true)
     expect((await sender.send(await approvedAnother(store), OWNER, MAX_FEE)).ok).toBe(true)
-    expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
+    expect(vault.sign.mock.calls.map(([, , live]) => (live[0] as { nonce?: string } | undefined)?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
   })
 
   describe('after a send that got no answer', () => {
@@ -248,7 +248,7 @@ describe('sending an approved plan', () => {
       const { vault, sender, key, next } = await unansweredFirst()
       key.nonce = NONCE + 1n
       expect(await sender.send(next, OWNER, MAX_FEE)).toMatchObject({ ok: true, plan: { status: 'confirmed' } })
-      expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
+      expect(vault.sign.mock.calls.map(([, , live]) => (live[0] as { nonce?: string } | undefined)?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
     })
 
     it('sends the next once the earlier one’s block is too old for it to land', async () => {
@@ -256,7 +256,7 @@ describe('sending an approved plan', () => {
       key.blockHeight = HEIGHT + TRANSACTION_VALIDITY_BLOCKS + 1n
       expect(await sender.send(next, OWNER, MAX_FEE)).toMatchObject({ ok: true })
       // Still above the earlier one's nonce, since nothing has been signed below it.
-      expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
+      expect(vault.sign.mock.calls.map(([, , live]) => (live[0] as { nonce?: string } | undefined)?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 2n).toString()])
     })
   })
 
@@ -275,7 +275,7 @@ describe('sending an approved plan', () => {
     // Something else, such as another wallet holding this phrase, sent with the key since.
     nonce = NONCE + 10n
     expect((await sender.send(await approvedAnother(store), OWNER, MAX_FEE)).ok).toBe(true)
-    expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 11n).toString()])
+    expect(vault.sign.mock.calls.map(([, , live]) => (live[0] as { nonce?: string } | undefined)?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 11n).toString()])
   })
 
   it('takes no nonce for a plan the signer refused', async () => {
@@ -285,7 +285,7 @@ describe('sending an approved plan', () => {
     expect((await sender.send(id, OWNER, MAX_FEE)).ok).toBe(false)
     refuse = false
     expect((await sender.send(await approvedAnother(store), OWNER, MAX_FEE)).ok).toBe(true)
-    expect(vault.sign.mock.calls.map(([, , live]) => live[0]?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 1n).toString()])
+    expect(vault.sign.mock.calls.map(([, , live]) => (live[0] as { nonce?: string } | undefined)?.nonce)).toEqual([(NONCE + 1n).toString(), (NONCE + 1n).toString()])
   })
 
   it('sends one plan at a time, so two can’t take the same nonce', async () => {

@@ -1,4 +1,4 @@
-import type { ChatSwap } from './ipc'
+import type { ChatSwap, PlanJourney } from './ipc'
 
 /** What a plan is and the states it moves through. Types and vocabulary only: main builds and hashes plans. */
 
@@ -28,7 +28,11 @@ export const PLAN_STATUSES = [
 
 export type PlanStatus = (typeof PLAN_STATUSES)[number]
 
-export type PlanOutcome = 'send' | 'swap' | 'stake'
+/**
+ * `pay` delivers exactly `amount` of `asset` on `toChain` to `to` (or the person's own
+ * address there), from whatever the wallet holds that can pay for it, in one or more legs.
+ */
+export type PlanOutcome = 'send' | 'swap' | 'stake' | 'pay'
 
 /** Who asked for the plan. Main sets this, never the caller. */
 export type PlanCreator = 'agent' | 'ui'
@@ -99,11 +103,23 @@ export interface PlanSwap {
   seconds: string
   /**
    * `intents` when the Intents balance pays, moving the token inside intents.near to the
-   * deposit address; a refund goes back there. Absent when the wallet pays in NEAR.
+   * deposit address; a refund goes back there. `evm` when the wallet pays on an EVM chain,
+   * sending the coin or token to the deposit address there; a refund goes back to the same
+   * address. Absent when the wallet pays in NEAR.
    */
-  payFrom?: 'intents'
-  /** The decimals of what's sent, for the Intents balance's tokens. Absent for NEAR's 24. */
+  payFrom?: 'intents' | 'evm' | 'solana'
+  /** The decimals of what's sent. Absent for NEAR's 24. */
   sendDecimals?: string
+  /** For `evm`: the chain id, and `native` or the token's contract, which the step must send. */
+  sendChainId?: string
+  sendToken?: string
+  /**
+   * `payout` for the last swap of a payment: the one transfer out of the Intents balance to
+   * the recipient, which Ink signs with the rest but sends only once the legs have landed.
+   */
+  role?: 'payout'
+  /** For a payout: how much of what it moves was in the Intents balance already, in its smallest unit. */
+  fromBalance?: string
 }
 
 /**
@@ -126,6 +142,11 @@ export interface PlanCore {
   steps: PlanStep[]
   /** A swap's terms, when the plan is one. Absent from every other plan. */
   swap?: PlanSwap
+  /**
+   * A payment's legs, when the plan is one: each a swap paying part of it to the same
+   * recipient, paid by one of the steps. Absent from every other plan.
+   */
+  swaps?: PlanSwap[]
 }
 
 export type PlanFailure =
@@ -159,6 +180,8 @@ export interface PlanSummary {
   recipient: PlanRecipient | null
   /** Where its swap stands, once a swap's deposit landed. */
   swap?: ChatSwap
+  /** Every step from review to the money landing, as main follows it. */
+  journey?: PlanJourney
 }
 
 export type PlanToolResult =

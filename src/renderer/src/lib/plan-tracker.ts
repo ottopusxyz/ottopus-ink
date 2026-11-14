@@ -36,6 +36,8 @@ const titled = (word: string) => word.slice(0, 1).toUpperCase() + word.slice(1)
  * comes from main's events: the status, the NEAR transaction and the swap's progress.
  */
 export function trackerSteps(plan: ChatPlan): TrackerStep[] {
+  // Main's journey, when it sent one, is every step as main follows them: drawn as it is.
+  if (plan.journey) return plan.journey.steps.map(({ label, icon, state, detail, link }) => ({ label, icon, state, detail, link }))
   return stepsOf(plan).map((step) => ({ ...step, icon: iconOf(step.label, plan) }))
 }
 
@@ -129,6 +131,8 @@ function swapSteps(plan: ChatPlan, from: TrackerStep['state']): Step[] {
  * chat says how it ended. A draft Ink can't send isn't on its way either.
  */
 export function isUnderWay(plan: ChatPlan): boolean {
+  // A journey is under way until its last step is done or one failed: a payment's payout can land well after it's confirmed.
+  if (plan.journey) return !plan.journey.done && !plan.journey.failed && plan.status !== 'draft'
   switch (plan.status) {
     case 'awaiting_review':
     case 'approved':
@@ -149,6 +153,6 @@ export function trackerSummary(plan: ChatPlan): string {
   if (failed) return failed.detail ?? failed.label
   const active = steps.find((s) => s.state === 'active')
   if (active) return active.detail ?? active.label
-  if (steps.every((s) => s.state === 'done')) return plan.outcome === 'swap' ? 'Done' : 'Sent'
+  if (steps.every((s) => s.state === 'done')) return plan.outcome === 'swap' || plan.outcome === 'pay' ? 'Done' : 'Sent'
   return steps[0]?.detail ?? 'Not started'
 }

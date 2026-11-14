@@ -61,3 +61,28 @@ describe('the plan tracker', () => {
     expect(trackerSteps(SEND).map((step) => step.icon.kind)).toEqual(['review', 'sign', 'chain'])
   })
 })
+
+describe('a plan with main’s journey', () => {
+  const journey = (states: ('pending' | 'active' | 'done' | 'failed')[]) => ({
+    steps: states.map((state, i) => ({ id: `s${i}`, label: `Step ${i}`, icon: { kind: 'review' as const }, state, detail: state === 'active' ? 'Going' : null, link: null })),
+    done: states.at(-1) === 'done',
+    failed: states.includes('failed'),
+  })
+  const pay = (states: ('pending' | 'active' | 'done' | 'failed')[], status: ChatPlan['status'] = 'confirmed'): ChatPlan => ({ id: 'p1', status, outcome: 'pay', asset: 'USDC', amount: '15', chain: null, to: 'x', toAsset: null, toChain: 'solana', journey: journey(states) })
+
+  it('draws the journey’s steps as main sent them', () => {
+    expect(trackerSteps(pay(['done', 'done', 'active', 'pending'])).map((step) => [step.label, step.state])).toEqual([
+      ['Step 0', 'done'],
+      ['Step 1', 'done'],
+      ['Step 2', 'active'],
+      ['Step 3', 'pending'],
+    ])
+    expect(trackerSummary(pay(['done', 'active', 'pending']))).toBe('Going')
+  })
+
+  it('stays under way after the plan is confirmed, until the last step is done or one failed', () => {
+    expect(isUnderWay(pay(['done', 'done', 'active']))).toBe(true)
+    expect(isUnderWay(pay(['done', 'done', 'done']))).toBe(false)
+    expect(isUnderWay(pay(['done', 'failed', 'pending'], 'failed'))).toBe(false)
+  })
+})

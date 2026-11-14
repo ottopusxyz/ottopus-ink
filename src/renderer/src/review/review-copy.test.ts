@@ -13,6 +13,10 @@ const STATE: ReviewState = {
     publicKey: 'ed25519:x',
     to: 'alice.near',
     toKind: 'named',
+    chain: 'NEAR',
+    feeAsset: 'NEAR',
+    chainMark: 'near',
+    explorer: { name: 'nearblocks.io', tx: 'https://nearblocks.io/txns/' },
     toWhy: 'typed',
     amount: '1',
     amountYocto: '1000000000000000000000000',
@@ -128,6 +132,8 @@ describe('while it sends', () => {
 
   it('names every kind of recipient account', () => {
     expect(ACCOUNT_KIND.named).toMatch(/named/)
-    expect(Object.keys(ACCOUNT_KIND)).toHaveLength(4)
+    expect(Object.keys(ACCOUNT_KIND)).toHaveLength(6)
+    expect(ACCOUNT_KIND.evm).toBe('An EVM address')
+    expect(ACCOUNT_KIND.solana).toBe('A Solana address')
   })
 })

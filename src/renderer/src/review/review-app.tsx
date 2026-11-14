@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import type { ReviewFailure, ReviewPlan, ReviewState, ReviewSwap } from '../../../shared/review'
+import type { ReviewFailure, ReviewLeg, ReviewPlan, ReviewState, ReviewSwap } from '../../../shared/review'
 import { Otto, type PoseName } from '@/components/brand/otto'
 import { InkHold, StepList } from '@/components/motion/loaders'
 import { ArrowRightIcon, CheckIcon, ClockIcon, ExternalIcon } from '@/components/shell/icons'
-import { Badge, Button, buttonClasses, Callout, ChainLogo, TokenLogo } from '@/components/ui'
+import { Badge, Button, buttonClasses, Callout, TokenLogo } from '@/components/ui'
+import { ChainMark } from '@/components/wallet/chain-mark'
 import { ACCOUNT_KIND, approveLabel, canApprove, failureText, groupAddress, outcomeOf, sendSteps, shortHash, timeLeft } from './review-copy'
 
 /** Refusals about the click itself, which the plan's own state doesn't show. */
@@ -100,7 +101,7 @@ export function ReviewApp() {
           <Otto pose={otto.pose} size={64} animated={otto.moving} />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="ink-eyebrow">Your agent asks to</span>
-            <h1 className="m-0 font-display text-[24px] font-bold tracking-[-0.02em]">{plan.swap ? `Swap ${plan.swap.send}` : `Send ${plan.amount} NEAR`}</h1>
+            <h1 className="m-0 font-display text-[24px] font-bold tracking-[-0.02em]">{plan.kind === 'pay' ? `Pay ${plan.amount} ${plan.asset}` : plan.swap ? `Swap ${plan.swap.send}` : `Send ${plan.amount} ${plan.asset}`}</h1>
           </div>
           {outcome ? null : (
             <div className="flex flex-none flex-col items-end gap-1.5">
@@ -121,13 +122,13 @@ export function ReviewApp() {
         <InkHold
           className="min-h-[420px] flex-1"
           title="Signing and sending…"
-          detail={plan.swap ? `${plan.swap.send} → about ${plan.swap.get} · ${plan.network}` : `${plan.amount} NEAR → ${plan.to} · ${plan.network}`}
+          detail={plan.swap ? `${plan.swap.send} → about ${plan.swap.get} · ${plan.network}` : `${plan.amount} ${plan.asset} → ${plan.to} · ${plan.network}`}
         >
           <div className="flex flex-col items-center gap-3">
             <div className="w-[230px] text-left">
               <StepList steps={sendSteps(state)} tone="dark" />
             </div>
-            <p className="m-0 text-[12px] text-[rgba(255,240,220,0.62)]">This window stays open until NEAR answers.</p>
+            <p className="m-0 text-[12px] text-[rgba(255,240,220,0.62)]">This window stays open until {plan.chain} answers.</p>
           </div>
         </InkHold>
       ) : state.status === 'confirmed' ? (
@@ -137,20 +138,25 @@ export function ReviewApp() {
             <span className="ink-status-dot" aria-hidden />
             Confirmed
           </Badge>
-          <h1 className="m-0 font-display text-[34px] font-bold">{plan.swap ? 'Deposit sent!' : 'Sent!'}</h1>
-          {plan.swap ? (
+          <h1 className="m-0 font-display text-[34px] font-bold">{plan.swap || plan.kind === 'pay' ? 'Deposit sent!' : 'Sent!'}</h1>
+          {plan.kind === 'pay' && plan.payChain ? (
             <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
-              NEAR ran the deposit. NEAR Intents swaps it for about <span className="selectable font-mono">{plan.swap.get}</span> {landsIn(plan.swap)}, usually within{' '}
+              {plan.chain} ran every part. NEAR Intents pays exactly <span className="selectable font-mono">{plan.amount} {plan.asset}</span> to{' '}
+              <span className="selectable font-mono">{plan.to}</span> on {plan.payChain.name}. Your chat shows when it lands.
+            </p>
+          ) : plan.swap ? (
+            <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
+              {plan.chain} ran the deposit. NEAR Intents swaps it for about <span className="selectable font-mono">{plan.swap.get}</span> {landsIn(plan.swap)}, usually within{' '}
               {plan.swap.seconds} seconds. Your chat shows when it lands.
             </p>
           ) : (
             <p className="m-0 text-[14px] text-[var(--ot-text-2)]">
-              NEAR ran the transaction. {plan.amount} NEAR is on its way to <span className="selectable font-mono">{plan.to}</span>.
+              {plan.chain} ran the transaction. {plan.amount} {plan.asset} is on its way to <span className="selectable font-mono">{plan.to}</span>.
             </p>
           )}
           {state.transactionId ? (
             <div className="ink-review-card ink-review-card--stk flex w-full items-center gap-2.5 text-left">
-              <ChainLogo chain="near" size="md" />
+              <ChainMark chain={{ mark: plan.chainMark, name: plan.chain }} size="md" />
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="ink-eyebrow">Transaction</span>
                 <span className="selectable font-mono text-[12.5px]" title={state.transactionId}>
@@ -159,11 +165,11 @@ export function ReviewApp() {
               </div>
               <a
                 className={buttonClasses({ variant: 'secondary', size: 'sm', className: 'gap-1.5' })}
-                href={`https://nearblocks.io/txns/${state.transactionId}`}
+                href={`${plan.explorer.tx}${state.transactionId}`}
                 target="_blank"
                 rel="noreferrer"
               >
-                nearblocks.io
+                {plan.explorer.name}
                 <ExternalIcon size={12} />
               </a>
             </div>
@@ -172,7 +178,7 @@ export function ReviewApp() {
       ) : (
         <>
         <div className="ink-review-network">
-          <ChainLogo chain="near" size="sm" />
+          <ChainMark chain={{ mark: plan.chainMark, name: plan.chain }} size="sm" />
           <span className="font-semibold">{plan.network}</span>
           <span className="flex-1" />
           <span className="text-[11.5px] text-[var(--ot-text-3)]">not simulated</span>
@@ -184,7 +190,7 @@ export function ReviewApp() {
         <Section label="To" card>
           <div className="flex items-center gap-3">
             <span className="ink-avatar" aria-hidden>
-              {plan.toKind === 'named' ? plan.to.slice(0, 1).toUpperCase() : '0x'}
+              {plan.toKind === 'named' ? plan.to.slice(0, 1).toUpperCase() : plan.toKind === 'solana' ? 'S' : '0x'}
             </span>
             <div className="flex min-w-0 flex-col gap-0.5">
               <Address value={plan.to} />
@@ -196,7 +202,7 @@ export function ReviewApp() {
               <CheckIcon size={12} />
               {plan.toWhy === 'typed' ? 'You typed this address in the chat' : 'Your own account'}
             </Badge>
-            {plan.toKind === 'named' ? null : <Badge>New if nothing was sent to it yet</Badge>}
+            {plan.toKind === 'implicit' || plan.toKind === 'eth-implicit' ? <Badge>New if nothing was sent to it yet</Badge> : null}
           </div>
           {plan.toWhy === 'typed' ? (
             <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">Check every character against the address you meant. Funds sent to the wrong account can’t be taken back.</p>
@@ -204,31 +210,49 @@ export function ReviewApp() {
         </Section>
         )}
 
+        {plan.legs && plan.payout ? <PayTerms legs={plan.legs} payout={plan.payout} to={plan.to} on={plan.payChain?.name ?? ''} /> : null}
         <Section label="Amount" card>
           <p className="selectable m-0 flex items-center gap-2.5">
-            <TokenLogo symbol={plan.asset} chain={plan.asset === 'NEAR' ? 'near' : null} size="lg" />
+            <TokenLogo symbol={plan.asset} chain={plan.payChain?.mark ?? plan.chainMark} size="lg" />
             <span className="font-display text-[32px] leading-none font-bold tracking-[-0.02em]">
               {plan.amount} {plan.asset}
             </span>
           </p>
           {plan.swap?.from === 'intents' ? <p className="m-0 text-[13px] font-semibold text-[var(--ot-text-2)]">From your NEAR Intents balance</p> : null}
-          <p className="m-0 text-[13px] text-[var(--ot-text-2)]">
+          {plan.kind === 'pay' && plan.payChain ? <p className="m-0 text-[13px] font-semibold text-[var(--ot-text-2)]">Exactly this, paid on {plan.payChain.name}</p> : null}
+          {plan.stepFees ? (
+            <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 border-t border-dashed border-[var(--ot-border)] pt-2 text-[11.5px]">
+              {plan.stepFees.map((fee, index) => (
+                <div key={index} className="contents">
+                  <dt className="text-[var(--ot-text-3)]">Network fee on {fee.chain}, at most</dt>
+                  <dd className="selectable m-0 text-right font-mono">{fee.maxFee ? `${fee.maxFee} ${fee.feeAsset}` : 'not read yet'}</dd>
+                </div>
+              ))}
+              <dd className="col-span-2 m-0 text-[var(--ot-text-3)]">Each part’s fee comes from the account that sends it. Most of each comes back.</dd>
+            </dl>
+          ) : null}
+          <p className="m-0 text-[13px] text-[var(--ot-text-2)]" hidden={Boolean(plan.stepFees)}>
             {plan.maxFee ? (
               <>
-                + up to <strong className="selectable">{plan.maxFee} NEAR</strong> network fee
+                + up to <strong className="selectable">
+                  {plan.maxFee} {plan.feeAsset}
+                </strong>{' '}
+                network fee
               </>
             ) : (
-              'Ink couldn’t read today’s fee. Approve asks NEAR again and shows the maximum, and nothing is signed until you approve that.'
+              `Ink couldn’t read today’s fee. Approve asks ${plan.chain} again and shows the maximum, and nothing is signed until you approve that.`
             )}
           </p>
           {plan.maxTotal ? (
             <dl className="m-0 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 border-t border-dashed border-[var(--ot-border)] pt-2 text-[11.5px]">
-              <dt className="text-[var(--ot-text-3)]">{plan.swap?.from === 'intents' ? 'Most NEAR that can leave your account' : 'Most that can leave'}</dt>
-              <dd className="selectable m-0 text-right font-mono">{plan.maxTotal} NEAR</dd>
+              <dt className="text-[var(--ot-text-3)]">{plan.asset !== plan.feeAsset ? `Most ${plan.feeAsset} that can leave your account` : 'Most that can leave'}</dt>
+              <dd className="selectable m-0 text-right font-mono">
+                {plan.maxTotal} {plan.feeAsset}
+              </dd>
               <dt className="text-[var(--ot-text-3)]">Network fee, at most</dt>
               <dd className={feeRose ? 'selectable m-0 rounded-md bg-[var(--ot-warn-bg)] px-1.5 text-right font-mono font-bold text-[var(--ot-warn-text)]' : 'selectable m-0 text-right font-mono'}>
                 {feeRose ? <s className="mr-1 font-medium text-[var(--ot-text-3)]">{feeRose}</s> : null}
-                {plan.maxFee} NEAR
+                {plan.maxFee} {plan.feeAsset}
               </dd>
               <dd className="col-span-2 m-0 text-[var(--ot-text-3)]">
                 Most of the fee comes back.
@@ -251,7 +275,7 @@ export function ReviewApp() {
                     {action.summary}
                   </span>
                   <span className="text-[12px] text-[var(--ot-text-3)]">
-                    {action.method ? `Calls ${action.method}, attaching ${action.amount} NEAR.` : `${action.kind} of ${action.amount} NEAR. Calls no contract.`}
+                    {action.method ? `Calls ${action.method}, attaching ${action.amount} ${plan.feeAsset}.` : `${action.kind} of ${action.amount} ${plan.feeAsset}. Calls no contract.`}
                     {plan.actions.length === 1 ? ' Nothing else in this transaction.' : ''}
                   </span>
                 </span>
@@ -263,13 +287,13 @@ export function ReviewApp() {
         <details className="ink-review-card ink-review-details" open>
           <summary>The exact details</summary>
           <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 pt-2 text-[12.5px]">
-            <Detail label="Fee">{plan.maxFee ? `Up to ${plan.maxFee} NEAR` : 'Not known yet'}</Detail>
+            <Detail label="Fee">{plan.maxFee ? `Up to ${plan.maxFee} ${plan.feeAsset}` : 'Not known yet'}</Detail>
             <Detail label="From">
               <Address value={plan.from} small />
             </Detail>
             <Detail label="Signing key">{plan.publicKey}</Detail>
             <Detail label="Exact amount">
-              {plan.amountYocto} {plan.asset === 'NEAR' ? 'yoctoNEAR' : `in ${plan.asset}’s smallest unit`}
+              {plan.amountYocto} {plan.asset === 'NEAR' && plan.chain === 'NEAR' ? 'yoctoNEAR' : `in ${plan.asset}’s smallest unit`}
             </Detail>
             <Detail label="Plan hash">{shortHash(plan.hash)}</Detail>
           </dl>
@@ -309,7 +333,7 @@ export function ReviewApp() {
             {state.transactionId && !fullScreen ? (
               <p className="m-0 text-[12.5px]">
                 <span className="text-[var(--ot-text-3)]">Transaction </span>
-                <a className="selectable font-mono [overflow-wrap:anywhere]" href={`https://nearblocks.io/txns/${state.transactionId}`} target="_blank" rel="noreferrer">
+                <a className="selectable font-mono [overflow-wrap:anywhere]" href={`${plan.explorer.tx}${state.transactionId}`} target="_blank" rel="noreferrer">
                   {state.transactionId}
                 </a>
               </p>
@@ -351,6 +375,51 @@ export function ReviewApp() {
         )}
       </footer>
     </Shell>
+  )
+}
+
+/**
+ * A payment, as NEAR Intents' quotes fixed it: each part brings exactly its amount into the
+ * Intents balance, then one payout sends exactly the total to the recipient, in one
+ * transfer. Ink signs the payout now and sends it once the parts have landed.
+ */
+function PayTerms({ legs, payout, to, on }: { legs: readonly ReviewLeg[]; payout: NonNullable<ReviewPlan['payout']>; to: string; on: string }) {
+  return (
+    <Section label="How it’s paid, through NEAR Intents" card>
+      <ol className="m-0 flex list-none flex-col gap-2.5 p-0">
+        {payout.fromBalance ? (
+          <li className="border-b border-dashed border-[var(--ot-border)] pb-2.5 text-[13.5px]">
+            <strong className="selectable font-mono">{payout.fromBalance}</strong> <span className="text-[var(--ot-text-2)]">already in your NEAR Intents balance</span>
+          </li>
+        ) : null}
+        {legs.map((leg, index) => (
+          <li key={index} className="flex flex-col gap-1 border-b border-dashed border-[var(--ot-border)] pb-2.5">
+            <span className="text-[13.5px]">
+              <strong className="selectable font-mono">{leg.send}</strong> <span className="text-[var(--ot-text-2)]">from {leg.fromPlace}</span>
+              <span className="text-[var(--ot-text-3)]"> → exactly </span>
+              <strong className="selectable font-mono">{leg.get}</strong>
+              <span className="text-[var(--ot-text-2)]"> into your NEAR Intents balance</span>
+            </span>
+            <span className="text-[12px] text-[var(--ot-text-3)]">
+              NEAR Intents’ {leg.fee} fee is included. Anything it doesn’t need goes back {leg.from === 'intents' ? 'into your NEAR Intents balance' : `to ${leg.refundTo}`}.
+            </span>
+            <Address value={leg.depositAddress} small />
+          </li>
+        ))}
+        <li className="flex flex-col gap-1">
+          <span className="text-[13.5px]">
+            <span className="text-[var(--ot-text-2)]">Then </span>
+            <strong className="selectable font-mono">exactly {payout.get}</strong>
+            <span className="text-[var(--ot-text-2)]"> to </span>
+            <span className="selectable font-mono [overflow-wrap:anywhere]">{to}</span>
+            <span className="text-[var(--ot-text-2)]"> on {on}, in one transfer</span>
+          </span>
+          <span className="text-[12px] text-[var(--ot-text-3)]">
+            Signed now with the rest, and sent by Ink once every part has landed. NEAR Intents’ {payout.fee} fee is included; anything left over stays in your NEAR Intents balance.
+          </span>
+        </li>
+      </ol>
+    </Section>
   )
 }
 
@@ -400,7 +469,8 @@ function SwapTerms({ plan, swap }: { plan: ReviewPlan; swap: ReviewSwap }) {
         <span className="ink-eyebrow">Refunds go to</span>
         <Address value={swap.refundTo} small />
         <span className="text-[12px] text-[var(--ot-text-3)]">
-          {swap.from === 'intents' ? 'Back into your NEAR Intents balance' : 'Your own NEAR account'}, if the swap can’t pay at least the amount above.
+          {swap.from === 'intents' ? 'Back into your NEAR Intents balance' : swap.from === 'evm' || swap.from === 'solana' ? `Back to the address it came from, on ${plan.chain}` : 'Your own NEAR account'}, if the swap can’t pay at
+          least the amount above.
         </span>
       </div>
       <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">

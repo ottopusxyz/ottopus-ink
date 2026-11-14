@@ -9,6 +9,17 @@ import { nearTransferOf } from '../near/build'
 import type { PlanView } from '../plans/store'
 import { chainName } from '../routes/route'
 import { swapSent } from '../routes/swap-terms'
+import { inkChainOf } from '../intents/explorers'
+import { legsOfStep } from '../routes/pay-plan'
+import { evmChainById, type EvmChain } from '../../shared/evm/chains'
+import { EvmDecodeError, evmTransferOfStep } from '../../shared/evm/transaction'
+import { SolanaDecodeError, solanaTransferOfStep, type SolanaTransfer } from '../../shared/solana/transaction'
+
+const NEARBLOCKS = { name: 'nearblocks.io', tx: 'https://nearblocks.io/txns/' }
+const SOLSCAN = { name: 'solscan.io', tx: 'https://solscan.io/tx/' }
+
+/** An EVM chain's explorer, named by its host as the link shows it. */
+const explorerOf = (chain: EvmChain) => ({ name: new URL(chain.explorer.tx).hostname.replace(/^www\./, ''), tx: chain.explorer.tx })
 
 /**
  * What the review window shows for a plan, worked out from its fixed steps: the
@@ -20,7 +31,10 @@ import { swapSent } from '../routes/swap-terms'
  * couldn't be asked. It's only shown: the sender checks the balance against it
  * again just before signing.
  */
-export function describeForReview(plan: PlanView, network: string, maxFee: bigint | null): ReviewPlan | null {
+export function describeForReview(plan: PlanView, network: string, maxFee: bigint | null, stepFees?: readonly (bigint | null)[]): ReviewPlan | null {
+  if (plan.core.swaps) return describePayment(plan, stepFees ?? [])
+  if (plan.core.steps[0]?.chain === 'evm') return plan.core.swap ? describeEvmSwap(plan, maxFee) : describeEvmSend(plan, maxFee)
+  if (plan.core.steps[0]?.chain === 'solana') return describeSolana(plan, maxFee)
   if (plan.core.swap) return describeSwap(plan, network, maxFee)
   const transfer = nearTransferOf(plan.core)
   const toKind = transfer ? nearAccountKind(transfer.receiverId) : null
@@ -34,6 +48,10 @@ export function describeForReview(plan: PlanView, network: string, maxFee: bigin
     swap: null,
     hash: plan.hash,
     network,
+    chain: 'NEAR',
+    feeAsset: 'NEAR',
+    chainMark: 'near',
+    explorer: NEARBLOCKS,
     from: transfer.signerId,
     publicKey: nearPublicKey(transfer.publicKey),
     to: transfer.receiverId,
@@ -117,6 +135,10 @@ function describeSwap(plan: PlanView, network: string, maxFee: bigint | null): R
     },
     hash: plan.hash,
     network,
+    chain: 'NEAR',
+    feeAsset: 'NEAR',
+    chainMark: 'near',
+    explorer: NEARBLOCKS,
     from: read.signerId,
     publicKey: nearPublicKey(read.publicKey),
     to: swap.recipient,
@@ -136,6 +158,358 @@ function describeSwap(plan: PlanView, network: string, maxFee: bigint | null): R
       // The move's token and amount checked against the swap's own above, so they can be written as a person reads them.
       summary: call.method === 'mt_transfer' ? `Move ${sent} from your NEAR Intents balance to NEAR Intents’ deposit address ${call.receiverId}` : describeCall(call, read.receiverId),
     })),
+    expiresAt: plan.core.expiresAt,
+  }
+}
+
+/**
+ * An EVM send's review, from its one step: the coin or token, the exact amount at the
+ * token's own decimals, who gets it, and the most the fees could take in the chain's coin.
+ * The recipient must be the one the plan pays (the person's, or one they typed).
+ */
+function describeEvmSend(plan: PlanView, maxFee: bigint | null): ReviewPlan | null {
+  const [step, ...rest] = plan.core.steps
+  const recipient = plan.core.recipient
+  if (!step || rest.length > 0 || plan.core.swap || !recipient) return null
+  let transfer: ReturnType<typeof evmTransferOfStep>
+  try {
+    transfer = evmTransferOfStep(step)
+  } catch (error) {
+    if (error instanceof EvmDecodeError) return null
+    throw error
+  }
+  const chain = evmChainById(transfer.chainId)
+  if (!chain || recipient.address.toLowerCase() !== transfer.to.toLowerCase()) return null
+  const native = transfer.token === 'native'
+  const amount = formatUnits(transfer.amount, transfer.decimals)
+  const fee = maxFee === null ? null : formatUnits(maxFee, 18)
+  return {
+    id: plan.id,
+    kind: 'send',
+    swap: null,
+    hash: plan.hash,
+    network: `${chain.name} mainnet`,
+    chain: chain.name,
+    feeAsset: chain.symbol,
+    chainMark: chain.id,
+    explorer: explorerOf(chain),
+    from: transfer.from,
+    publicKey: `secp256k1 · ${transfer.from}`,
+    to: transfer.to,
+    toKind: 'evm',
+    toWhy: recipient.why,
+    amount,
+    amountYocto: transfer.amount.toString(),
+    asset: transfer.symbol,
+    maxFee: fee,
+    maxFeeYocto: maxFee === null ? null : maxFee.toString(),
+    // What can leave in the chain's coin: the coin sent and the fees, or just the fees for a token.
+    maxTotal: maxFee === null ? null : formatUnits((native ? transfer.amount : 0n) + maxFee, 18),
+    actions: [
+      native
+        ? { kind: 'Transfer', amount, method: null, summary: `Send ${amount} ${chain.symbol} to ${transfer.to} on ${chain.name}` }
+        : { kind: 'FunctionCall', amount: '0', method: 'transfer', summary: `Send ${amount} ${transfer.symbol} to ${transfer.to} on ${chain.name}, through the token’s contract ${transfer.token}` },
+    ],
+    expiresAt: plan.core.expiresAt,
+  }
+}
+
+/**
+ * A swap the wallet pays on an EVM chain, from its one transfer and the terms 1Click fixed.
+ * Shown only when the two agree: the transfer sends exactly the swap's coin or token and
+ * amount, on its chain, to its deposit address, from the address a refund goes back to; and
+ * 1Click pays the plan's own recipient.
+ */
+function describeEvmSwap(plan: PlanView, maxFee: bigint | null): ReviewPlan | null {
+  const swap = plan.core.swap as PlanSwap
+  const [step, ...rest] = plan.core.steps
+  const recipient = plan.core.recipient
+  if (!step || rest.length > 0 || !recipient || recipient.address !== swap.recipient || swap.payFrom !== 'evm') return null
+  let transfer: ReturnType<typeof evmTransferOfStep>
+  try {
+    transfer = evmTransferOfStep(step)
+  } catch (error) {
+    if (error instanceof EvmDecodeError) return null
+    throw error
+  }
+  const chain = evmChainById(transfer.chainId)
+  const sent = swapSent(swap)
+  const agrees =
+    chain !== null &&
+    sent !== null &&
+    String(transfer.chainId) === swap.sendChainId &&
+    transfer.token === swap.sendToken &&
+    transfer.to.toLowerCase() === swap.depositAddress.toLowerCase() &&
+    transfer.amount.toString() === swap.amountIn &&
+    transfer.from.toLowerCase() === swap.refundTo.toLowerCase() &&
+    String(transfer.decimals) === swap.sendDecimals
+  if (!agrees || !chain || !sent) return null
+  const get = tokenAmount(swap.amountOut, swap.getDecimals, swap.getSymbol)
+  const least = tokenAmount(swap.minAmountOut, swap.getDecimals, swap.getSymbol)
+  const seconds = Number(swap.seconds)
+  const feeBps = Number(swap.feeBps)
+  if (!get || !least || !Number.isFinite(seconds) || !Number.isInteger(feeBps)) return null
+  const toKind = swap.getChain === 'intents' ? nearAccountKind(swap.recipient) : 'other-chain'
+  if (!toKind) return null
+  const native = transfer.token === 'native'
+  const amount = formatUnits(transfer.amount, transfer.decimals)
+  return {
+    id: plan.id,
+    kind: 'swap',
+    swap: {
+      send: sent,
+      from: 'evm',
+      get,
+      least,
+      getChain: swap.getChain === 'intents' ? 'your NEAR Intents balance' : chainName(swap.getChain),
+      refundTo: swap.refundTo,
+      depositAddress: swap.depositAddress,
+      deadline: swap.deadline,
+      fee: `${(feeBps / 100).toFixed(2).replace(/\.?0+$/, '')}%`,
+      seconds,
+    },
+    hash: plan.hash,
+    network: `${chain.name} mainnet`,
+    chain: chain.name,
+    feeAsset: chain.symbol,
+    chainMark: chain.id,
+    explorer: explorerOf(chain),
+    from: transfer.from,
+    publicKey: `secp256k1 · ${transfer.from}`,
+    to: swap.recipient,
+    toKind,
+    toWhy: recipient.why,
+    amount,
+    amountYocto: transfer.amount.toString(),
+    asset: transfer.symbol,
+    maxFee: maxFee === null ? null : formatUnits(maxFee, 18),
+    maxFeeYocto: maxFee === null ? null : maxFee.toString(),
+    maxTotal: maxFee === null ? null : formatUnits((native ? transfer.amount : 0n) + maxFee, 18),
+    actions: [
+      native
+        ? { kind: 'Transfer', amount, method: null, summary: `Send ${amount} ${chain.symbol} to NEAR Intents’ deposit address ${transfer.to} on ${chain.name}` }
+        : { kind: 'FunctionCall', amount: '0', method: 'transfer', summary: `Send ${amount} ${transfer.symbol} to NEAR Intents’ deposit address ${transfer.to} on ${chain.name}, through the token’s contract ${transfer.token}` },
+    ],
+    expiresAt: plan.core.expiresAt,
+  }
+}
+
+/** A Solana transfer's one action, as review reads it. `where` names a deposit address, or nothing for a plain send. */
+function solanaAction(transfer: SolanaTransfer, where = ''): ReviewPlan['actions'][number] {
+  const amount = formatUnits(transfer.amount, transfer.decimals)
+  return transfer.token === 'native'
+    ? { kind: 'Transfer', amount, method: null, summary: `Send ${amount} SOL to ${where}${transfer.to} on Solana` }
+    : {
+        kind: 'FunctionCall',
+        amount: '0',
+        method: 'TransferChecked',
+        summary: `Send ${amount} ${transfer.symbol} (mint ${transfer.token}) to ${where}${transfer.to} on Solana, from your token account to theirs, which is opened first, at your cost, if it isn’t yet`,
+      }
+}
+
+/**
+ * A plan whose one step sends on Solana: a send to the plan's recipient, or a swap the
+ * wallet pays there. A swap is shown only when the transfer and the terms 1Click fixed
+ * agree: exactly the swap's SOL or token and amount, to its deposit address, from the
+ * address a refund goes back to; and 1Click pays the plan's own recipient.
+ */
+function describeSolana(plan: PlanView, maxFee: bigint | null): ReviewPlan | null {
+  const [step, ...rest] = plan.core.steps
+  const recipient = plan.core.recipient
+  if (!step || rest.length > 0 || !recipient) return null
+  let transfer: SolanaTransfer
+  try {
+    transfer = solanaTransferOfStep(step)
+  } catch (error) {
+    if (error instanceof SolanaDecodeError) return null
+    throw error
+  }
+  const swap = plan.core.swap
+  let reviewSwap: ReviewPlan['swap'] = null
+  let toKind: ReviewPlan['toKind'] = 'solana'
+  if (swap) {
+    const sent = swapSent(swap)
+    const agrees =
+      swap.payFrom === 'solana' &&
+      recipient.address === swap.recipient &&
+      sent !== null &&
+      transfer.token === swap.sendToken &&
+      transfer.to === swap.depositAddress &&
+      transfer.amount.toString() === swap.amountIn &&
+      transfer.from === swap.refundTo &&
+      String(transfer.decimals) === swap.sendDecimals
+    const get = tokenAmount(swap.amountOut, swap.getDecimals, swap.getSymbol)
+    const least = tokenAmount(swap.minAmountOut, swap.getDecimals, swap.getSymbol)
+    const seconds = Number(swap.seconds)
+    const feeBps = Number(swap.feeBps)
+    const kind = swap.getChain === 'intents' ? nearAccountKind(swap.recipient) : 'other-chain'
+    if (!agrees || !sent || !get || !least || !Number.isFinite(seconds) || !Number.isInteger(feeBps) || !kind) return null
+    toKind = kind
+    reviewSwap = {
+      send: sent,
+      from: 'solana',
+      get,
+      least,
+      getChain: swap.getChain === 'intents' ? 'your NEAR Intents balance' : chainName(swap.getChain),
+      refundTo: swap.refundTo,
+      depositAddress: swap.depositAddress,
+      deadline: swap.deadline,
+      fee: `${(feeBps / 100).toFixed(2).replace(/\.?0+$/, '')}%`,
+      seconds,
+    }
+  } else if (recipient.address !== transfer.to) return null
+  const native = transfer.token === 'native'
+  return {
+    id: plan.id,
+    kind: swap ? 'swap' : 'send',
+    swap: reviewSwap,
+    hash: plan.hash,
+    network: 'Solana mainnet',
+    chain: 'Solana',
+    feeAsset: 'SOL',
+    chainMark: 'solana',
+    explorer: SOLSCAN,
+    from: transfer.from,
+    publicKey: `ed25519 · ${transfer.from}`,
+    to: swap ? swap.recipient : transfer.to,
+    toKind,
+    toWhy: recipient.why,
+    amount: formatUnits(transfer.amount, transfer.decimals),
+    amountYocto: transfer.amount.toString(),
+    asset: transfer.symbol,
+    maxFee: maxFee === null ? null : formatUnits(maxFee, 9),
+    maxFeeYocto: maxFee === null ? null : maxFee.toString(),
+    // What can leave in SOL: the SOL sent and the fees, or just the fees for a token.
+    maxTotal: maxFee === null ? null : formatUnits((native ? transfer.amount : 0n) + maxFee, 9),
+    actions: [solanaAction(transfer, swap ? 'NEAR Intents’ deposit address ' : '')],
+    expiresAt: plan.core.expiresAt,
+  }
+}
+
+/**
+ * A payment's review, from its steps and each leg's terms. Shown only when they agree
+ * exactly: each Intents leg's mt_transfer in the one NEAR step, and each EVM leg's transfer
+ * in its own step, moves exactly that leg's token and amount to its deposit address, every
+ * step pays a leg and every leg is paid once; every leg pays exactly its amount, of the
+ * same token on the same chain, to the plan's own recipient.
+ */
+function describePayment(plan: PlanView, stepFees: readonly (bigint | null)[]): ReviewPlan | null {
+  const legs = plan.core.swaps ?? []
+  const recipient = plan.core.recipient
+  const payout = legs.at(-1)
+  if (!payout || !recipient || plan.core.steps.length === 0 || plan.core.swap) return null
+  const exact = (swap: PlanSwap) => swap.amountOut === swap.minAmountOut && /^[1-9][0-9]*$/.test(swap.amountOut) && /^[1-9][0-9]*$/.test(swap.amountIn)
+  // The payout: last, out of the Intents balance to the recipient, the same token it moves, exactly.
+  const payoutOk = payout.role === 'payout' && payout.payFrom === 'intents' && payout.recipient === recipient.address && payout.originAsset === payout.destinationAsset && exact(payout) && /^(0|[1-9][0-9]*)$/.test(payout.fromBalance ?? '0')
+  // Each leg: exactly its part into the person's own Intents balance, as the token the payout moves.
+  const before = legs.slice(0, -1)
+  const legsOk = before.every((leg) => leg.role !== 'payout' && leg.getChain === 'intents' && leg.recipient === payout.refundTo && leg.destinationAsset === payout.originAsset && exact(leg))
+  // Together with what the balance held already, the legs bring in exactly what the payout moves.
+  const brought = before.reduce((sum, leg) => sum + BigInt(leg.amountOut), 0n) + BigInt(payout.fromBalance ?? '0')
+  if (!payoutOk || !legsOk || brought !== BigInt(payout.amountIn)) return null
+
+  const paid = new Set<number>()
+  // Each step must pay exactly the legs its place says, since that's how each leg is followed once it's sent.
+  let stepIndex = 0
+  let stepPays: number[] = []
+  const payOnce = (index: number) => (index < 0 || paid.has(index) ? false : (paid.add(index), stepPays.push(index), true))
+  const inPlace = () => {
+    const expected = legsOfStep(plan.core, stepIndex++)
+    const ok = expected.length === stepPays.length && expected.every((leg, i) => leg === stepPays[i])
+    stepPays = []
+    return ok
+  }
+  const actions: ReviewPlan['actions'] = []
+  const chains: { name: string; mark: string; symbol: string; explorer: { name: string; tx: string } }[] = []
+  for (const step of plan.core.steps) {
+    try {
+      if (step.chain === 'evm') {
+        const transfer = evmTransferOfStep(step)
+        const chain = evmChainById(transfer.chainId)
+        if (!chain) return null
+        const index = legs.findIndex((leg, i) => !paid.has(i) && leg.payFrom === 'evm' && leg.sendChainId === String(transfer.chainId) && leg.sendToken === transfer.token && leg.depositAddress.toLowerCase() === transfer.to.toLowerCase() && leg.amountIn === transfer.amount.toString() && leg.refundTo.toLowerCase() === transfer.from.toLowerCase() && leg.sendDecimals === String(transfer.decimals))
+        if (!payOnce(index)) return null
+        const amount = formatUnits(transfer.amount, transfer.decimals)
+        actions.push({ kind: 'FunctionCall', amount: '0', method: 'transfer', summary: `Send ${amount} ${transfer.symbol} to NEAR Intents’ deposit address ${transfer.to} on ${chain.name}, through the token’s contract ${transfer.token}` })
+        chains.push({ name: chain.name, mark: chain.id, symbol: chain.symbol, explorer: explorerOf(chain) })
+        if (!inPlace()) return null
+      } else if (step.chain === 'solana') {
+        const transfer = solanaTransferOfStep(step)
+        const index = legs.findIndex((leg, i) => !paid.has(i) && leg.payFrom === 'solana' && leg.sendToken === transfer.token && leg.depositAddress === transfer.to && leg.amountIn === transfer.amount.toString() && leg.refundTo === transfer.from && leg.sendDecimals === String(transfer.decimals))
+        if (!payOnce(index)) return null
+        actions.push(solanaAction(transfer, 'NEAR Intents’ deposit address '))
+        chains.push({ name: 'Solana', mark: 'solana', symbol: 'SOL', explorer: SOLSCAN })
+        if (!inPlace()) return null
+      } else {
+        const read = callsOfStep(step)
+        if (read.receiverId !== INTENTS_NEAR) return null
+        for (const call of read.calls) {
+          if (call.method !== 'mt_transfer') return null
+          const index = legs.findIndex((leg, i) => !paid.has(i) && leg.payFrom === 'intents' && leg.depositAddress === call.receiverId && leg.originAsset === call.tokenId && leg.amountIn === call.amount.toString() && leg.refundTo === read.signerId)
+          if (!payOnce(index)) return null
+          const sent = swapSent(legs[index] as PlanSwap)
+          actions.push({ kind: 'FunctionCall', amount: formatNear(CALL_RULES[call.method].deposit(call)), method: call.method, summary: `Move ${sent} from your NEAR Intents balance to NEAR Intents’ deposit address ${call.receiverId}` })
+        }
+        chains.push({ name: 'NEAR', mark: 'near', symbol: 'NEAR', explorer: NEARBLOCKS })
+        if (!inPlace()) return null
+      }
+    } catch (error) {
+      if (error instanceof EvmDecodeError || error instanceof NearDecodeError || error instanceof SolanaDecodeError) return null
+      throw error
+    }
+  }
+  if (paid.size !== legs.length) return null
+
+  const reviewLegs = before.map((leg) => {
+    const chain = leg.payFrom === 'evm' ? evmChainById(Number(leg.sendChainId)) : null
+    return {
+      send: swapSent(leg) ?? leg.sendSymbol,
+      from: leg.payFrom === 'evm' ? ('evm' as const) : leg.payFrom === 'solana' ? ('solana' as const) : ('intents' as const),
+      fromPlace: chain ? chain.name : leg.payFrom === 'solana' ? 'Solana' : 'your NEAR Intents balance',
+      get: tokenAmount(leg.amountOut, leg.getDecimals, leg.getSymbol) ?? leg.getSymbol,
+      depositAddress: leg.depositAddress,
+      refundTo: leg.refundTo,
+      fee: `${(Number(leg.feeBps) / 100).toFixed(2).replace(/\.?0+$/, '')}%`,
+      seconds: Number(leg.seconds),
+    }
+  })
+  const total = BigInt(payout.amountOut)
+  const last = chains.at(-1) as (typeof chains)[number]
+  const fromBalance = BigInt(payout.fromBalance ?? '0')
+  return {
+    id: plan.id,
+    kind: 'pay',
+    swap: null,
+    legs: reviewLegs,
+    payout: {
+      get: tokenAmount(payout.amountOut, payout.getDecimals, payout.getSymbol) ?? payout.getSymbol,
+      fromBalance: fromBalance > 0n ? tokenAmount(fromBalance.toString(), payout.getDecimals, payout.getSymbol) : null,
+      fee: `${(Number(payout.feeBps) / 100).toFixed(2).replace(/\.?0+$/, '')}%`,
+      seconds: Number(payout.seconds),
+    },
+    payChain: { mark: inkChainOf(payout.getChain) ?? payout.getChain, name: chainName(payout.getChain) },
+    stepFees: chains.map((chain, i) => {
+      const fee = stepFees[i] ?? null
+      return { chain: chain.name, feeAsset: chain.symbol, maxFee: fee === null ? null : formatUnits(fee, chain.symbol === 'NEAR' ? 24 : chain.symbol === 'SOL' ? 9 : 18), maxFeeYocto: fee === null ? null : fee.toString() }
+    }),
+    hash: plan.hash,
+    network: [...new Set(chains.map((chain) => `${chain.name} mainnet`))].join(' + '),
+    chain: [...new Set(chains.map((chain) => chain.name))].join(' and '),
+    feeAsset: last.symbol,
+    chainMark: last.mark,
+    explorer: last.explorer,
+    from: legs.map((leg) => leg.refundTo).filter((address, i, all) => all.indexOf(address) === i).join(', '),
+    publicKey: chains.map((chain) => (chain.symbol === 'NEAR' || chain.symbol === 'SOL' ? 'ed25519' : 'secp256k1')).filter((key, i, all) => all.indexOf(key) === i).join(' + '),
+    to: recipient.address,
+    toKind: 'other-chain',
+    toWhy: recipient.why,
+    amount: formatUnits(total, Number(payout.getDecimals)),
+    amountYocto: total.toString(),
+    asset: payout.getSymbol,
+    maxFee: null,
+    maxFeeYocto: stepFees.every((fee) => fee !== null) && stepFees.length === chains.length ? '0' : null,
+    maxTotal: null,
+    actions,
     expiresAt: plan.core.expiresAt,
   }
 }

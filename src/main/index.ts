@@ -4,12 +4,21 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
-import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import type { PlanStatus } from '../shared/plan'
+import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type PlanJourney, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
 import { createDepositJournal } from './intents/deposit-journal'
+import { evmChainById, type EvmChain } from '../shared/evm/chains'
+import { evmTransferOfStep } from '../shared/evm/transaction'
+import { buildEvmSend, evmFeeCeiling, isEvmSend } from './evm/build'
+import { buildSolanaSend, isSolanaSend, solanaFeeNow } from './solana/build'
+import { createSolanaRpc } from './solana/rpc'
+import { solanaTransferOfStep } from '../shared/solana/transaction'
+import { createEvmRpc, type EvmRpc } from './evm/rpc'
 import { depositEnding } from './intents/deposit-note'
 import { createDepositWatcher, type DepositJournal } from './intents/deposit-watch'
 import { depositAddress, depositChains, recentDeposits } from './intents/deposits'
 import { pickReceive, receiveChainOf, receiveChains, searchTokens, type ReceiveAsk } from './intents/receive'
+import { lastGood } from './last-good'
 import { CHAT_ID, type SavedChat } from '../shared/history'
 import { callsGas, callsOfStep } from '../shared/near/calls'
 import type { PortfolioResult } from '../shared/portfolio'
@@ -39,6 +48,9 @@ import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfo
 import { createReviewBroker } from './review/broker'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
 import { buildOneClickSwap } from './routes/swap-plan'
+import { buildPayment, legsOfStep, paymentProgress } from './routes/pay-plan'
+import { journeyOf, type StepTx } from './plans/journey'
+import { createPayoutJournal, type PayoutJournal } from './routes/payout-journal'
 import { swapSent } from './routes/swap-terms'
 import { createSwapJournal, type SwapJournal } from './routes/swap-journal'
 import { createSwapTracker } from './routes/swap-tracker'
@@ -145,17 +157,54 @@ let agents: Promise<AgentStatus[]> | null = null
 /** NEAR mainnet, for balances and for building and sending transfers. */
 const nearRpc = createNearRpc()
 
+/** Solana mainnet, for building and sending transfers there. */
+const solanaRpc = createSolanaRpc()
+
+/** Each EVM chain's RPC client, made on first use. */
+const evmRpcs = new Map<string, EvmRpc>()
+function evmRpcFor(chain: EvmChain): EvmRpc {
+  let rpc = evmRpcs.get(chain.id)
+  if (!rpc) {
+    rpc = createEvmRpc(chain)
+    evmRpcs.set(chain.id, rpc)
+  }
+  return rpc
+}
+
 /** Every plan made while the app runs. Each chain module builds the steps it knows; anything else stays a draft. */
 const plans = createPlanStore({
+  // A plan's chat hears each move as it happens, not only when the review window next looks.
+  onMove: (plan) => {
+    const txs = [...(planTxs.get(plan.id)?.values() ?? [])]
+    statusListeners.get(plan.id)?.(plan.status, txs.at(-1)?.id ?? null)
+    pushJourney(plan.id)
+  },
   buildSteps: async (intent, own) => {
     if (isNearSend(intent)) return buildNearSend(intent, own, nearRpc)
+    if (isEvmSend(intent)) return buildEvmSend(intent, own, { rpcFor: evmRpcFor, tokens: listedTokens })
+    if (isSolanaSend(intent)) return buildSolanaSend(intent, own, { rpc: solanaRpc, tokens: listedTokens })
+    if (intent.outcome === 'pay') {
+      return buildPayment(intent, own, {
+        tokens: listedTokens,
+        evmRpc: evmRpcFor,
+        solanaRpc,
+        held: async () => {
+          const read = await ownPortfolio({ fresh: true })
+          return read.ok ? holdingsOf(read, (await listedTokens()) ?? []) : null
+        },
+        quote: (request) => oneClickQuote(request),
+        fits: (from, deposit, gas, calls) => nearCallsFit(nearRpc, from, deposit, gas, calls),
+      })
+    }
     if (intent.outcome === 'swap') {
       return buildOneClickSwap(intent, own, {
         tokens: listedTokens,
+        evmRpc: evmRpcFor,
+        solanaRpc,
         // Read afresh, so a deposit that just landed can pay; only while the vault stays unlocked.
         held: async () => {
           const read = await ownPortfolio({ fresh: true })
-          return read.ok ? holdingsOf(read) : null
+          return read.ok ? holdingsOf(read, (await listedTokens()) ?? []) : null
         },
         quote: (request) => oneClickQuote(request),
         fits: (from, deposit, gas, calls) => nearCallsFit(nearRpc, from, deposit, gas, calls),
@@ -169,6 +218,7 @@ const plans = createPlanStore({
 interface Followed {
   owner: string
   swap: (swap: ChatSwap) => void
+  journey: (journey: PlanJourney) => void
   ending: (ending: PlanEnding) => void
   transactionId: string | null
   ended: boolean
@@ -178,11 +228,17 @@ const followed = new Map<string, Followed>()
 const MAX_FOLLOWED = 500
 
 /** Tells the plan's chat how it ended, once it has, with Ink's note and the facts for the agent. Only once per plan. */
+/** Where a plan's swap stands: its one swap's, or all of a payment's legs together. */
+function swapStateOf(planId: string, core: PlanView['core']): ChatSwap | null {
+  if (!core.swaps) return swapTracker.get(planId)
+  return paymentProgress(core.swaps, core.swaps.map((_, leg) => swapTracker.get(`${planId}#${leg}`)))
+}
+
 function endingOf(planId: string): void {
   const follow = followed.get(planId)
   const plan = follow && !follow.ended ? plans.get(planId, follow.owner) : null
   if (!follow || !plan) return
-  const outcome = planOutcome(planId, plan.core, plan.status, follow.transactionId, swapTracker.get(planId))
+  const outcome = planOutcome(planId, plan.core, plan.status, follow.transactionId, swapStateOf(planId, plan.core))
   if (!outcome) return
   follow.ended = true
   follow.ending(outcome)
@@ -197,11 +253,81 @@ function getSwapJournal(): SwapJournal {
 }
 
 /** Follows each swap once NEAR ran its deposit, across restarts, and tells the chat that made it and Home. */
+/** Each plan's transactions, by step, as the sender reported them: what a journey is drawn from. */
+const planTxs = new Map<string, Map<number, StepTx>>()
+
+/** A plan's journey as main sees it now, or null for a plan no chat follows. */
+function journeyFor(planId: string): PlanJourney | null {
+  const follow = followed.get(planId)
+  const plan = follow ? plans.get(planId, follow.owner) : null
+  if (!plan) return null
+  const progress = plan.core.swap ? [swapTracker.get(planId)] : (plan.core.swaps ?? []).map((_, leg) => swapTracker.get(`${planId}#${leg}`))
+  return journeyOf({ core: plan.core, status: plan.status, txs: planTxs.get(planId) ?? new Map(), swaps: progress, held: sender.holds(planId) })
+}
+
+/** Tells a plan's chat its journey, whenever anything along it moved. */
+function pushJourney(planId: string): void {
+  const journey = journeyFor(planId)
+  if (journey) followed.get(planId)?.journey(journey)
+}
+
+/** Each plan's chat, told of a status the review window didn't see: a payment's payout, sent after it closed. */
+const statusListeners = new Map<string, (status: PlanStatus, transactionId: string | null) => void>()
+
+/**
+ * Sends a payment's kept payout once every leg it waits for has landed in the Intents
+ * balance, or drops it, never sent, once any leg failed or was refunded. It works from the
+ * legs alone, so a payout picked up after a restart, whose plan is gone, still goes. The
+ * payout is then followed to the recipient, and the plan's chat, if it's still open, hears.
+ */
+function settlePayout(planId: string): void {
+  const legIds = sender.heldLegs().get(planId)
+  if (!legIds) return
+  const legs = legIds.map((id) => swapTracker.get(id))
+  const told = (status: PlanStatus, transactionId: string | null) => {
+    statusListeners.get(planId)?.(status, transactionId)
+    const follow = followed.get(planId)
+    if (follow && transactionId) follow.transactionId = transactionId
+    endingOf(planId)
+  }
+  if (legs.some((leg) => leg && (leg.stage === 'failed' || leg.stage === 'refunded' || leg.stage === 'unknown'))) {
+    sender.dropPayout(planId)
+    told('failed', null)
+    pushJourney(planId)
+    return
+  }
+  if (!legs.every((leg) => leg?.stage === 'done')) return
+  void sender.releasePayout(planId).then((sent) => {
+    if (!sent) return
+    if (sent.ran) void swapTracker.follow(`${planId}#${sent.swap}`, sent.payout, sent.transactionId)
+    if (sent.ran !== null) told(sent.ran ? 'confirmed' : 'failed', sent.transactionId)
+    pushJourney(planId)
+  })
+}
+
+let payoutJournal: PayoutJournal | null = null
+
+/** Payouts Ink holds for payments, sealed by the OS keyring, made on first use once the keyring can be asked. */
+function getPayoutJournal(): PayoutJournal {
+  payoutJournal ??= createPayoutJournal({ file: join(app.getPath('userData'), 'payouts.bin'), box: osSecretBox })
+  return payoutJournal
+}
+
 const swapTracker = createSwapTracker({
   submit: (deposit) => submitDeposit(deposit),
   status: (depositAddress) => swapStatus(depositAddress),
-  onUpdate: (planId, swap) => {
-    followed.get(planId)?.swap(swap)
+  onUpdate: (followedId, swap) => {
+    // A payment's legs are followed as `<plan>#<leg>`; its chat hears them together.
+    const [planId = followedId] = followedId.split('#')
+    const follow = followed.get(planId)
+    if (planId === followedId) follow?.swap(swap)
+    else if (follow) {
+      const plan = plans.get(planId, follow.owner)
+      const together = plan ? swapStateOf(planId, plan.core) : null
+      if (together) follow.swap(together)
+    }
+    settlePayout(planId)
+    pushJourney(planId)
     endingOf(planId)
     sendToWindows(IPC.swapsChanged)
   },
@@ -216,21 +342,11 @@ function getChatHistory(): ChatHistory {
   return chatHistory
 }
 
-/** The bridge's chains and tokens change rarely, so Receive reuses them for a while. */
-const DEPOSIT_CHAINS_MS = 10 * 60_000
-let depositChainList: { at: number; list: Promise<IntentsDepositChain[] | null> } | null = null
-
-function listedDepositChains(): Promise<IntentsDepositChain[] | null> {
-  if (!depositChainList || Date.now() - depositChainList.at > DEPOSIT_CHAINS_MS) {
-    const list = depositChains()
-    depositChainList = { at: Date.now(), list }
-    // A failed read isn't kept, so the next look asks again.
-    void list.then((read) => {
-      if (!read && depositChainList?.list === list) depositChainList = null
-    })
-  }
-  return depositChainList.list
-}
+/**
+ * The bridge's chains and tokens change rarely, so Receive reuses them for a while, and
+ * keeps the last good copy when the bridge is slow or down.
+ */
+const listedDepositChains: () => Promise<IntentsDepositChain[] | null> = lastGood(() => depositChains(), { maxAgeMs: 10 * 60_000 })
 
 /** Token icons fetched for the page's searches, kept for the session. */
 const icons = tokenIcons()
@@ -378,6 +494,47 @@ const reviewWindow = createReviewWindow({
 
 /** What the review window shows for a plan: its own step decoded, and today's fee ceiling if NEAR answers. */
 async function describePlan(plan: PlanView) {
+  // A payment's steps each have their own fee, in their own chain's coin.
+  if (plan.core.swaps) {
+    const fees = await Promise.all(
+      plan.core.steps.map(async (step) => {
+        try {
+          if (step.chain === 'evm') {
+            const transfer = evmTransferOfStep(step)
+            const chain = evmChainById(transfer.chainId)
+            return chain ? await evmFeeCeiling(evmRpcFor(chain), transfer.gas) : null
+          }
+          if (step.chain === 'solana') return await solanaFeeNow(solanaRpc, solanaTransferOfStep(step))
+          const { calls } = callsOfStep(step)
+          return callsFeeCeiling(await nearRpc.gasPrice(), callsGas(calls), calls.length)
+        } catch {
+          return null
+        }
+      }),
+    )
+    return describeForReview(plan, '', null, fees)
+  }
+  const [first] = plan.core.steps
+  if (first?.chain === 'evm') {
+    let fee: bigint | null = null
+    try {
+      const transfer = evmTransferOfStep(first)
+      const chain = evmChainById(transfer.chainId)
+      if (chain) fee = await evmFeeCeiling(evmRpcFor(chain), transfer.gas).catch(() => null)
+    } catch {
+      // A step that doesn't read as Ink's own transfer isn't shown at all.
+    }
+    return describeForReview(plan, '', fee)
+  }
+  if (first?.chain === 'solana') {
+    let fee: bigint | null = null
+    try {
+      fee = await solanaFeeNow(solanaRpc, solanaTransferOfStep(first)).catch(() => null)
+    } catch {
+      // A step that doesn't read as Ink's own transfer isn't shown at all.
+    }
+    return describeForReview(plan, '', fee)
+  }
   const transfer = nearTransferOf(plan.core)
   let fee: bigint | null = null
   if (transfer) fee = await nearSendFeeCeiling(nearRpc, transfer.receiverId).catch(() => null)
@@ -400,18 +557,39 @@ async function describePlan(plan: PlanView) {
   return describeForReview(plan, `NEAR ${NEAR_NETWORK}`, fee)
 }
 
-/** The only way a plan is approved: from the review window, by a person, then signed and sent. */
-const reviews = createReviewBroker({
-  store: plans,
-  sender: createPlanSender({
+/** Signs and sends each plan approved in the review window. */
+const sender = createPlanSender({
     store: plans,
     // Looked up each time, since the vault is made on first use.
     vault: { sign: (core, hash, live) => getVault().sign(core, hash, live) },
     rpc: nearRpc,
+    evmRpc: evmRpcFor,
+    solanaRpc,
+    payouts: { list: () => getPayoutJournal().list(), put: (entry) => getPayoutJournal().put(entry), remove: (planId) => getPayoutJournal().remove(planId) },
     onConfirmed: (plan, transactionId) => {
       if (plan.core.swap) void swapTracker.follow(plan.id, plan.core.swap, transactionId)
     },
-  }),
+    // Every transaction, as it's sent and once its chain answers, moves the plan's journey on.
+    onStep: (planId, step, state, transactionId) => {
+      const txs = planTxs.get(planId) ?? new Map<number, StepTx>()
+      txs.set(step, { state, id: transactionId })
+      planTxs.set(planId, txs)
+      if (planTxs.size > MAX_FOLLOWED) planTxs.delete(planTxs.keys().next().value as string)
+      pushJourney(planId)
+    },
+    // Each leg a payment's step paid is followed from that step's transaction.
+    onStepConfirmed: (plan, step, transactionId) => {
+      for (const leg of legsOfStep(plan.core, step)) {
+        const swap = plan.core.swaps?.[leg]
+        if (swap) void swapTracker.follow(`${plan.id}#${leg}`, swap, transactionId)
+      }
+    },
+})
+
+/** The only way a plan is approved: from the review window, by a person, then signed and sent. */
+const reviews = createReviewBroker({
+  store: plans,
+  sender,
   describe: describePlan,
   unlocked: () => vault?.isUnlocked() === true,
   onState: (state) => reviewWindow.update(state),
@@ -484,21 +662,11 @@ const ownPortfolio = async ({ fresh = false }: { fresh?: boolean } = {}): Promis
   return read.value
 }
 
-/** 1Click's token list changes rarely, so a quote reuses it for a few minutes. */
-const TOKEN_LIST_MS = 5 * 60_000
-let tokenList: { at: number; tokens: Promise<OneClickToken[] | null> } | null = null
-
-function listedTokens(): Promise<OneClickToken[] | null> {
-  if (!tokenList || Date.now() - tokenList.at > TOKEN_LIST_MS) {
-    const tokens = oneClickTokens()
-    tokenList = { at: Date.now(), tokens }
-    // A failed read isn't kept, so the next quote asks again.
-    void tokens.then((listed) => {
-      if (!listed && tokenList?.tokens === tokens) tokenList = null
-    })
-  }
-  return tokenList.tokens
-}
+/**
+ * 1Click's token list changes rarely, so a quote reuses it for a few minutes, and keeps
+ * the last good copy when 1Click is slow or down.
+ */
+const listedTokens: () => Promise<OneClickToken[] | null> = lastGood(() => oneClickTokens(), { maxAgeMs: 5 * 60_000 })
 
 /** get_quote: the route main picks for a payment, and what it would give. Only while unlocked, since it reads the addresses. */
 const quoteRoute = createQuoter({
@@ -533,7 +701,19 @@ function getMcpBridge(): Promise<McpBridge> {
     portfolio: () => ownPortfolio(),
     quote: quoteRoute,
     receive: (ask) => ownReceive(ask),
-    plans: ({ owner, typed }) => agentPlanTools({ store: plans, owner, typed, accounts: ownAccounts, swapOf: swapTracker.get }),
+    plans: ({ owner, typed }) =>
+      agentPlanTools({
+        store: plans,
+        owner,
+        typed,
+        accounts: ownAccounts,
+        // A swap's progress, or a payment's legs together: they're followed as `<plan>#<leg>`, never by the plan's own id.
+        swapOf: (id) => {
+          const plan = plans.get(id, owner)
+          return plan ? swapStateOf(id, plan.core) : null
+        },
+        journeyOf: (id) => (plans.get(id, owner) ? journeyFor(id) : null),
+      }),
   }).catch((error: unknown) => {
     mcpBridge = null
     throw error
@@ -655,12 +835,14 @@ function registerIpc(): void {
       shim: join(import.meta.dirname, 'shim.js'),
       review: (planId: string, owner: string, notify: NonNullable<Parameters<typeof reviews.offer>[2]>) =>
         void reviews.offer(planId, owner, (status, transactionId) => {
+          statusListeners.set(planId, notify)
+          if (statusListeners.size > MAX_FOLLOWED) statusListeners.delete(statusListeners.keys().next().value as string)
           notify(status, transactionId)
           const follow = followed.get(planId)
           if (follow && transactionId) follow.transactionId = transactionId
           endingOf(planId)
         }),
-      follow: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; ending: (ending: PlanEnding) => void }) => {
+      follow: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; journey: (journey: PlanJourney) => void; ending: (ending: PlanEnding) => void }) => {
         followed.set(planId, { owner, ...listen, transactionId: null, ended: false })
         if (followed.size > MAX_FOLLOWED) followed.delete(followed.keys().next().value as string)
       },
@@ -925,7 +1107,11 @@ void app.whenReady().then(() => {
   registerIpc()
   reviewWindow.attach(reviews)
   // Swaps a quit cut off are followed again: NEAR Intents pays them out or refunds them whatever Ink does.
+  // Payouts a quit left held come back first, so legs that land as their swaps are picked up release them.
+  sender.resumePayouts()
   swapTracker.resume()
+  // Legs that landed while Ink was closed have nothing more to report, so their payouts are settled now.
+  for (const planId of sender.heldLegs().keys()) settlePayout(planId)
   // Deposits too: what's sent to an address lands whether or not Ink is running.
   depositWatcher.resume()
   signer.start()

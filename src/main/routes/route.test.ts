@@ -110,8 +110,11 @@ describe('picking a route', () => {
     expect(pickRoute({ fromAsset: 'NEAR', toAsset: 'USDC', toChain: 'intents', amount: '5' }, TOKENS, held())).toMatchObject({ kind: 'intents', to: NEAR_USDC, toIntents: true })
   })
 
-  it('says when the funds are only on a chain Ink can’t sign for yet', () => {
-    expect(pickRoute({ fromAsset: 'USDC', fromChain: 'base', toAsset: 'NEAR', amount: '5' }, TOKENS, held())).toEqual({ kind: 'none', reason: 'cannot-sign', chain: 'base' })
+  it('pays from the wallet on an EVM chain, and says when the funds are only on a chain Ink can’t sign for yet', () => {
+    const fromBase = pickRoute({ fromAsset: 'USDC', fromChain: 'base', toAsset: 'NEAR', amount: '5' }, TOKENS, held())
+    expect(legs(fromBase)).toEqual(['wallet:base:USDC'])
+    expect(fromBase.kind === 'intents' && fromBase.to.assetId).toBe('nep141:wrap.near')
+    expect(pickRoute({ fromAsset: 'XRP', fromChain: 'xrp', toAsset: 'NEAR', amount: '5' }, TOKENS, held())).toEqual({ kind: 'none', reason: 'cannot-sign', chain: 'xrp' })
     expect(pickRoute({ fromAsset: 'SOL', toAsset: 'NEAR', amount: '1' }, TOKENS, held())).toEqual({ kind: 'none', reason: 'cannot-sign', chain: 'sol' })
   })
 

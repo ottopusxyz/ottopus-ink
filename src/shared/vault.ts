@@ -70,10 +70,12 @@ export interface NewPhrase {
 }
 
 /** What a step needs from the chain at the moment it's signed: the next nonce as a decimal, and a recent block hash as hex. */
-export interface LiveInputs {
-  nonce: string
-  blockHash: string
-}
+/**
+ * What the chain says just before a step is signed, as strings. A NEAR step takes its key's
+ * next nonce and a recent block's hash; an EVM step its address's next nonce and today's fee
+ * caps per unit of gas, in wei.
+ */
+export type LiveInputs = { nonce: string; blockHash: string } | { nonce: string; maxFeePerGas: string; maxPriorityFeePerGas: string } | { recentBlockhash: string }
 
 /** A signed step: the bytes to send, and the transaction's id, which NEAR also calls its hash. */
 export interface SignedStep {

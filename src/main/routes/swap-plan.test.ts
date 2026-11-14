@@ -219,3 +219,47 @@ describe('building a swap paid from the Intents balance', () => {
     expect(built.swap?.payFrom).toBeUndefined()
   })
 })
+
+describe('building a swap the wallet pays on an EVM chain', () => {
+  const USDC_CONTRACT = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+  const EVM_DEPOSIT = '0x8f436D184823B77188DE973322278686c3780C2c'
+  const SOL = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
+  const withSolana: Account[] = [...OWN, { chain: 'solana', path: "m/44'/501'/0'/0'", address: SOL }]
+  const LISTED = [...TOKENS.filter((each) => each.assetId !== 'nep141:base-usdc.omft.near'), { ...token('nep141:base-usdc.omft.near', 'USDC', 'base'), contract: USDC_CONTRACT }, token('nep141:sol-usdc.omft.near', 'USDC', 'sol')]
+  const evmRpc = (tokens = 50_000_000n) =>
+    (({
+      balance: async () => 10n ** 16n,
+      tokenBalance: async () => tokens,
+      decimals: async () => 6,
+      symbol: async () => 'USDC',
+      estimateGas: async () => 50_000n,
+      fees: async () => ({ baseFee: 10_000_000n, tip: 1_000_000n }),
+      nonce: async () => 0n,
+      l1FeeUpperBound: async () => 0n,
+      send: async () => '',
+      receipt: async () => null,
+    }) as unknown as import('../evm/rpc').EvmRpc)
+  const FROM_BASE: PlanIntent = { outcome: 'swap', asset: 'USDC', amount: '10', chain: 'base', to: null, toAsset: 'USDC', toChain: 'solana' }
+
+  it('sends the token from the wallet’s EVM address to the deposit address there, with a refund back to it', async () => {
+    const { options, asked } = deps({ tokens: async () => LISTED, evmRpc: () => evmRpc() }, (request) => ({
+      ok: true,
+      quote: { amountIn: request.amount, amountOut: 9_970_000n, minAmountOut: 9_870_000n, amountInUsd: 10, amountOutUsd: 9.97, seconds: 30, withdrawFee: 0n, feeBps: 20, depositAddress: EVM_DEPOSIT, depositMemo: null, deadline: new Date(request.deadline) },
+    }))
+    const built = await buildOneClickSwap(FROM_BASE, withSolana, options)
+    if (!built.ok) throw new Error(built.reason)
+    expect(asked[0]).toMatchObject({ originAsset: 'nep141:base-usdc.omft.near', destinationAsset: 'nep141:sol-usdc.omft.near', amount: 10_000_000n, depositType: 'ORIGIN_CHAIN', refundTo: EVM, recipient: SOL })
+    expect(built.steps[0]).toMatchObject({ chain: 'evm', action: 'transfer', fields: { chainId: '8453', from: EVM, to: EVM_DEPOSIT, token: USDC_CONTRACT, amount: '10000000' } })
+    expect(built.swap).toMatchObject({ payFrom: 'evm', sendSymbol: 'USDC', sendDecimals: '6', sendChainId: '8453', sendToken: USDC_CONTRACT, refundTo: EVM })
+  })
+
+  it('refuses more than the address holds, and a deposit address that isn’t one on that chain', async () => {
+    const toEvmDeposit = (request: OneClickQuoteRequest): OneClickQuoteResult => ({
+      ok: true,
+      quote: { amountIn: request.amount, amountOut: 1n, minAmountOut: 1n, amountInUsd: 10, amountOutUsd: 9.97, seconds: 30, withdrawFee: 0n, feeBps: 20, depositAddress: EVM_DEPOSIT, depositMemo: null, deadline: new Date(request.deadline) },
+    })
+    expect(await buildOneClickSwap(FROM_BASE, withSolana, deps({ tokens: async () => LISTED, evmRpc: () => evmRpc(1n) }, toEvmDeposit).options)).toEqual({ ok: false, reason: 'insufficient-funds' })
+    // The default quote's deposit address is a NEAR account, which can't take a deposit sent on Base.
+    expect(await buildOneClickSwap(FROM_BASE, withSolana, deps({ tokens: async () => LISTED, evmRpc: () => evmRpc() }).options)).toEqual({ ok: false, reason: 'chain-unavailable' })
+  })
+})

@@ -46,9 +46,10 @@ import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reade
 import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
 import { installId, INK_SERVICE_URL } from './portfolio/service'
 import { tokenIcons } from './portfolio/token-icons'
-import { checkZerionKey, zerionHoldings, zerionOptions, zerionTokenSearch, type ZerionAccess } from './portfolio/zerion'
+import { checkZerionKey, zerionHoldings, zerionOptions, zerionTokenSearch, type ZerionAccess, type ZerionToken } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
+import { withReviewIcons, type ReviewIconDeps } from './review/icons'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
 import { buildOneClickSwap } from './routes/swap-plan'
 import { buildPayment, legsOfStep, paymentProgress } from './routes/pay-plan'
@@ -617,6 +618,27 @@ async function describePlan(plan: PlanView) {
   return describeForReview(plan, `NEAR ${NEAR_NETWORK}`, fee)
 }
 
+/** Zerion's icons for tokens Ink ships no logo for, matched by contract, for the review window. */
+const reviewSearches = new Map<string, Promise<ZerionToken[]>>()
+const reviewIconDeps: ReviewIconDeps = {
+  tokens: () => listedTokens(),
+  // Kept for the session, since the review window describes a plan again as it changes. An empty answer is asked again.
+  search: async (symbol, chain) => {
+    const access = zerionAccess()
+    if (!access) return []
+    const key = `${chain}|${symbol.toLowerCase()}`
+    const kept = reviewSearches.get(key)
+    if (kept) return kept
+    const asked = zerionTokenSearch(symbol, chain, zerionOptions(access))
+    reviewSearches.set(key, asked)
+    if (reviewSearches.size > 200) reviewSearches.delete(reviewSearches.keys().next().value as string)
+    const found = await asked
+    if (found.length === 0) reviewSearches.delete(key)
+    return found
+  },
+  icon: (url) => icons.icon(url),
+}
+
 /** Signs and sends each plan approved in the review window. */
 const sender = createPlanSender({
     store: plans,
@@ -650,7 +672,10 @@ const sender = createPlanSender({
 const reviews = createReviewBroker({
   store: plans,
   sender,
-  describe: describePlan,
+  describe: async (plan) => {
+    const described = await describePlan(plan)
+    return described ? withReviewIcons(described, reviewIconDeps) : null
+  },
   unlocked: () => vault?.isUnlocked() === true,
   onState: (state) => reviewWindow.update(state),
 })

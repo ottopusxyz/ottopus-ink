@@ -86,7 +86,8 @@ export function TokenLogo({ symbol, chain, icon, size = 'md', label }: { symbol:
       {symbol.slice(0, 3).toUpperCase()}
     </span>
   )
-  if (!badge || !src || !isTokenSymbol(symbol)) return mark
+  // A token drawn with its own logo, bundled or from Zerion, gets its chain as a badge. One drawn with its chain's logo already shows it.
+  if (!badge || !src || (!isTokenSymbol(symbol) && !fetched)) return mark
   return (
     <span className="ink-logo-pair">
       {mark}

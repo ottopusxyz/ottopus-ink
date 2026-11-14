@@ -3,6 +3,9 @@ import { cleanSymbol } from '../../shared/token-text'
 /** 1Click, NEAR Intents' swap service. Quotes and its token list need no key; without one it adds its own fee. */
 export const ONE_CLICK_URL = 'https://1click.chaindefuser.com'
 
+/** 1Click answers its token list at once but can take half a minute to send all of it. */
+export const TOKEN_LIST_TIMEOUT_MS = 30_000
+
 /** An asset id as 1Click names them: `nep141:wrap.near`, `nep245:…`, or its newer `1cs_v1:…`. */
 const ASSET_ID = /^(nep141|nep245|1cs_v1):[A-Za-z0-9._:-]{1,200}$/
 const WHOLE = /^(0|[1-9][0-9]{0,77})$/
@@ -29,7 +32,7 @@ export interface OneClickToken {
 export async function oneClickTokens({ fetch = globalThis.fetch, url = ONE_CLICK_URL }: { fetch?: typeof globalThis.fetch; url?: string } = {}): Promise<OneClickToken[] | null> {
   let body: unknown
   try {
-    const response = await fetch(`${url}/v0/tokens`, { signal: AbortSignal.timeout(10_000) })
+    const response = await fetch(`${url}/v0/tokens`, { signal: AbortSignal.timeout(TOKEN_LIST_TIMEOUT_MS) })
     if (!response.ok) return null
     body = await response.json()
   } catch {

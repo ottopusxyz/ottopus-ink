@@ -4,6 +4,10 @@ import type { IntentsDepositChain } from '../../shared/ipc'
 /** The bridge behind NEAR Intents: deposit addresses and the tokens it takes. No key needed. */
 export const BRIDGE_URL = 'https://bridge.chaindefuser.com/rpc'
 
+/** How long a call may take. Its token list starts at once but can take half a minute to arrive whole. */
+const CALL_TIMEOUT_MS = 15_000
+const TOKEN_LIST_TIMEOUT_MS = 30_000
+
 /** The bridge's name for a chain: `eth:8453`, `sol:mainnet`. */
 const CHAIN_KEY = /^[a-z]{2,12}:[0-9a-z]{1,16}$/
 
@@ -42,12 +46,12 @@ const CHAINS: readonly { key: string; name: string; mark: string | null }[] = [
 
 const WHOLE = /^(0|[1-9][0-9]{0,77})$/
 
-async function call(method: string, params: Record<string, unknown>, fetch: typeof globalThis.fetch, url: string): Promise<unknown> {
+async function call(method: string, params: Record<string, unknown>, fetch: typeof globalThis.fetch, url: string, timeoutMs = CALL_TIMEOUT_MS): Promise<unknown> {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: [params] }),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   if (!response.ok) throw new Error(`the bridge answered ${response.status}`)
   return response.json()
@@ -62,7 +66,7 @@ async function call(method: string, params: Record<string, unknown>, fetch: type
 export async function depositChains({ fetch = globalThis.fetch, url = BRIDGE_URL }: { fetch?: typeof globalThis.fetch; url?: string } = {}): Promise<IntentsDepositChain[] | null> {
   let body: unknown
   try {
-    body = await call('supported_tokens', {}, fetch, url)
+    body = await call('supported_tokens', {}, fetch, url, TOKEN_LIST_TIMEOUT_MS)
   } catch {
     return null
   }

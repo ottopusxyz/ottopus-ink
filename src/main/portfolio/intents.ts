@@ -1,5 +1,6 @@
 import { cleanSymbol } from '../../shared/token-text'
 import type { NearRpc } from '../near/rpc'
+import { TOKEN_LIST_TIMEOUT_MS } from '../routes/one-click'
 
 /** The NEAR Intents contract. It holds each account's Intents balance as NEP-245 tokens. */
 export const INTENTS_CONTRACT = 'intents.near'
@@ -118,7 +119,7 @@ export function originName(code: string): string {
 export async function intentsTokenList({ fetch = globalThis.fetch, url = ONE_CLICK_TOKENS_URL }: { fetch?: typeof globalThis.fetch; url?: string } = {}): Promise<Map<string, IntentsToken> | null> {
   let body: unknown
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+    const response = await fetch(url, { signal: AbortSignal.timeout(TOKEN_LIST_TIMEOUT_MS) })
     if (!response.ok) return null
     body = await response.json()
   } catch {

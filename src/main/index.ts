@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
 import type { PlanStatus } from '../shared/plan'
-import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type PlanJourney, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { IPC, type Activity, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type PlanJourney, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
 import { createDepositJournal } from './intents/deposit-journal'
 import { evmChainById, type EvmChain } from '../shared/evm/chains'
 import { evmTransferOfStep } from '../shared/evm/transaction'
@@ -38,6 +38,7 @@ import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { planOutcome } from './plans/outcome'
+import { activityOf } from './plans/activity'
 import { createPlanStore, type PlanView } from './plans/store'
 import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reader'
 import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
@@ -256,19 +257,37 @@ function getSwapJournal(): SwapJournal {
 /** Each plan's transactions, by step, as the sender reported them: what a journey is drawn from. */
 const planTxs = new Map<string, Map<number, StepTx>>()
 
+/** A plan's journey as main sees it now. */
+function journeyOfPlan(plan: PlanView): PlanJourney {
+  const progress = plan.core.swap ? [swapTracker.get(plan.id)] : (plan.core.swaps ?? []).map((_, leg) => swapTracker.get(`${plan.id}#${leg}`))
+  return journeyOf({ core: plan.core, status: plan.status, txs: planTxs.get(plan.id) ?? new Map(), swaps: progress, held: sender.holds(plan.id) })
+}
+
 /** A plan's journey as main sees it now, or null for a plan no chat follows. */
 function journeyFor(planId: string): PlanJourney | null {
   const follow = followed.get(planId)
   const plan = follow ? plans.get(planId, follow.owner) : null
-  if (!plan) return null
-  const progress = plan.core.swap ? [swapTracker.get(planId)] : (plan.core.swaps ?? []).map((_, leg) => swapTracker.get(`${planId}#${leg}`))
-  return journeyOf({ core: plan.core, status: plan.status, txs: planTxs.get(planId) ?? new Map(), swaps: progress, held: sender.holds(planId) })
+  return plan ? journeyOfPlan(plan) : null
+}
+
+/** What the Activity page shows, only while unlocked: it holds addresses and amounts. */
+function activityNow(): Activity {
+  if (vault?.isUnlocked() !== true) return { plans: [], earlier: [] }
+  return activityOf({
+    plans: plans.list(),
+    journey: journeyOfPlan,
+    swap: (plan) => swapStateOf(plan.id, plan.core),
+    transactionId: (plan) => [...(planTxs.get(plan.id)?.values() ?? [])].at(-1)?.id ?? null,
+    recent: recentSwaps(),
+  })
 }
 
 /** Tells a plan's chat its journey, whenever anything along it moved. */
 function pushJourney(planId: string): void {
   const journey = journeyFor(planId)
   if (journey) followed.get(planId)?.journey(journey)
+  // Activity asks again: it carries nothing, so nothing leaks while Ink is locked.
+  sendToWindows(IPC.activityChanged)
 }
 
 /** Each plan's chat, told of a status the review window didn't see: a payment's payout, sent after it closed. */
@@ -1011,6 +1030,11 @@ function registerIpc(): void {
   ipcMain.handle(IPC.recentSwaps, (event) => {
     assertAppFrame(event)
     return recentSwaps()
+  })
+
+  ipcMain.handle(IPC.activity, (event) => {
+    assertAppFrame(event)
+    return activityNow()
   })
 
   ipcMain.handle(IPC.savedPortfolio, (event) => {

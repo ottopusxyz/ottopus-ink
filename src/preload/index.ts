@@ -55,6 +55,14 @@ const bridge: InkBridge = {
   portfolio: (options) => ipcRenderer.invoke(IPC.portfolio, { fresh: options?.fresh === true }),
   savedPortfolio: () => ipcRenderer.invoke(IPC.savedPortfolio),
   recentSwaps: () => ipcRenderer.invoke(IPC.recentSwaps),
+  activity: () => ipcRenderer.invoke(IPC.activity),
+  onActivityChanged: (listener) => {
+    const handler = () => listener()
+    ipcRenderer.on(IPC.activityChanged, handler)
+    return () => {
+      ipcRenderer.removeListener(IPC.activityChanged, handler)
+    }
+  },
   onSwapsChanged: (listener) => {
     const handler = () => listener()
     ipcRenderer.on(IPC.swapsChanged, handler)

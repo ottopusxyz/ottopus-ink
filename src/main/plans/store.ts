@@ -222,6 +222,11 @@ export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(),
       return { ok: true, plan: view(core.id, entry) }
     },
 
+    /** Every plan the store keeps, whoever made it, newest first. Only for main's own views, such as Activity. */
+    list(): PlanView[] {
+      return [...plans].reverse().map(([id, entry]) => view(id, entry))
+    },
+
     get(id: string, owner: string): PlanView | null {
       const entry = owned(id, owner)
       return entry ? view(id, entry) : null

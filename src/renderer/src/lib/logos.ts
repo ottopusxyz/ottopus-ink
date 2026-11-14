@@ -1,12 +1,11 @@
 import type { AccountChain } from '../../../shared/accounts'
+import { isTokenSymbol, type TokenSymbol } from '../../../shared/logos'
+
+export { isTokenSymbol, TOKEN_SYMBOLS, type TokenSymbol } from '../../../shared/logos'
 
 /** The chains Ink has a mark for: its own account chains, and the EVM networks one EVM address covers. */
 export const CHAIN_IDS = ['near', 'ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc', 'solana', 'bitcoin', 'tron', 'sui', 'aptos'] as const
 export type ChainId = (typeof CHAIN_IDS)[number]
-
-/** The tokens Ink has a mark for, by symbol. */
-export const TOKEN_SYMBOLS = ['NEAR', 'ETH', 'USDC', 'USDT', 'SOL', 'BTC', 'TRX', 'SUI', 'APT'] as const
-export type TokenSymbol = (typeof TOKEN_SYMBOLS)[number]
 
 /** Which mark stands for each of Ink's account chains. One EVM address is Ethereum's mark. */
 export const ACCOUNT_CHAIN_MARK: Record<AccountChain, ChainId> = {
@@ -31,8 +30,6 @@ const NATIVE: Record<TokenSymbol, readonly ChainId[]> = {
   SUI: ['sui'],
   APT: ['aptos'],
 }
-
-export const isTokenSymbol = (value: string): value is TokenSymbol => (TOKEN_SYMBOLS as readonly string[]).includes(value.toUpperCase())
 
 export const isChainId = (value: string): value is ChainId => (CHAIN_IDS as readonly string[]).includes(value.toLowerCase())
 

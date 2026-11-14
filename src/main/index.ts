@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
 import type { PlanStatus } from '../shared/plan'
 import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type PlanJourney, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
@@ -38,6 +38,7 @@ import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
 import { agentPlanTools } from './plans/agent-tools'
 import { planOutcome } from './plans/outcome'
+import { createNotifier } from './notify'
 import { createPlanStore, type PlanView } from './plans/store'
 import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reader'
 import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
@@ -80,6 +81,39 @@ const signer = new SignerHost(join(import.meta.dirname, 'signer.js'), (status) =
 
 /** The app's own windows, leaving out the review window, which hears only about its plan. */
 const appWindows = (): BrowserWindow[] => BrowserWindow.getAllWindows().filter((win) => !reviewWindow.owns(win.webContents))
+
+/** Brings Ink's own window forward, or opens one. */
+function showInk(): void {
+  const [win] = appWindows()
+  if (!win) {
+    if (app.isReady()) createMainWindow()
+    return
+  }
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+/** Notifications shown, kept until closed so a click still reaches its handler. */
+const notices = new Set<Notification>()
+
+/** A system notification when a plan or a deposit ends while Ink isn't in front. */
+const notifyEnding = createNotifier({
+  supported: () => Notification.isSupported(),
+  focused: () => appWindows().some((win) => win.isFocused()),
+  unlocked: () => vault?.isUnlocked() === true,
+  open: showInk,
+  show: (notice, open) => {
+    const shown = new Notification({ title: notice.title, body: notice.body })
+    notices.add(shown)
+    shown.on('click', () => {
+      notices.delete(shown)
+      open()
+    })
+    shown.on('close', () => notices.delete(shown))
+    shown.show()
+  },
+})
 
 function sendToWindows(channel: string, ...args: unknown[]): void {
   for (const win of appWindows()) {
@@ -242,6 +276,7 @@ function endingOf(planId: string): void {
   if (!outcome) return
   follow.ended = true
   follow.ending(outcome)
+  notifyEnding(outcome.note)
 }
 
 let swapJournal: SwapJournal | null = null
@@ -409,9 +444,11 @@ const depositWatcher = createDepositWatcher({
     const held = (await zerionHoldings(address, zerionOptions(access))).filter((holding) => holding.network === zerion && holding.symbol.toLowerCase() === symbol.toLowerCase())
     return { raw: held.reduce((sum, holding) => sum + holding.raw, 0n), decimals: held[0]?.decimals ?? 18 }
   },
-  onUpdate: (entry) => {
+  onUpdate: (entry, before) => {
     const { id, progress } = entry.deposit
     const ending = depositEnding(entry.deposit)
+    // Once, as it reaches its end, not again if a detail changes after.
+    if (ending && before !== progress.stage) notifyEnding(ending.note)
     const listen = depositListeners.get(id)
     if (listen?.progress(id, progress)) {
       if (ending) listen.ending(id, ending)
@@ -1080,11 +1117,7 @@ function registerIpc(): void {
 }
 
 app.on('second-instance', () => {
-  const [win] = appWindows()
-  if (win) {
-    if (win.isMinimized()) win.restore()
-    win.focus()
-  }
+  if (appWindows().length > 0) showInk()
 })
 
 app.on('web-contents-created', (_event, contents) => {

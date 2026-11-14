@@ -4,17 +4,23 @@ import { ChainLogo, TokenLogo } from '@/components/ui'
 import { ChainMark } from '@/components/wallet/chain-mark'
 import { chainColour, shortAddress, shortAmount } from './review-copy'
 
-/** A signed amount: red for what leaves, green for what arrives. The exact amount is its title, and in the details. */
+/**
+ * A signed amount: red for what leaves, green for what arrives. Where it's narrow the
+ * symbol drops below the number rather than running out of its box. The exact amount is
+ * its title, and in the details.
+ */
 export function Signed({ sign, amount, symbol, size = 'md' }: { sign: '-' | '+'; amount: string; symbol?: string; size?: 'md' | 'lg' }) {
   const { text, cut } = shortAmount(amount)
   return (
     <span
-      className={`selectable font-mono font-bold whitespace-nowrap ${size === 'lg' ? 'text-[20px]' : 'text-[13.5px]'} ${sign === '-' ? 'text-[var(--ot-block-text)]' : 'text-[var(--ot-ok-text)]'}`}
+      className={`selectable inline-flex min-w-0 flex-wrap items-baseline gap-x-[0.35em] font-mono leading-[1.2] font-bold ${size === 'lg' ? 'text-[18px]' : 'text-[13.5px]'} ${sign === '-' ? 'text-[var(--ot-block-text)]' : 'text-[var(--ot-ok-text)]'}`}
       title={`${sign === '-' ? '−' : '+'} ${amount}${symbol ? ` ${symbol}` : ''}`}
     >
-      {sign === '-' ? '−' : '+'} {cut ? '≈' : ''}
-      {text}
-      {symbol ? ` ${symbol}` : ''}
+      <span className="whitespace-nowrap">
+        {sign === '-' ? '−' : '+'} {cut ? '≈' : ''}
+        {text}
+      </span>
+      {symbol ? <span className="whitespace-nowrap">{symbol}</span> : null}
     </span>
   )
 }
@@ -48,7 +54,9 @@ export function MoneyMap({ plan }: { plan: ReviewPlan }) {
         <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
           {flow.out.map((source, index) => (
             <li key={index} className="flex min-w-0 items-center gap-2.5">
-              <Token amount={source} />
+              <span className="flex-none">
+                <Token amount={source} />
+              </span>
               <span className="flex min-w-0 flex-col">
                 <Signed sign="-" amount={source.amount} symbol={source.token.symbol} />
                 <span className="truncate text-[11.5px] text-[var(--ot-text-3)]">{source.token.place}</span>
@@ -70,7 +78,9 @@ export function MoneyMap({ plan }: { plan: ReviewPlan }) {
         </div>
         <div className="flex min-w-0 flex-col gap-1.5 rounded-[12px] bg-[var(--ot-ok-bg)] px-3 py-2.5">
           <span className="flex min-w-0 items-center gap-2">
-            <Token amount={arrives} />
+            <span className="flex-none">
+              <Token amount={arrives} />
+            </span>
             <Signed sign="+" amount={arrives.amount} symbol={arrives.token.symbol} size={pay ? 'lg' : 'md'} />
           </span>
           <span className="text-[11.5px] text-[var(--ot-ok-text)]">

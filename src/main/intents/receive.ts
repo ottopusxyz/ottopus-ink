@@ -1,5 +1,5 @@
 import type { Account, AccountChain } from '../../shared/accounts'
-import type { IntentsDepositChain, ReceiveAnswer, ReceiveChain, ReceiveToken } from '../../shared/ipc'
+import type { IntentsDepositChain, ReceiveAnswer, ReceiveChain, ReceiveRoute, ReceiveRoutes, ReceiveToken } from '../../shared/ipc'
 import { parseUnits } from '../../shared/token-text'
 
 /**
@@ -116,6 +116,8 @@ export interface ReceiveAsk {
   asset: string
   /** A plain decimal, or null when not given. */
   amount: string | null
+  /** Which address, when the person chose: their own, or NEAR Intents'. Ink picks when it's `auto` or absent. */
+  route?: ReceiveRoute
 }
 
 /** Whether `amount` is under `min`, both plain decimals. False when either can't be read. */
@@ -129,8 +131,10 @@ function below(amount: string, min: string): boolean {
  * Where to receive a token on a chain, NEAR Intents first: its deposit address there
  * when it takes the token and the amount (if given) meets its minimum, so what arrives
  * lands in the Intents balance; otherwise the wallet's own address on that chain; and
- * nothing, plainly, when neither can take it. The wallet's own accounts and the bridge
- * are asked by main; this only decides.
+ * nothing, plainly, when neither can take it. A route the person chose is kept to: if it
+ * can't take this, the answer says why rather than giving the other address. Every
+ * answer says which routes the chain and token can take, for the page's switch. The
+ * wallet's own accounts and the bridge are asked by main; this only decides.
  */
 export async function pickReceive(
   ask: ReceiveAsk,
@@ -146,18 +150,25 @@ export async function pickReceive(
   const own = chain.own ? accounts.find((account) => account.chain === chain.own) : undefined
   const near = accounts.find((account) => account.chain === 'near')?.address
   const token = bridge?.find((each) => each.key === chain.bridge)?.tokens.find((each) => each.symbol.toLowerCase() === ask.asset.trim().toLowerCase())
-  const ownAnswer = (why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable'): ReceiveAnswer =>
-    own
-      ? { ok: true, kind: 'own', chain: chain.id, chainName: chain.name, asset: token?.symbol ?? ask.asset.trim(), address: own.address, path: own.path, why, min: token?.min ?? null }
-      : { ok: false, reason: why === 'below-minimum' ? 'below-minimum' : why === 'intents-unavailable' ? 'unavailable' : 'not-supported', min: token?.min ?? null }
-
+  const route = ask.route ?? 'auto'
   // Without the bridge's list, Ink can't tell whether NEAR Intents takes the token, so it doesn't say it doesn't.
-  if (bridge === null && chain.bridge) return ownAnswer('intents-unavailable')
+  const routes: ReceiveRoutes = { own: Boolean(own), intents: Boolean(chain.bridge && near && (token || bridge === null)) }
+  const failed = (reason: 'below-minimum' | 'unavailable' | 'not-supported'): ReceiveAnswer => ({ ok: false, reason, min: token?.min ?? null, routes })
+  const ownAnswer = (why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable' | 'chosen'): ReceiveAnswer =>
+    own
+      ? { ok: true, kind: 'own', chain: chain.id, chainName: chain.name, asset: token?.symbol ?? ask.asset.trim(), address: own.address, path: own.path, why, min: token?.min ?? null, routes }
+      : failed(why === 'below-minimum' ? 'below-minimum' : why === 'intents-unavailable' ? 'unavailable' : 'not-supported')
+  // Not NEAR Intents: what to answer instead, which is the wallet's own address unless the person chose NEAR Intents.
+  const instead = (why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable'): ReceiveAnswer =>
+    route === 'intents' ? failed(why === 'below-minimum' ? 'below-minimum' : why === 'intents-unavailable' ? 'unavailable' : 'not-supported') : ownAnswer(why)
+
+  if (route === 'own') return ownAnswer('chosen')
+  if (bridge === null && chain.bridge) return instead('intents-unavailable')
   if (token && chain.bridge && near) {
-    if (ask.amount !== null && below(ask.amount, token.min)) return ownAnswer('below-minimum')
+    if (ask.amount !== null && below(ask.amount, token.min)) return instead('below-minimum')
     const deposit = await depositAddress(near, chain.bridge).catch(() => null)
-    if (!deposit) return ownAnswer('intents-unavailable')
-    return { ok: true, kind: 'intents', chain: chain.id, chainName: chain.name, asset: token.symbol, address: deposit.address, memo: deposit.memo, min: token.min, account: near }
+    if (!deposit) return instead('intents-unavailable')
+    return { ok: true, kind: 'intents', chain: chain.id, chainName: chain.name, asset: token.symbol, address: deposit.address, memo: deposit.memo, min: token.min, account: near, routes }
   }
-  return ownAnswer('not-in-intents')
+  return instead('not-in-intents')
 }

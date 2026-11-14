@@ -75,14 +75,14 @@ describe('searching a chain’s tokens', () => {
 describe('where to receive, NEAR Intents first', () => {
   it('gives NEAR Intents’ deposit address when it takes the token, credited to the wallet’s NEAR account', async () => {
     const { deps: options, asked } = deps()
-    expect(await pickReceive({ chain: 'base', asset: 'usdc', amount: null }, options)).toEqual({ ok: true, kind: 'intents', chain: 'base', chainName: 'Base', asset: 'USDC', address: '0xbridgebase', memo: null, min: '1', account: NEAR })
+    expect(await pickReceive({ chain: 'base', asset: 'usdc', amount: null }, options)).toEqual({ ok: true, kind: 'intents', chain: 'base', chainName: 'Base', asset: 'USDC', address: '0xbridgebase', memo: null, min: '1', account: NEAR, routes: { own: true, intents: true } })
     expect(asked).toEqual([`${NEAR} eth:8453`])
     expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: '25' }, options)).toMatchObject({ kind: 'intents' })
     expect(await pickReceive({ chain: 'stellar', asset: 'XLM', amount: null }, options)).toMatchObject({ kind: 'intents', memo: '177237517' })
   })
 
   it('gives the wallet’s own address when the amount is under NEAR Intents’ minimum', async () => {
-    expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: '0.5' }, deps().deps)).toEqual({ ok: true, kind: 'own', chain: 'base', chainName: 'Base', asset: 'USDC', address: EVM, path: "m/44'/60'/0'/0/0", why: 'below-minimum', min: '1' })
+    expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: '0.5' }, deps().deps)).toEqual({ ok: true, kind: 'own', chain: 'base', chainName: 'Base', asset: 'USDC', address: EVM, path: "m/44'/60'/0'/0/0", why: 'below-minimum', min: '1', routes: { own: true, intents: true } })
     expect(await pickReceive({ chain: 'bitcoin', asset: 'BTC', amount: '0.00001' }, deps().deps)).toMatchObject({ kind: 'own', address: 'bc1qown', why: 'below-minimum' })
   })
 
@@ -92,14 +92,27 @@ describe('where to receive, NEAR Intents first', () => {
     expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: null }, deps({ depositAddress: async () => null }).deps)).toMatchObject({ kind: 'own', why: 'intents-unavailable' })
     // Without the bridge's list Ink can't tell what NEAR Intents takes, so it says it couldn't reach it.
     expect(await pickReceive({ chain: 'solana', asset: 'USDC', amount: null }, deps({ bridge: null, accounts: [...ACCOUNTS, { chain: 'solana', path: "m/44'/501'/0'/0'", address: 'SoLown' }] }).deps)).toMatchObject({ kind: 'own', why: 'intents-unavailable', address: 'SoLown' })
-    expect(await pickReceive({ chain: 'xrp', asset: 'XRP', amount: null }, deps({ bridge: null }).deps)).toEqual({ ok: false, reason: 'unavailable', min: null })
+    expect(await pickReceive({ chain: 'xrp', asset: 'XRP', amount: null }, deps({ bridge: null }).deps)).toMatchObject({ ok: false, reason: 'unavailable', min: null })
   })
 
   it('says plainly when neither can take it, and refuses what isn’t a chain or an amount', async () => {
-    expect(await pickReceive({ chain: 'xrp', asset: 'XRP', amount: '1' }, deps().deps)).toEqual({ ok: false, reason: 'below-minimum', min: '2' })
-    expect(await pickReceive({ chain: 'xrp', asset: 'USDC', amount: null }, deps().deps)).toEqual({ ok: false, reason: 'not-supported', min: null })
+    expect(await pickReceive({ chain: 'xrp', asset: 'XRP', amount: '1' }, deps().deps)).toEqual({ ok: false, reason: 'below-minimum', min: '2', routes: { own: false, intents: true } })
+    expect(await pickReceive({ chain: 'xrp', asset: 'USDC', amount: null }, deps().deps)).toEqual({ ok: false, reason: 'not-supported', min: null, routes: { own: false, intents: false } })
     expect(await pickReceive({ chain: 'moon', asset: 'USDC', amount: null }, deps().deps)).toEqual({ ok: false, reason: 'unknown-chain' })
     expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: 'lots' }, deps().deps)).toEqual({ ok: false, reason: 'bad-amount' })
+  })
+
+  it('keeps to the route the person chose, and never quietly gives the other address', async () => {
+    // Their own address, even where NEAR Intents would take it.
+    expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: null, route: 'own' }, deps().deps)).toMatchObject({ ok: true, kind: 'own', address: EVM, why: 'chosen', routes: { own: true, intents: true } })
+    // NEAR Intents' address, as Ink would pick anyway.
+    expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: null, route: 'intents' }, deps().deps)).toMatchObject({ ok: true, kind: 'intents', address: '0xbridgebase' })
+    // NEAR Intents chosen where it can't take it: why, not their own address.
+    expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: '0.5', route: 'intents' }, deps().deps)).toEqual({ ok: false, reason: 'below-minimum', min: '1', routes: { own: true, intents: true } })
+    expect(await pickReceive({ chain: 'base', asset: 'DEGEN', amount: null, route: 'intents' }, deps().deps)).toMatchObject({ ok: false, reason: 'not-supported', routes: { own: true, intents: false } })
+    expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: null, route: 'intents' }, deps({ depositAddress: async () => null }).deps)).toMatchObject({ ok: false, reason: 'unavailable' })
+    // Their own address chosen on a chain where they have none.
+    expect(await pickReceive({ chain: 'xrp', asset: 'XRP', amount: null, route: 'own' }, deps().deps)).toMatchObject({ ok: false, reason: 'not-supported', routes: { own: false, intents: true } })
   })
 
   it('knows chains by the names people and agents use', async () => {

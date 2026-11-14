@@ -424,10 +424,11 @@ async function keptDepositAddress(account: string, key: string): Promise<{ addre
 /** A receive the page or the agent asked about, checked: a chain, a token, and an amount or none. */
 function receiveAskOf(value: unknown): ReceiveAsk | null {
   if (typeof value !== 'object' || value === null) return null
-  const { chain, asset, amount } = value as Record<string, unknown>
+  const { chain, asset, amount, route } = value as Record<string, unknown>
   if (typeof chain !== 'string' || chain.length > 40 || typeof asset !== 'string' || !/^[A-Za-z0-9$._+-]{1,16}$/.test(asset.trim())) return null
   if (amount !== null && amount !== undefined && (typeof amount !== 'string' || amount.length > 80)) return null
-  return { chain, asset: asset.trim(), amount: typeof amount === 'string' && amount.trim() ? amount.trim() : null }
+  if (route !== undefined && route !== 'auto' && route !== 'own' && route !== 'intents') return null
+  return { chain, asset: asset.trim(), amount: typeof amount === 'string' && amount.trim() ? amount.trim() : null, ...(route ? { route } : {}) }
 }
 
 /**
@@ -527,7 +528,8 @@ async function showDeposit(chatId: string, owner: string, ask: ReceiveAsk, answe
       memo: intents ? answer.memo : null,
       min: answer.min,
       account: intents ? answer.account : null,
-      why: intents ? null : answer.why,
+      // The agent's deposits are always Ink's pick, never a route the person chose on the Receive page.
+      why: intents || answer.why === 'chosen' ? null : answer.why,
     },
   })
   depositListeners.set(entry.deposit.id, listen)

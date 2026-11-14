@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import type { ReviewFailure, ReviewPlan, ReviewState, ReviewSwap } from '../../../shared/review'
 import { Otto, type PoseName } from '@/components/brand/otto'
 import { InkHold, StepList } from '@/components/motion/loaders'
-import { CheckIcon, ClockIcon, ExternalIcon } from '@/components/shell/icons'
+import { CheckIcon, ClockIcon, ExternalIcon, ReceiptIcon } from '@/components/shell/icons'
 import { Badge, Button, buttonClasses, Callout } from '@/components/ui'
 import { ChainMark } from '@/components/wallet/chain-mark'
 import { MoneyMap } from './money-map'
@@ -202,13 +202,19 @@ export function ReviewApp() {
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            <Badge tone="ok">
-              <CheckIcon size={12} />
-              {plan.toWhy === 'typed' ? 'You typed this address in the chat' : 'Your own account'}
-            </Badge>
+            {plan.toWhy === 'attached' ? (
+              <FromFile plan={plan} />
+            ) : (
+              <Badge tone="ok">
+                <CheckIcon size={12} />
+                {plan.toWhy === 'typed' ? 'You typed this address in the chat' : 'Your own account'}
+              </Badge>
+            )}
             {plan.toKind === 'implicit' || plan.toKind === 'eth-implicit' ? <Badge>New if nothing was sent to it yet</Badge> : null}
           </div>
-          {plan.toWhy === 'typed' ? (
+          {plan.toWhy === 'attached' ? (
+            <FromFileNote />
+          ) : plan.toWhy === 'typed' ? (
             <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">Check every character against the address you meant. Funds sent to the wrong account can’t be taken back.</p>
           ) : null}
         </Section>
@@ -331,16 +337,22 @@ function SwapTerms({ plan, swap }: { plan: ReviewPlan; swap: ReviewSwap }) {
         <span className="ink-eyebrow">Paid to</span>
         <Address value={plan.to} />
         <div className="flex flex-wrap gap-1.5">
-          <Badge tone="ok">
-            <CheckIcon size={12} />
-            {plan.toWhy === 'typed'
-              ? 'You typed this address in the chat'
-              : plan.toKind === 'other-chain'
-                ? `Your own address on ${swap.getChain}`
-                : 'Your own NEAR Intents balance'}
-          </Badge>
+          {plan.toWhy === 'attached' ? (
+            <FromFile plan={plan} />
+          ) : (
+            <Badge tone="ok">
+              <CheckIcon size={12} />
+              {plan.toWhy === 'typed'
+                ? 'You typed this address in the chat'
+                : plan.toKind === 'other-chain'
+                  ? `Your own address on ${swap.getChain}`
+                  : 'Your own NEAR Intents balance'}
+            </Badge>
+          )}
         </div>
-        {plan.toWhy === 'typed' ? (
+        {plan.toWhy === 'attached' ? (
+          <FromFileNote />
+        ) : plan.toWhy === 'typed' ? (
           <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-text-2)]">
             Not your own address. Check every character against the address you meant, and that it’s on {swap.getChain}. A payout to the wrong address can’t be taken back.
           </p>
@@ -361,6 +373,24 @@ function SwapTerms({ plan, swap }: { plan: ReviewPlan; swap: ReviewSwap }) {
         <p className="m-0 pt-1 text-[12px] text-[var(--ot-text-3)]">NEAR Intents’ address for this swap only. It closes at {closes}; Ink won’t send to it after that.</p>
       </details>
     </Section>
+  )
+}
+
+/** An address Ink read from a file the person attached, by the file's name. */
+function FromFile({ plan }: { plan: ReviewPlan }) {
+  return (
+    <Badge tone="warn">
+      <ReceiptIcon size={12} />
+      From {plan.toFile ?? 'a file'}, which you attached
+    </Badge>
+  )
+}
+
+function FromFileNote() {
+  return (
+    <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-warn-text)]">
+      Ink read this address from the file, not from you. Check every character against the invoice and against an address the sender gave you some other way: a file can hold text you can’t see. Funds sent to the wrong address can’t be taken back.
+    </p>
   )
 }
 

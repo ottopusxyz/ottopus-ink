@@ -44,10 +44,9 @@ function StepIcon({ icon }: { icon: TrackerIcon }) {
 
 /**
  * A plan's headline, where it stands, and each of its steps from review through signing
- * and its chains to the money landing, with explorer links as they arrive. Shared by the
- * chat's tracker and the Activity page. `when` is shown beside the status, if given.
+ * and its chains to the money landing, with explorer links as they arrive.
  */
-export function PlanSteps({ plan, when }: { plan: ChatPlan; when?: string }) {
+export function PlanSteps({ plan }: { plan: ChatPlan }) {
   const steps = trackerSteps(plan)
   return (
     <>
@@ -67,7 +66,6 @@ export function PlanSteps({ plan, when }: { plan: ChatPlan; when?: string }) {
             {trackerSummary(plan)}
           </span>
         </span>
-        {when ? <span className="flex-none text-[12px] text-[var(--ot-text-3)]">{when}</span> : null}
         <StatusChip status={plan.status} />
       </div>
       <ol className="m-0 flex list-none flex-wrap items-start gap-x-1 gap-y-2 p-0">

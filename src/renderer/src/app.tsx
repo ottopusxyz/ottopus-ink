@@ -208,7 +208,7 @@ export function App() {
       ) : page === 'portfolio' ? (
         <PortfolioView onAsk={askOnHome} onReceive={(chain) => openReceive(chain)} onSettings={() => openSettings('wallet')} />
       ) : page === 'activity' ? (
-        <ActivityView />
+        <ActivityView chats={chats} onOpenChat={openChat} />
       ) : current ? (
         <ChatView
           chat={current}

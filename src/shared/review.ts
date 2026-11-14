@@ -52,7 +52,9 @@ export interface ReviewPlan {
    */
   toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain' | 'evm' | 'solana'
   /** Why Ink lets this plan pay `to`: it's the person's own address, or they typed it in the chat. */
-  toWhy: 'own' | 'typed'
+  toWhy: 'own' | 'typed' | 'attached'
+  /** For `attached`: the name of the file the address came from. */
+  toFile?: string
   /** What's sent, in `asset`: the NEAR sent or swapped, or the token a swap moves from the Intents balance. */
   amount: string
   /** Exactly what is sent, in the asset's smallest unit (yoctoNEAR for NEAR), for anyone checking the decimals. */

@@ -168,7 +168,7 @@ function payoutPending(plan: PlanSummary): string {
 function planRefusal(result: Extract<PlanToolResult, { ok: false }>, id: string | null): object {
   switch (result.reason) {
     case 'recipient-not-allowed':
-      return toolAnswer('Ink only pays the person’s own address on the chain the funds land on, or an address they typed themselves in this chat. Name the chain, or ask them to type the address.', true)
+      return toolAnswer('Ink only pays the person’s own address on the chain the funds land on, an address they typed themselves in this chat, or one in a file they attached. Name the chain, or ask them to type the address or attach the invoice.', true)
     case 'too-many':
       return toolAnswer('Too many plans at once. Wait a minute, then try again.', true)
     case 'not-found':

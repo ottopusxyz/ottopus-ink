@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { Account, AccountChain } from '../../shared/accounts'
-import { PLAN_STATUSES, type PlanCore, type PlanCreator, type PlanFailure, type PlanIntent, type PlanStatus, type PlanStep, type PlanSwap } from '../../shared/plan'
+import { PLAN_STATUSES, type PlanCore, type PlanCreator, type PlanFailure, type PlanIntent, type PlanStatus, type PlanStep, type PlanSwap, type Sent } from '../../shared/plan'
 import { PlanIntegrityError } from '../../shared/canonical'
 import { planHash } from '../../shared/plan-hash'
 import { allowedRecipient } from './recipients'
@@ -44,7 +44,7 @@ export interface NewPlan {
   /** The person's own addresses. */
   own: readonly Account[]
   /** The person's own messages in that chat, as main captured them, never the agent's. */
-  typed: readonly string[]
+  typed: readonly Sent[]
 }
 
 interface Entry {

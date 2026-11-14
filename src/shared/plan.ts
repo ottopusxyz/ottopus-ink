@@ -51,14 +51,24 @@ export interface PlanIntent {
 
 /**
  * Who gets paid, and why that address is allowed: it's the person's own on the
- * chain the funds land on, or it was sent from the chat's box ("typed"), where
- * the agent can't write. An agent can never supply one on its own. "Typed" keeps
- * the agent out, not compromised page code: the review window confirms it.
+ * chain the funds land on, it was sent from the chat's box ("typed"), where the
+ * agent can't write, or it's in a file the person picked in the system's file
+ * dialog and attached ("attached"), named by `file`. An agent can never supply
+ * one on its own. Both keep the agent out, not compromised page code or a file
+ * that hides text: the review window confirms it.
  */
 export interface PlanRecipient {
   address: string
-  why: 'own' | 'typed'
+  why: 'own' | 'typed' | 'attached'
+  /** For `attached`: the file's name. */
+  file?: string
 }
+
+/**
+ * What the person sent in a chat: a message from its box, or the text Ink read from a
+ * file they attached. Never anything the agent wrote.
+ */
+export type Sent = string | { file: string; text: string }
 
 /**
  * One thing to sign. Chain modules fill these in with the exact unsigned fields:

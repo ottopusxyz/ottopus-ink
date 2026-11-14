@@ -24,6 +24,8 @@ async function planWith(steps: PlanStep[], intent: PlanIntent = INTENT): Promise
 describe('what the review window shows', () => {
   it('reads every value from the step the signer signs', async () => {
     const plan = await planWith([STEP])
+    const NEAR_COIN = { symbol: 'NEAR', chain: 'near', place: 'NEAR', id: null, icon: null }
+    const action = { kind: 'Transfer', amount: '1.5', attachAsset: 'NEAR', method: null, summary: 'Send 1.5 NEAR to alice.near', move: { amount: '1.5', token: NEAR_COIN, to: 'alice.near', role: 'recipient' } }
     expect(describeForReview(plan, 'NEAR mainnet', FEE)).toEqual({
       id: plan.id,
       kind: 'send',
@@ -45,7 +47,9 @@ describe('what the review window shows', () => {
       maxFee: '0.000267819075',
       maxFeeYocto: '267819075000000000000',
       maxTotal: '1.500267819075',
-      actions: [{ kind: 'Transfer', amount: '1.5', method: null, summary: 'Send 1.5 NEAR to alice.near' }],
+      actions: [action],
+      flow: { out: [{ token: NEAR_COIN, amount: '1.5' }], via: 'direct', in: { token: NEAR_COIN, amount: '1.5', exact: true, to: 'alice.near' } },
+      transactions: [{ chain: { mark: 'near', name: 'NEAR' }, key: 'ed25519', when: 'now', maxFee: '0.000267819075', feeAsset: 'NEAR', actions: [action] }],
       expiresAt: plan.core.expiresAt,
     })
   })
@@ -131,7 +135,14 @@ describe('what the review window shows for a swap', () => {
         { kind: 'FunctionCall', method: 'near_deposit', amount: '5', summary: 'Wrap 5 NEAR into wNEAR' },
         { kind: 'FunctionCall', method: 'ft_transfer', amount: '0.000000000000000000000001', summary: `Send 5 wNEAR to ${DEPOSIT}` },
       ],
+      flow: {
+        out: [{ token: { symbol: 'NEAR', chain: 'near', place: 'NEAR', id: null }, amount: '5' }],
+        via: 'intents',
+        in: { token: { symbol: 'USDC', chain: 'base', place: 'Base', id: 'nep141:base-usdc.omft.near' }, amount: '17.400531', least: '17.226525', exact: false, to: EVM },
+      },
     })
+    // Only the wNEAR sent moves a token; registering and wrapping move nothing to anyone.
+    expect(describeForReview(plan, 'NEAR mainnet', FEE)?.transactions[0]?.actions.map((action) => action.move?.token.symbol ?? null)).toEqual([null, null, null, 'wNEAR'])
   })
 
   it('shows a payout to an address the person typed as theirs to check', async () => {
@@ -171,6 +182,8 @@ describe('what the review window shows for a swap', () => {
         // Only the yoctoNEAR the move attaches, and the fee, leave the NEAR account.
         maxTotal: '0.000267819075000000000001',
         actions: [{ kind: 'FunctionCall', method: 'mt_transfer', amount: '0.000000000000000000000001', summary: `Move 25 USDC from your NEAR Intents balance to NEAR Intents’ deposit address ${DEPOSIT}` }],
+        flow: { out: [{ token: { symbol: 'USDC', place: 'NEAR Intents', id: USDC }, amount: '25' }], in: { token: { symbol: 'NEAR', place: 'NEAR Intents' }, amount: '7', least: '6.93' } },
+        transactions: [{ chain: { mark: 'near' }, actions: [{ move: { amount: '25', role: 'deposit', to: DEPOSIT, token: { symbol: 'USDC' } } }] }],
       })
     })
 

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { ReviewState } from '../../../shared/review'
 import { ACCOUNT_KIND, approveLabel, canApprove, failureText, groupAddress, outcomeOf, sendSteps, shortHash, timeLeft } from './review-copy'
 
+const NEAR = { symbol: 'NEAR', chain: 'near', place: 'NEAR', id: null, icon: null }
+const SEND = { kind: 'Transfer' as const, amount: '1', attachAsset: 'NEAR', method: null, summary: 'Send 1 NEAR to alice.near', move: { amount: '1', token: NEAR, to: 'alice.near', role: 'recipient' as const } }
+
 const STATE: ReviewState = {
   plan: {
     id: 'p',
@@ -24,7 +27,9 @@ const STATE: ReviewState = {
     maxFee: '0.0003',
     maxFeeYocto: '300000000000000000000',
     maxTotal: '1.0003',
-    actions: [{ kind: 'Transfer', amount: '1', method: null, summary: 'Send 1 NEAR to alice.near' }],
+    actions: [SEND],
+    flow: { out: [{ token: NEAR, amount: '1' }], via: 'direct', in: { token: NEAR, amount: '1', exact: true, to: 'alice.near' } },
+    transactions: [{ chain: { mark: 'near', name: 'NEAR' }, key: 'ed25519', when: 'now', maxFee: '0.0003', feeAsset: 'NEAR', actions: [SEND] }],
     expiresAt: '2026-11-09T12:30:00.000Z',
   },
   status: 'awaiting_review',

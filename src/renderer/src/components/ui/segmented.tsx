@@ -10,7 +10,10 @@ export function Segmented({
   value,
   onChange,
   options,
+  compact = false,
 }: {
+  /** Each option only as wide as its words, as a row of tabs is. */
+  compact?: boolean
   label: string
   value: string
   onChange: (value: string) => void
@@ -26,7 +29,7 @@ export function Segmented({
   }
 
   return (
-    <div className="ink-segmented" role="radiogroup" aria-label={label}>
+    <div className={compact ? 'ink-segmented ink-segmented--compact' : 'ink-segmented'} role="radiogroup" aria-label={label}>
       {options.map(([id, text], index) => (
         <button
           key={id}

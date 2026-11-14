@@ -775,6 +775,9 @@ button.ink-agent-option:hover {
   white-space: nowrap;
   cursor: pointer;
 }
+.ink-segmented--compact button {
+  min-width: 0;
+}
 .ink-segmented button[aria-checked="true"] {
   background: var(--ot-text);
   color: var(--ot-surface);

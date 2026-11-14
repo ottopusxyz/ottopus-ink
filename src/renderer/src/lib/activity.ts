@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Activity, ActivityPlan, AgentId, ChatPlan } from '../../../shared/ipc'
+import type { Activity, ActivityPlan, AgentId, ChatPlan, ChatSwap, RecentSwap } from '../../../shared/ipc'
 import type { Chat } from './chats'
 
 const NONE: Activity = { plans: [], earlier: [] }
@@ -58,15 +58,23 @@ export interface TrackDot {
   state: 'done' | 'active' | 'pending' | 'failed'
 }
 
-/** One plan as an Activity row draws it. */
+/** One row of Activity: a plan of this run, or a swap Ink still follows from an earlier run. */
 export interface ActivityRow {
   id: string
   /** The plan id's first characters, for telling plans apart at a glance. */
   shortId: string
-  plan: ChatPlan
+  /** "Send 2 NEAR to alice.near", "Swap 6 USDC → 5.99 USDC on Base". */
+  title: string
+  /** The token it moves, and the chain it moves on when known, for its logo. */
+  token: { symbol: string; chain: string | null }
+  status: ChatPlan['status']
   /** The chat that made it, when the page still has it, and its agent. */
   chatId: string | null
   agent: AgentId | null
+  /** From an earlier run of Ink, whose plan and chat are gone. */
+  earlier: boolean
+  /** When it was made, or for an earlier swap when NEAR ran its deposit: for ordering and grouping. */
+  at: number
   time: string
   track: TrackDot[]
   /** Where it stands or how it ended, in a line. */
@@ -82,7 +90,7 @@ const LABELS: TrackDot['label'][] = ['Drafted', 'Reviewed', 'Signed', 'On chain'
 const SENT: ReadonlySet<ChatPlan['status']> = new Set(['approved', 'signing', 'submitted', 'confirmed', 'failed'])
 
 /** The four dots, `reached` of them done, the next one live or failed. */
-function track(reached: number, next: 'active' | 'failed' | 'pending'): TrackDot[] {
+function track(reached: number, next: TrackDot['state']): TrackDot[] {
   return LABELS.map((label, i) => ({ label, state: i < reached ? 'done' : i === reached ? next : 'pending' }))
 }
 
@@ -160,33 +168,105 @@ function chatOf(chats: readonly Chat[], planId: string): Chat | null {
   return chats.find((chat) => chat.plan?.id === planId || chat.items.some((item) => item.kind === 'plan' && item.id === planId)) ?? null
 }
 
+const clock = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+
+/** A plan of this run as a row. */
+function planRow(entry: ActivityPlan, chats: readonly Chat[], now: Date): ActivityRow {
+  const { plan } = entry
+  const needsYou = plan.status === 'awaiting_review'
+  const chat = chatOf(chats, plan.id)
+  const at = Date.parse(entry.createdAt)
+  return {
+    id: plan.id,
+    shortId: plan.id.slice(0, 8),
+    title: activityTitle(plan),
+    token: { symbol: plan.asset, chain: plan.chain },
+    status: plan.status,
+    chatId: chat?.id ?? null,
+    agent: chat?.agent ?? null,
+    earlier: false,
+    at,
+    time: clock(at),
+    track: trackOf(entry),
+    note: noteOf(entry, now),
+    link: [...(plan.journey?.steps ?? [])].reverse().find((step) => step.link)?.link ?? null,
+    needsYou,
+    tab: needsYou ? 'needs' : plan.status === 'draft' ? 'drafts' : SENT.has(plan.status) ? 'sent' : null,
+  }
+}
+
+/** Where a swap NEAR Intents is handling stands, in a line, from its report. */
+function swapNote(progress: ChatSwap | null): string {
+  switch (progress?.stage) {
+    case undefined:
+    case 'deposited':
+      return 'The deposit landed. NEAR Intents is picking it up.'
+    case 'swapping':
+      return 'NEAR Intents is swapping it now.'
+    case 'done':
+      return progress.got ? `Done: ${progress.got} paid out.` : 'Done: paid out.'
+    case 'refunded':
+      return progress.refunded ? `Refunded: ${progress.refunded} went back where it came from.` : 'Refunded: it went back where it came from.'
+    case 'failed':
+      return 'NEAR Intents couldn’t finish it. Any refund goes back where it came from.'
+    case 'unknown':
+      return 'Ink stopped checking. NEAR Intents still finishes or refunds it on its own.'
+  }
+}
+
 /**
- * Activity's rows, newest first, grouped by day and filtered by tab: each plan's track,
- * status and note, and the chat and agent that made it when the page still has them.
+ * The swaps Ink follows from an earlier run as rows: one for each swap, and one for each
+ * payment, whose parts (`<plan>#<n>`) are folded together and headed by its payout to a
+ * chain. Each was sent already, since Ink follows only deposits a chain ran.
+ */
+function earlierRows(earlier: readonly RecentSwap[]): ActivityRow[] {
+  const byPlan = new Map<string, RecentSwap[]>()
+  for (const swap of earlier) {
+    const base = swap.planId.split('#')[0] as string
+    byPlan.set(base, [...(byPlan.get(base) ?? []), swap])
+  }
+  return [...byPlan].map(([base, parts]) => {
+    const payment = parts.length > 1 || parts[0]?.planId.includes('#')
+    // A payment's payout is the part paid out on a chain; its other parts land in the Intents balance.
+    const head = (payment ? parts.find((part) => part.where.startsWith('on ')) : undefined) ?? (parts[0] as RecentSwap)
+    const stages = parts.map((part) => part.progress?.stage ?? 'deposited')
+    const failed = stages.some((stage) => stage === 'failed' || stage === 'refunded')
+    const done = !failed && stages.every((stage) => stage === 'done')
+    const sent = head.send.split(' ').at(-1) ?? head.get
+    const got = head.progress?.stage === 'done' ? (head.progress.got ?? head.get) : head.get
+    const others = parts.length - 1
+    return {
+      id: base,
+      shortId: base.slice(0, 8),
+      title: payment ? `Pay ${got} ${head.where}` : `Swap ${head.send} → ${got} ${head.where}`,
+      token: { symbol: payment ? head.get : sent, chain: null },
+      status: failed ? 'failed' : done ? 'confirmed' : 'submitted',
+      chatId: null,
+      agent: null,
+      earlier: true,
+      at: Math.min(...parts.map((part) => part.startedAt)),
+      time: clock(Math.min(...parts.map((part) => part.startedAt))),
+      track: track(3, failed ? 'failed' : done ? 'done' : 'active'),
+      note: `${payment && others > 0 ? `${others === 1 ? '1 part' : `${others} parts`} brought in, then the payout · ` : ''}${swapNote(head.progress)}`,
+      link: head.progress?.link ? { label: 'payout', url: head.progress.link } : null,
+      needsYou: false,
+      tab: 'sent',
+    }
+  })
+}
+
+/**
+ * Activity's rows, newest first, grouped by day and filtered by tab: each plan of this run
+ * with its track, status and note, and the chat and agent that made it when the page still
+ * has them; and the swaps Ink follows from an earlier run, among them by when they started.
  */
 export function activityGroups(activity: Activity, chats: readonly Chat[], tab: ActivityTab, now = new Date()): { day: string; rows: ActivityRow[] }[] {
+  const rows = [...activity.plans.map((entry) => planRow(entry, chats, now)), ...earlierRows(activity.earlier)]
+    .filter((row) => tab === 'all' || row.tab === tab)
+    .sort((a, b) => b.at - a.at)
   const groups: { day: string; rows: ActivityRow[] }[] = []
-  for (const entry of activity.plans) {
-    const { plan } = entry
-    const needsYou = plan.status === 'awaiting_review'
-    const rowTab: ActivityRow['tab'] = needsYou ? 'needs' : plan.status === 'draft' ? 'drafts' : SENT.has(plan.status) ? 'sent' : null
-    if (tab !== 'all' && rowTab !== tab) continue
-    const chat = chatOf(chats, plan.id)
-    const link = [...(plan.journey?.steps ?? [])].reverse().find((step) => step.link)?.link ?? null
-    const row: ActivityRow = {
-      id: plan.id,
-      shortId: plan.id.slice(0, 8),
-      plan,
-      chatId: chat?.id ?? null,
-      agent: chat?.agent ?? null,
-      time: new Date(entry.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
-      track: trackOf(entry),
-      note: noteOf(entry, now),
-      link,
-      needsYou,
-      tab: rowTab,
-    }
-    const day = dayOf(entry.createdAt, now)
+  for (const row of rows) {
+    const day = dayOf(new Date(row.at).toISOString(), now)
     const group = groups.find((each) => each.day === day)
     if (group) group.rows.push(row)
     else groups.push({ day, rows: [row] })

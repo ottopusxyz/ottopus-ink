@@ -2,12 +2,11 @@ import { useState } from 'react'
 import { Otto } from '@/components/brand/otto'
 import { Sea } from '@/components/motion/sea'
 import { AgentMark } from '@/components/chat/agent-picker'
-import { SwapBanner } from '@/components/home/swap-banner'
 import { ExternalIcon } from '@/components/shell/icons'
 import { Card, TokenLogo } from '@/components/ui'
 import { Segmented } from '@/components/ui/segmented'
 import { StatusChip } from '@/components/ui/status-chip'
-import { ACTIVITY_TABS, activityGroups, activityTitle, useActivity, type ActivityRow, type ActivityTab, type TrackDot } from '@/lib/activity'
+import { ACTIVITY_TABS, activityGroups, useActivity, type ActivityRow, type ActivityTab, type TrackDot } from '@/lib/activity'
 import { agentInfo } from '@/lib/agents'
 import type { Chat } from '@/lib/chats'
 import { cn } from '@/lib/cn'
@@ -37,7 +36,6 @@ function Track({ dots }: { dots: readonly TrackDot[] }) {
 
 /** One plan: what it does, who asked and when, how far it got, and where it stands. Opens its chat when the page still has it. */
 function Row({ row, onOpenChat }: { row: ActivityRow; onOpenChat: (chatId: string) => void }) {
-  const { plan } = row
   const open = row.chatId ? () => onOpenChat(row.chatId as string) : undefined
   return (
     <Card
@@ -45,7 +43,7 @@ function Row({ row, onOpenChat }: { row: ActivityRow; onOpenChat: (chatId: strin
       className={cn('flex flex-wrap items-center gap-x-[14px] gap-y-3 px-[14px] py-3', row.needsYou && 'border-2 border-[var(--ot-text)]', open && 'cursor-pointer hover:border-[var(--ot-border-strong)]')}
       role={open ? 'button' : undefined}
       tabIndex={open ? 0 : undefined}
-      aria-label={open ? `${activityTitle(plan)}: open its chat` : undefined}
+      aria-label={open ? `${row.title}: open its chat` : undefined}
       onClick={open}
       onKeyDown={(event) => {
         if (open && (event.key === 'Enter' || event.key === ' ')) {
@@ -55,22 +53,24 @@ function Row({ row, onOpenChat }: { row: ActivityRow; onOpenChat: (chatId: strin
       }}
     >
       <span className="flex-none">
-        <TokenLogo symbol={plan.asset} chain={plan.chain} size="lg" />
+        <TokenLogo symbol={row.token.symbol} chain={row.token.chain} size="lg" />
       </span>
       <span className="min-w-0 flex-[1_1_220px]">
-        <b className="block text-[14.5px] [overflow-wrap:anywhere]">{activityTitle(plan)}</b>
+        <b className="block text-[14.5px] [overflow-wrap:anywhere]">{row.title}</b>
         <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[12px] text-[var(--ot-text-3)]">
           {row.agent ? (
             <>
               <AgentMark id={row.agent} small />
               {agentInfo(row.agent).name} ·
             </>
+          ) : row.earlier ? (
+            'Before Ink last started ·'
           ) : null}{' '}
           {row.time} · <span className="font-mono">{row.shortId}</span>
         </span>
       </span>
       <Track dots={row.track} />
-      <StatusChip status={plan.status} className="min-w-[100px] flex-none justify-center" />
+      <StatusChip status={row.status} className="min-w-[100px] flex-none justify-center" />
       <span className="flex-[1_1_100%] pl-[54px] text-[12.5px] text-[var(--ot-text-2)] [overflow-wrap:anywhere]" role="status">
         {row.note}
         {row.link ? (
@@ -90,14 +90,14 @@ function Row({ row, onOpenChat }: { row: ActivityRow; onOpenChat: (chatId: strin
 /**
  * Every plan your agent drafted this run, newest first and grouped by day, with how far
  * each got and where it stands, filtered by what needs you, what was sent and what stayed
- * a draft; then the swaps Ink still follows from before it last started. Every value
- * comes from main.
+ * a draft, among them the swaps Ink still follows from before it last started. Every
+ * value comes from main.
  */
 export function ActivityView({ chats, onOpenChat }: { chats: readonly Chat[]; onOpenChat: (chatId: string) => void }) {
   const { activity, loaded } = useActivity()
   const [tab, setTab] = useState<ActivityTab>('all')
   const groups = activityGroups(activity, chats, tab)
-  const empty = groups.length === 0 && (tab !== 'all' || activity.earlier.length === 0)
+  const empty = groups.length === 0
   return (
     <main className="ink-panel" id="main">
       <Sea shafts={false} />
@@ -119,15 +119,6 @@ export function ActivityView({ chats, onOpenChat }: { chats: readonly Chat[]; on
               ))}
             </section>
           ))}
-
-          {tab === 'all' && activity.earlier.length > 0 ? (
-            <section className="flex flex-col gap-2" aria-label="From before Ink last started">
-              <h2 className="ink-eyebrow m-0 mt-1.5">From before Ink last started</h2>
-              {activity.earlier.map((swap) => (
-                <SwapBanner key={swap.planId} swap={swap} />
-              ))}
-            </section>
-          ) : null}
 
           {loaded && empty ? (
             <Card raised className="flex flex-col items-center gap-2.5 p-[30px] text-center">

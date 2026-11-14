@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Activity, ActivityPlan, ChatPlan, PlanJourney } from '../../../shared/ipc'
+import type { Activity, ActivityPlan, ChatPlan, PlanJourney, RecentSwap } from '../../../shared/ipc'
 import { activityGroups, activityTitle, whenMade } from './activity'
 import type { Chat } from './chats'
 
@@ -56,6 +56,29 @@ describe('Activity’s rows', () => {
     const chat = { id: 'chat-1', agent: 'claude-code', plan: null, items: [{ kind: 'plan', id: SEND.id, plan: SEND }] } as unknown as Chat
     expect(row(entry({}), [chat])).toMatchObject({ chatId: 'chat-1', agent: 'claude-code', shortId: 'aaaaaaaa', needsYou: true })
     expect(row(entry({}))).toMatchObject({ chatId: null, agent: null })
+  })
+
+  it('draws the swaps from before Ink last started as rows among the plans, a payment’s parts as one', () => {
+    const swap = (planId: string, extra: Partial<RecentSwap>): RecentSwap => ({ planId, send: '6 USDC', get: 'USDC', where: 'on Base', progress: null, startedAt: new Date(2026, 10, 14, 9, 0).getTime(), ...extra })
+    const done = (got: string, link: string | null = null) => ({ stage: 'done' as const, got, refunded: null, link })
+    const earlier = [
+      swap('s1', { progress: done('5.996898 USDC', 'https://basescan.org/tx/0xabc') }),
+      swap('pay#0', { send: '6.038091 USDC', where: 'in your NEAR Intents balance', progress: done('6.03738 USDC'), startedAt: new Date(2026, 10, 14, 11, 0).getTime() }),
+      swap('pay#1', { send: '6.03738 USDC', progress: done('6.034269 USDC', 'https://basescan.org/tx/0xdef'), startedAt: new Date(2026, 10, 14, 11, 5).getTime() }),
+      swap('s2', { progress: { stage: 'refunded', got: null, refunded: '6 USDC', link: null }, startedAt: new Date(2026, 10, 13, 9, 0).getTime() }),
+    ]
+    const groups = activityGroups({ plans: [entry({ id: 'p1' }, { createdAt: at(14, 10) })], earlier }, [], 'all', NOW)
+    expect(groups.map((group) => [group.day, group.rows.map((each) => each.id)])).toEqual([
+      ['Today', ['pay', 'p1', 's1']],
+      ['Yesterday', ['s2']],
+    ])
+    const [pay, , single] = groups[0]?.rows ?? []
+    expect(single).toMatchObject({ title: 'Swap 6 USDC → 5.996898 USDC on Base', status: 'confirmed', earlier: true, note: 'Done: 5.996898 USDC paid out.', link: { url: 'https://basescan.org/tx/0xabc' }, tab: 'sent' })
+    expect(single?.track.map((dot) => dot.state)).toEqual(['done', 'done', 'done', 'done'])
+    expect(pay).toMatchObject({ title: 'Pay 6.034269 USDC on Base', status: 'confirmed', note: '1 part brought in, then the payout · Done: 6.034269 USDC paid out.' })
+    expect(groups[1]?.rows[0]).toMatchObject({ status: 'failed', note: 'Refunded: 6 USDC went back where it came from.' })
+    expect(groups[1]?.rows[0]?.track.map((dot) => dot.state)).toEqual(['done', 'done', 'done', 'failed'])
+    expect(activityGroups({ plans: [], earlier }, [], 'drafts', NOW)).toEqual([])
   })
 
   it('titles each plan by what it does', () => {

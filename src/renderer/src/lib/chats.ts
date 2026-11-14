@@ -257,13 +257,16 @@ export function applyChatEvent(chat: Chat, event: ChatEvent, at?: number): Chat 
     case 'plan':
       return { ...withItem(chat, { kind: 'plan', plan: event.plan }), plan: event.plan }
     case 'plan-status':
-    case 'plan-swap': {
+    case 'plan-swap':
+    case 'plan-journey': {
       const moved = (plan: ChatPlan): ChatPlan =>
         plan.id !== event.id
           ? plan
           : event.type === 'plan-status'
             ? { ...plan, status: event.status, ...(event.transactionId ? { transactionId: event.transactionId } : {}) }
-            : { ...plan, swap: event.swap }
+            : event.type === 'plan-swap'
+              ? { ...plan, swap: event.swap }
+              : { ...plan, journey: event.journey }
       return {
         ...chat,
         plan: chat.plan && moved(chat.plan),

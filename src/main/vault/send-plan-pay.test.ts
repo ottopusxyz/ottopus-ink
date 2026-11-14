@@ -11,6 +11,7 @@ import type { EvmRpc } from '../evm/rpc'
 import type { NearRpc } from '../near/rpc'
 import { createPlanStore, PLAN_TTL_MS } from '../plans/store'
 import { createPlanSender } from './send-plan'
+import type { HeldPayout, PayoutJournal } from '../routes/payout-journal'
 
 const NEAR_ID = 'a'.repeat(64)
 const EVM = '0xBbEC2620Cb01adae3f96e1fa39f997f06BFb7Ca0'
@@ -118,10 +119,11 @@ describe('sending an approved payment', () => {
     expect(evm.send).toHaveBeenCalledWith(SIGNED[1]!.signed)
     expect(stepsDone.map(([step]) => step)).toEqual([0, 1])
     expect(sender.holds(id)).toBe(true)
-    // Once the legs land, the payout goes, and the plan is confirmed.
-    expect(await sender.releasePayout(id)).toMatchObject({ ok: true, plan: { status: 'confirmed' }, transactionId: 'NearTx333' })
+    expect(sender.heldLegs().get(id)).toEqual([`${id}#0`, `${id}#1`])
+    // Once the legs land, the payout goes, the plan is confirmed, and its terms come back to follow it by.
+    expect(await sender.releasePayout(id)).toMatchObject({ ran: true, transactionId: 'NearTx333', swap: 2, payout: { role: 'payout', recipient: SOL }, plan: { status: 'confirmed' } })
     expect(near.sendTransaction.mock.calls.map((call) => call[0])).toEqual([SIGNED[0]!.signed, SIGNED[2]!.signed])
-    expect(stepsDone.map(([step]) => step)).toEqual([0, 1, 2])
+    expect(stepsDone.map(([step]) => step)).toEqual([0, 1])
     expect(sender.holds(id)).toBe(false)
     expect(store.get(id, OWNER)?.status).toBe('confirmed')
   })
@@ -154,5 +156,30 @@ describe('sending an approved payment', () => {
     expect(await sender.send(id, OWNER, [FEES[0]!])).toMatchObject({ ok: false, reason: 'bad-request' })
     expect(await sender.send(id, OWNER, 10n ** 30n)).toMatchObject({ ok: false, reason: 'bad-request' })
     expect(vault.sign).not.toHaveBeenCalled()
+  })
+})
+
+describe('a payout held across a restart', () => {
+  it('is kept in the journal, picked up by a new sender with no plan, and still sent once its legs land', async () => {
+    const kept: HeldPayout[] = []
+    const journal: PayoutJournal = { list: () => [...kept], put: (entry) => (kept.splice(0, kept.length, ...kept.filter((each) => each.planId !== entry.planId)), kept.push(entry)), remove: (planId) => kept.splice(0, kept.length, ...kept.filter((each) => each.planId !== planId)) }
+    const store = createPlanStore({ buildSteps: async () => ({ ok: true, steps: STEPS, swaps: SWAPS, payout: { address: SOL, chain: 'solana' } }) })
+    const made = await store.create({ intent: PAY, createdBy: 'agent', owner: OWNER, own: OWN, typed: [] })
+    if (!made.ok) throw new Error(made.reason)
+    store.move(made.plan.id, OWNER, 'awaiting_review')
+    store.move(made.plan.id, OWNER, 'approved')
+    const vault = { sign: vi.fn(async () => ({ ok: true as const, signed: SIGNED })) }
+    const before = createPlanSender({ store, vault, rpc: fakeNear(), evmRpc: () => fakeEvm(), payouts: journal, wait: async () => undefined })
+    await before.send(made.plan.id, OWNER, FEES)
+    expect(kept.map((entry) => [entry.planId, entry.transactionId, entry.legIds.length])).toEqual([[made.plan.id, 'NearTx333', 2]])
+
+    // A new run: no plans, the same journal.
+    const near = fakeNear({ sendTransaction: vi.fn(async () => ({ transactionId: 'NearTx333', ok: true, failure: null })) })
+    const after = createPlanSender({ store: createPlanStore(), vault, rpc: near, evmRpc: () => fakeEvm(), payouts: journal, wait: async () => undefined })
+    after.resumePayouts()
+    expect(after.holds(made.plan.id)).toBe(true)
+    expect(await after.releasePayout(made.plan.id)).toMatchObject({ ran: true, transactionId: 'NearTx333', plan: null, payout: { role: 'payout' } })
+    expect(near.sendTransaction).toHaveBeenCalledWith(SIGNED[2]!.signed)
+    expect(kept).toEqual([])
   })
 })

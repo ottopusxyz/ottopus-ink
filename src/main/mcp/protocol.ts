@@ -143,11 +143,23 @@ const SWAP_WORDS: Record<ChatSwap['stage'], (swap: ChatSwap) => string> = {
   unknown: () => 'Ink stopped checking; NEAR Intents still finishes or refunds it on its own.',
 }
 
+/** Where a plan is along its way, for get_plan: the step under way while its journey runs, else its swap's or payout's word. */
+function planProgress(plan: PlanSummary): string {
+  if (plan.journey && !plan.journey.done) {
+    const now = payoutPending(plan)
+    if (now) return now
+  }
+  return plan.swap ? ` ${SWAP_WORDS[plan.swap.stage](plan.swap)}` : payoutPending(plan)
+}
+
 /**
  * A swap or payment whose deposit ran but whose payout Ink hasn't heard of yet isn't
  * finished: NEAR Intents still has to pay it out. Said so the agent doesn't report it done.
  */
 function payoutPending(plan: PlanSummary): string {
+  // With its journey, the step under way says exactly where it is.
+  const now = plan.journey && !plan.journey.done ? (plan.journey.steps.find((step) => step.state === 'failed') ?? plan.journey.steps.find((step) => step.state === 'active')) : undefined
+  if (now) return ` Now: ${now.label}${now.detail ? `, ${now.detail}` : ''}. It isn’t finished until the last step is done; Ink tells you when it lands.`
   if (plan.status !== 'confirmed' || (plan.intent.outcome !== 'swap' && plan.intent.outcome !== 'pay')) return ''
   return ' The deposit went through, but NEAR Intents hasn’t paid it out yet, so it isn’t finished: tell the person it’s on its way, and Ink tells you when it lands.'
 }
@@ -608,7 +620,7 @@ export async function handleMcpMessage(message: unknown, version: string, { onPl
         if (!id) return result(toolAnswer('plan_id must be the id create_plan gave.', true))
         const answered =
           params.name === 'get_plan'
-            ? await planAnswer(() => plans.get(id), id, (plan) => `Plan ${plan.id} is ${STATUS_WORDS[plan.status]}: ${plan.summary}.${plan.swap ? ` ${SWAP_WORDS[plan.swap.stage](plan.swap)}` : payoutPending(plan)}`)
+            ? await planAnswer(() => plans.get(id), id, (plan) => `Plan ${plan.id} is ${STATUS_WORDS[plan.status]}: ${plan.summary}.${planProgress(plan)}`)
             : await planAnswer(() => plans.cancel(id), id, (plan) => `Plan ${plan.id} is cancelled. Nothing was signed.`)
         return result(answered.answer)
       }

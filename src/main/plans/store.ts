@@ -86,6 +86,8 @@ export interface PlanStoreOptions {
   /** Milliseconds that only ever go forward, for timing a plan's life whatever the wall clock does. */
   monotonic?: () => number
   newId?: () => string
+  /** Told of every plan that moves, as it moves, whoever moved it. */
+  onMove?: (plan: PlanView) => void
 }
 
 /** Freezes every level, so nothing holding a core can change what was hashed. */
@@ -114,7 +116,7 @@ const goodAmount = (amount: string) => amount.length <= MAX_AMOUNT_CHARS && AMOU
  * Its status is kept beside the core, outside the hash, and only moves the way
  * the status table allows.
  */
-export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(), monotonic = () => performance.now(), newId = randomUUID }: PlanStoreOptions = {}) {
+export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(), monotonic = () => performance.now(), newId = randomUUID, onMove }: PlanStoreOptions = {}) {
   const plans = new Map<string, Entry>()
   /** When each owner last made plans, for the per-minute limit. */
   const madeAt = new Map<string, number[]>()
@@ -232,7 +234,9 @@ export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(),
       const current = view(id, entry).status
       if (!canTransition(current, to)) return { ok: false, reason: 'cannot-move', status: current }
       entry.status = to
-      return { ok: true, plan: view(id, entry) }
+      const moved = view(id, entry)
+      onMove?.(moved)
+      return { ok: true, plan: moved }
     },
   }
 }

@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
 import type { PlanStatus } from '../shared/plan'
-import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
+import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type PlanJourney, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
 import { createDepositJournal } from './intents/deposit-journal'
 import { evmChainById, type EvmChain } from '../shared/evm/chains'
 import { evmTransferOfStep } from '../shared/evm/transaction'
@@ -45,6 +45,8 @@ import { createReviewBroker } from './review/broker'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
 import { buildOneClickSwap } from './routes/swap-plan'
 import { buildPayment, legsOfStep, paymentProgress } from './routes/pay-plan'
+import { journeyOf, type StepTx } from './plans/journey'
+import { createPayoutJournal, type PayoutJournal } from './routes/payout-journal'
 import { swapSent } from './routes/swap-terms'
 import { createSwapJournal, type SwapJournal } from './routes/swap-journal'
 import { createSwapTracker } from './routes/swap-tracker'
@@ -164,6 +166,12 @@ function evmRpcFor(chain: EvmChain): EvmRpc {
 
 /** Every plan made while the app runs. Each chain module builds the steps it knows; anything else stays a draft. */
 const plans = createPlanStore({
+  // A plan's chat hears each move as it happens, not only when the review window next looks.
+  onMove: (plan) => {
+    const txs = [...(planTxs.get(plan.id)?.values() ?? [])]
+    statusListeners.get(plan.id)?.(plan.status, txs.at(-1)?.id ?? null)
+    pushJourney(plan.id)
+  },
   buildSteps: async (intent, own) => {
     if (isNearSend(intent)) return buildNearSend(intent, own, nearRpc)
     if (isEvmSend(intent)) return buildEvmSend(intent, own, { rpcFor: evmRpcFor, tokens: listedTokens })
@@ -200,6 +208,7 @@ const plans = createPlanStore({
 interface Followed {
   owner: string
   swap: (swap: ChatSwap) => void
+  journey: (journey: PlanJourney) => void
   ending: (ending: PlanEnding) => void
   transactionId: string | null
   ended: boolean
@@ -234,17 +243,37 @@ function getSwapJournal(): SwapJournal {
 }
 
 /** Follows each swap once NEAR ran its deposit, across restarts, and tells the chat that made it and Home. */
+/** Each plan's transactions, by step, as the sender reported them: what a journey is drawn from. */
+const planTxs = new Map<string, Map<number, StepTx>>()
+
+/** A plan's journey as main sees it now, or null for a plan no chat follows. */
+function journeyFor(planId: string): PlanJourney | null {
+  const follow = followed.get(planId)
+  const plan = follow ? plans.get(planId, follow.owner) : null
+  if (!plan) return null
+  const progress = plan.core.swap ? [swapTracker.get(planId)] : (plan.core.swaps ?? []).map((_, leg) => swapTracker.get(`${planId}#${leg}`))
+  return journeyOf({ core: plan.core, status: plan.status, txs: planTxs.get(planId) ?? new Map(), swaps: progress, held: sender.holds(planId) })
+}
+
+/** Tells a plan's chat its journey, whenever anything along it moved. */
+function pushJourney(planId: string): void {
+  const journey = journeyFor(planId)
+  if (journey) followed.get(planId)?.journey(journey)
+}
+
 /** Each plan's chat, told of a status the review window didn't see: a payment's payout, sent after it closed. */
 const statusListeners = new Map<string, (status: PlanStatus, transactionId: string | null) => void>()
 
 /**
- * Sends a payment's kept payout once every leg has landed in the Intents balance, or drops
- * it, never sent, once any leg failed or was refunded. Either way the chat hears where the
- * plan now stands.
+ * Sends a payment's kept payout once every leg it waits for has landed in the Intents
+ * balance, or drops it, never sent, once any leg failed or was refunded. It works from the
+ * legs alone, so a payout picked up after a restart, whose plan is gone, still goes. The
+ * payout is then followed to the recipient, and the plan's chat, if it's still open, hears.
  */
-function settlePayout(planId: string, core: PlanView['core']): void {
-  if (!sender.holds(planId) || !core.swaps) return
-  const legs = core.swaps.flatMap((swap, leg) => (swap.role === 'payout' ? [] : [swapTracker.get(`${planId}#${leg}`)]))
+function settlePayout(planId: string): void {
+  const legIds = sender.heldLegs().get(planId)
+  if (!legIds) return
+  const legs = legIds.map((id) => swapTracker.get(id))
   const told = (status: PlanStatus, transactionId: string | null) => {
     statusListeners.get(planId)?.(status, transactionId)
     const follow = followed.get(planId)
@@ -254,12 +283,24 @@ function settlePayout(planId: string, core: PlanView['core']): void {
   if (legs.some((leg) => leg && (leg.stage === 'failed' || leg.stage === 'refunded' || leg.stage === 'unknown'))) {
     sender.dropPayout(planId)
     told('failed', null)
+    pushJourney(planId)
     return
   }
   if (!legs.every((leg) => leg?.stage === 'done')) return
   void sender.releasePayout(planId).then((sent) => {
-    if (sent?.ok) told(sent.plan.status, sent.transactionId)
+    if (!sent) return
+    if (sent.ran) void swapTracker.follow(`${planId}#${sent.swap}`, sent.payout, sent.transactionId)
+    if (sent.ran !== null) told(sent.ran ? 'confirmed' : 'failed', sent.transactionId)
+    pushJourney(planId)
   })
+}
+
+let payoutJournal: PayoutJournal | null = null
+
+/** Payouts Ink holds for payments, sealed by the OS keyring, made on first use once the keyring can be asked. */
+function getPayoutJournal(): PayoutJournal {
+  payoutJournal ??= createPayoutJournal({ file: join(app.getPath('userData'), 'payouts.bin'), box: osSecretBox })
+  return payoutJournal
 }
 
 const swapTracker = createSwapTracker({
@@ -275,8 +316,8 @@ const swapTracker = createSwapTracker({
       const together = plan ? swapStateOf(planId, plan.core) : null
       if (together) follow.swap(together)
     }
-    const plan = follow ? plans.get(planId, follow.owner) : null
-    if (plan) settlePayout(planId, plan.core)
+    settlePayout(planId)
+    pushJourney(planId)
     endingOf(planId)
     sendToWindows(IPC.swapsChanged)
   },
@@ -513,8 +554,17 @@ const sender = createPlanSender({
     vault: { sign: (core, hash, live) => getVault().sign(core, hash, live) },
     rpc: nearRpc,
     evmRpc: evmRpcFor,
+    payouts: { list: () => getPayoutJournal().list(), put: (entry) => getPayoutJournal().put(entry), remove: (planId) => getPayoutJournal().remove(planId) },
     onConfirmed: (plan, transactionId) => {
       if (plan.core.swap) void swapTracker.follow(plan.id, plan.core.swap, transactionId)
+    },
+    // Every transaction, as it's sent and once its chain answers, moves the plan's journey on.
+    onStep: (planId, step, state, transactionId) => {
+      const txs = planTxs.get(planId) ?? new Map<number, StepTx>()
+      txs.set(step, { state, id: transactionId })
+      planTxs.set(planId, txs)
+      if (planTxs.size > MAX_FOLLOWED) planTxs.delete(planTxs.keys().next().value as string)
+      pushJourney(planId)
     },
     // Each leg a payment's step paid is followed from that step's transaction.
     onStepConfirmed: (plan, step, transactionId) => {
@@ -661,6 +711,7 @@ function getMcpBridge(): Promise<McpBridge> {
           const plan = plans.get(id, owner)
           return plan ? swapStateOf(id, plan.core) : null
         },
+        journeyOf: (id) => (plans.get(id, owner) ? journeyFor(id) : null),
       }),
   }).catch((error: unknown) => {
     mcpBridge = null
@@ -790,7 +841,7 @@ function registerIpc(): void {
           if (follow && transactionId) follow.transactionId = transactionId
           endingOf(planId)
         }),
-      follow: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; ending: (ending: PlanEnding) => void }) => {
+      follow: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; journey: (journey: PlanJourney) => void; ending: (ending: PlanEnding) => void }) => {
         followed.set(planId, { owner, ...listen, transactionId: null, ended: false })
         if (followed.size > MAX_FOLLOWED) followed.delete(followed.keys().next().value as string)
       },
@@ -1055,7 +1106,11 @@ void app.whenReady().then(() => {
   registerIpc()
   reviewWindow.attach(reviews)
   // Swaps a quit cut off are followed again: NEAR Intents pays them out or refunds them whatever Ink does.
+  // Payouts a quit left held come back first, so legs that land as their swaps are picked up release them.
+  sender.resumePayouts()
   swapTracker.resume()
+  // Legs that landed while Ink was closed have nothing more to report, so their payouts are settled now.
+  for (const planId of sender.heldLegs().keys()) settlePayout(planId)
   // Deposits too: what's sent to an address lands whether or not Ink is running.
   depositWatcher.resume()
   signer.start()

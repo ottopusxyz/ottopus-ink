@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentStatus, ChatDeposit, ChatEvent, ChatSwap, DepositProgress, InkNote, ReceiveAnswer } from '../../shared/ipc'
+import type { AgentStatus, ChatDeposit, ChatEvent, ChatSwap, DepositProgress, InkNote, PlanJourney, ReceiveAnswer } from '../../shared/ipc'
 import type { PlanStatus } from '../../shared/plan'
 import { looksLikeItMovesFunds } from '../external/catalog'
 import { itemsNeedingSignIn, type SessionExternal } from '../external/session'
@@ -25,7 +25,7 @@ export interface ChatTools {
    * landed, and how the plan ended, with Ink's note and the same facts for the agent.
    * Main passes this in too.
    */
-  follow?: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; ending: (ending: PlanEnding) => void }) => void
+  follow?: (planId: string, owner: string, listen: { swap: (swap: ChatSwap) => void; journey: (journey: PlanJourney) => void; ending: (ending: PlanEnding) => void }) => void
   /**
    * Shows and watches an address get_deposit_address gave the chat's agent. Each of
    * `listen` says whether the chat was still open to hear it. Main passes this in.
@@ -114,6 +114,9 @@ export function startChat(
       follow?.(plan.id, owner, {
         swap: (swap) => {
           if (!over) onEvent(chatId, { type: 'plan-swap', id: plan.id, swap })
+        },
+        journey: (journey) => {
+          if (!over) onEvent(chatId, { type: 'plan-journey', id: plan.id, journey })
         },
         ending: ({ note, forAgent }) => {
           if (over) return

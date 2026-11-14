@@ -8,6 +8,7 @@ import type { McpBridge } from '../mcp/bridge'
 import { MCP_SERVER_NAME } from '../mcp/protocol'
 import { claudeMcpServers, MCP_TOKEN_ENV } from './claude-launch'
 import { startClaudeSession, type ChatSession } from './claude-session'
+import { sessionSkills } from './ink-skill'
 import { lockWatcher } from './lockdown'
 import type { AgentEnv } from './login-env'
 
@@ -151,7 +152,8 @@ export function startChat(
     env: { ...process.env, ...agentEnv },
     mcpServers: { ...claudeMcpServers({ shim, socketPath: bridge.socketPath }), ...external.servers },
     externalServers: external.serverNames,
-    skillsText: external.skillsText,
+    // Ink's own skill in every chat, then whatever the person enabled.
+    skillsText: sessionSkills(external.skillsText),
     sessionEnv: { [MCP_TOKEN_ENV]: tools.token },
     onEvent: (event) => {
       // Stopping a session mid-line leaves the rest of that line still to arrive.

@@ -3,6 +3,7 @@ import type { AgentStatus, ChatEvent, ChatPlan, ChatSwap } from '../../shared/ip
 import type { PlanStatus } from '../../shared/plan'
 import { NO_EXTERNAL, type SessionExternal } from '../external/session'
 import { closeChat, killChats, sendFromInk, sendToChat, startChat, stopChatTurn } from './chats'
+import { INK_SKILL } from './ink-skill'
 import { startClaudeSession, type ChatSession, type ClaudeSessionOptions } from './claude-session'
 
 vi.mock('./claude-session', () => ({ startClaudeSession: vi.fn() }))
@@ -164,7 +165,9 @@ describe('a chat with external tools', () => {
     startChat(ready, env, tools, external, () => undefined)
     expect(Object.keys(launched?.mcpServers ?? {})).toEqual(['ottopus-ink', 'other'])
     expect(launched?.externalServers).toEqual(['other'])
-    expect(launched?.skillsText).toBe('skill text')
+    // Ink's own skill first, then the person's.
+    expect(launched?.skillsText?.startsWith('# Ottopus Ink: paying for the person')).toBe(true)
+    expect(launched?.skillsText?.endsWith('---\n\nskill text')).toBe(true)
   })
 
   it('says what could not be loaded', () => {
@@ -221,7 +224,8 @@ describe('a chat with external tools', () => {
     startChat(ready, env, tools, NO_EXTERNAL, () => undefined)
     expect(Object.keys(launched?.mcpServers ?? {})).toEqual(['ottopus-ink'])
     expect(launched?.externalServers).toEqual([])
-    expect(launched?.skillsText).toBeNull()
+    // Only Ink's own skill.
+    expect(launched?.skillsText).toBe(INK_SKILL.trim())
   })
 })
 

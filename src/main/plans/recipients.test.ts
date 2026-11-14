@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { ACCOUNT_CHAINS, ACCOUNT_PATHS, type Account } from '../../shared/accounts'
 import { allowedRecipient } from './recipients'
 
+const SOLANA_STRANGER = '5QSRmvpHimVhXh2YP622A61vaThB8ut2iWJW9DPmCTNj'
+
 /** Public addresses from the BIP-32 test seed, as derived in src/signer/accounts.test.ts. */
 const OWN: Account[] = [
   { chain: 'near', address: '06b66cee83c72cf7462ac756b159664732607df5bf254e589426b7e4b4f9d60d' },
@@ -76,5 +78,14 @@ describe('allowedRecipient', () => {
 
   it('refuses an empty address', () => {
     expect(allowedRecipient('', 'near', OWN, [''])).toBeNull()
+  })
+
+  it('allows an address from a file the person attached, and says which file', () => {
+    const invoice = { file: 'invoice.pdf', text: `Amount due: 6 USDC on Solana\nPay to: ${SOLANA_STRANGER}.` }
+    expect(allowedRecipient(SOLANA_STRANGER, 'solana', OWN, ['pay this invoice', invoice])).toEqual({ address: SOLANA_STRANGER, why: 'attached', file: 'invoice.pdf' })
+    // Typed in a message too: it's typed, which the review window doesn't flag.
+    expect(allowedRecipient(SOLANA_STRANGER, 'solana', OWN, [invoice, `yes, ${SOLANA_STRANGER}`])).toEqual({ address: SOLANA_STRANGER, why: 'typed' })
+    // A file's name isn't its text.
+    expect(allowedRecipient(SOLANA_STRANGER, 'solana', OWN, [{ file: SOLANA_STRANGER, text: 'nothing here' }])).toBeNull()
   })
 })

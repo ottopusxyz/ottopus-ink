@@ -141,6 +141,22 @@ describe('building a payment from several sources', () => {
       ],
     })
     expect(review?.legs?.map((leg) => leg.fromPlace)).toEqual(['your NEAR Intents balance', 'Base'])
+    // The money map: each source with its chain, through NEAR Intents, to exactly the total on Solana.
+    expect(review?.flow).toMatchObject({ via: 'intents', in: { amount: '15', exact: true, to: SOL, token: { symbol: 'USDC', chain: 'solana', place: 'Solana' } } })
+    expect(review?.flow.out.map((each) => [each.token.place, each.token.chain])).toEqual([
+      ['NEAR Intents', 'near'],
+      ['Base', 'base'],
+    ])
+    // Together the sources bring in what the payout moves, its own fee included.
+    expect(review?.flow.out.reduce((sum, each) => sum + Number(each.brings), 0)).toBeCloseTo(Number(made.plan.core.swaps!.at(-1)!.amountIn) / 1e6)
+    // One transaction per step, each with its own chain, key and coin, and the payout sent last, once the parts land.
+    expect(review?.transactions.map((tx) => [tx.chain.name, tx.key, tx.when, tx.feeAsset, tx.maxFee, tx.actions.length])).toEqual([
+      ['NEAR', 'ed25519', 'now', 'NEAR', '0.001', 1],
+      ['Base', 'secp256k1', 'now', 'ETH', '0.000001', 1],
+      ['NEAR', 'ed25519', 'later', 'NEAR', '0.001', 1],
+    ])
+    // A step on Base attaches ETH, not NEAR.
+    expect(review?.transactions[1]?.actions[0]).toMatchObject({ attachAsset: 'ETH', move: { role: 'deposit', token: { chain: 'base', place: 'Base' } } })
     // Steps out of the order their swaps are followed in, a leg bringing in less, or a payout to anyone else, and it isn't shown.
     const swapped = { ...made.plan, core: { ...made.plan.core, steps: [...made.plan.core.steps].reverse() } }
     expect(describeForReview(swapped, '', null, [null, null, null])).toBeNull()

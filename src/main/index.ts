@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, Notification, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
@@ -36,6 +37,7 @@ import { startMcpBridge, type McpBridge } from './mcp/bridge'
 import { buildNearSend, callsFeeCeiling, isNearSend, nearCallsFit, nearSendFeeCeiling, nearTransferOf } from './near/build'
 import { createNearRpc } from './near/rpc'
 import { appMenuTemplate } from './menu'
+import appIcon from '../../resources/icon.png?asset'
 import { agentPlanTools } from './plans/agent-tools'
 import { planOutcome } from './plans/outcome'
 import { createNotifier } from './notify'
@@ -45,9 +47,12 @@ import { createPortfolioReader, type PortfolioAccounts } from './portfolio/reade
 import { createSavedPortfolios, walletKey, type SavedPortfolios } from './portfolio/saved'
 import { installId, INK_SERVICE_URL } from './portfolio/service'
 import { tokenIcons } from './portfolio/token-icons'
-import { checkZerionKey, zerionHoldings, zerionOptions, zerionTokenSearch, type ZerionAccess } from './portfolio/zerion'
+import { checkZerionKey, zerionHoldings, zerionOptions, zerionTokenSearch, type ZerionAccess, type ZerionToken } from './portfolio/zerion'
 import { createZerionKeyStore, isZerionKey, type ZerionKeyStore } from './portfolio/zerion-key'
 import { createReviewBroker } from './review/broker'
+import { ATTACHMENT_EXTENSIONS, HIDDEN_CHARS, MAX_ATTACHMENT_BYTES, readAttachment } from './attachments/read'
+import { createAttachedStore } from './attachments/pending'
+import { withReviewIcons, type ReviewIconDeps } from './review/icons'
 import { oneClickQuote, oneClickTokens, submitDeposit, swapStatus, type OneClickToken } from './routes/one-click'
 import { buildOneClickSwap } from './routes/swap-plan'
 import { buildPayment, legsOfStep, paymentProgress } from './routes/pay-plan'
@@ -145,6 +150,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: 640,
     show: false,
     title: 'Ottopus Ink',
+    icon: appIcon,
     backgroundColor: '#F7F2EA',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: secureWebPreferences(join(import.meta.dirname, '../preload/index.cjs'), {
@@ -547,6 +553,7 @@ const reviewWindow = createReviewWindow({
   entry: reviewEntry,
   load: (win) => void (devServerUrl ? win.loadURL(reviewEntry) : win.loadFile(reviewIndex)),
   devTools: Boolean(devServerUrl),
+  icon: appIcon,
 })
 
 /** What the review window shows for a plan: its own step decoded, and today's fee ceiling if NEAR answers. */
@@ -614,6 +621,27 @@ async function describePlan(plan: PlanView) {
   return describeForReview(plan, `NEAR ${NEAR_NETWORK}`, fee)
 }
 
+/** Zerion's icons for tokens Ink ships no logo for, matched by contract, for the review window. */
+const reviewSearches = new Map<string, Promise<ZerionToken[]>>()
+const reviewIconDeps: ReviewIconDeps = {
+  tokens: () => listedTokens(),
+  // Kept for the session, since the review window describes a plan again as it changes. An empty answer is asked again.
+  search: async (symbol, chain) => {
+    const access = zerionAccess()
+    if (!access) return []
+    const key = `${chain}|${symbol.toLowerCase()}`
+    const kept = reviewSearches.get(key)
+    if (kept) return kept
+    const asked = zerionTokenSearch(symbol, chain, zerionOptions(access))
+    reviewSearches.set(key, asked)
+    if (reviewSearches.size > 200) reviewSearches.delete(reviewSearches.keys().next().value as string)
+    const found = await asked
+    if (found.length === 0) reviewSearches.delete(key)
+    return found
+  },
+  icon: (url) => icons.icon(url),
+}
+
 /** Signs and sends each plan approved in the review window. */
 const sender = createPlanSender({
     store: plans,
@@ -647,7 +675,10 @@ const sender = createPlanSender({
 const reviews = createReviewBroker({
   store: plans,
   sender,
-  describe: describePlan,
+  describe: async (plan) => {
+    const described = await describePlan(plan)
+    return described ? withReviewIcons(described, reviewIconDeps) : null
+  },
   unlocked: () => vault?.isUnlocked() === true,
   onState: (state) => reviewWindow.update(state),
 })
@@ -743,6 +774,17 @@ const savedPortfolio = async (): Promise<PortfolioResult | null> => {
     return own ? getSavedPortfolios().get(walletKey(own)) : null
   })
   return read.ok && read.value ? { ok: true, ...read.value } : null
+}
+
+/** Files picked in the attach dialog, waiting for the message they go with. */
+const attachedFiles = createAttachedStore()
+/** The most files one message carries. */
+const MAX_FILES_PER_MESSAGE = 3
+
+/** A file's name fit to show the agent and the review window: one plain line, not too long. */
+const fileName = (name: string) => {
+  const plain = name.replace(HIDDEN_CHARS, '').trim() || 'file'
+  return plain.length > 80 ? `${plain.slice(0, 60)}…${plain.slice(-16)}` : plain
 }
 
 /** Started with the first chat, so the app opens no socket until something needs one. */
@@ -1115,17 +1157,45 @@ function registerIpc(): void {
     })
   })
 
-  ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown) => {
+  ipcMain.handle(IPC.sendToChat, (event, chatId: unknown, text: unknown, ids: unknown = []) => {
     assertAppFrame(event)
     if (typeof chatId !== 'string' || typeof text !== 'string') throw new Error('Bad message')
-    sendToChat(chatId, text)
+    if (!Array.isArray(ids) || ids.length > MAX_FILES_PER_MESSAGE || !ids.every((id) => typeof id === 'string')) throw new Error('Bad attachments')
+    const files = attachedFiles.take(ids as string[])
+    if (!text.trim() && files.length === 0) throw new Error('Nothing to send')
+    sendToChat(chatId, text, files)
     const kept = historyOf.get(chatId)
     if (kept) {
+      const names = files.map((file) => file.name)
       // A chat is kept from its first message, which names it.
-      if (!getChatHistory().get(kept.id)) getChatHistory().begin(kept.id, kept.agent, text)
-      const saved = savedEventOf({ type: 'you', text })
+      if (!getChatHistory().get(kept.id)) getChatHistory().begin(kept.id, kept.agent, text.trim() || names.join(', '))
+      const saved = savedEventOf({ type: 'you', text, ...(names.length > 0 ? { files: names } : {}) })
       if (saved) getChatHistory().record(kept.id, saved)
     }
+  })
+
+  ipcMain.handle(IPC.attachFile, async (event) => {
+    assertAppFrame(event)
+    // The system's own dialog, answered by the person: the page can't pick a file, or read one.
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const options = { title: 'Attach a file', properties: ['openFile' as const], filters: [{ name: 'Invoices and text', extensions: [...ATTACHMENT_EXTENSIONS] }] }
+    const picked = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options))
+    const path = picked.filePaths[0]
+    if (picked.canceled || !path) return null
+    const name = fileName(basename(path))
+    try {
+      if ((await stat(path)).size > MAX_ATTACHMENT_BYTES) return { failed: 'too-big', name }
+      const read = await readAttachment(name, new Uint8Array(await readFile(path)))
+      if (!read.ok) return { failed: read.reason, name }
+      return { id: attachedFiles.put({ name, text: read.text, pages: read.pages, cut: read.cut }), name, pages: read.pages, cut: read.cut }
+    } catch {
+      return { failed: 'unreadable', name }
+    }
+  })
+
+  ipcMain.handle(IPC.dropAttachment, (event, id: unknown) => {
+    assertAppFrame(event)
+    if (typeof id === 'string') attachedFiles.drop(id)
   })
 
   ipcMain.handle(IPC.stopChatTurn, (event, chatId: unknown) => {
@@ -1158,6 +1228,9 @@ void app.whenReady().then(() => {
   // ask for. Features that need one are granted from main, not by the page.
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
   session.defaultSession.setPermissionCheckHandler(() => false)
+
+  // A packaged Mac app takes its dock icon from its bundle; this covers dev, where the bundle is Electron's.
+  if (process.platform === 'darwin') app.dock?.setIcon(appIcon)
 
   // Dev keeps Electron's default menu, with Reload and DevTools.
   if (!devServerUrl) Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate(process.platform)))

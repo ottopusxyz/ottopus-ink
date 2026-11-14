@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AgentId, ChatEvent } from '../../../shared/ipc'
+import type { AgentId, ChatAttachment, ChatEvent } from '../../../shared/ipc'
 import { applyChatEvent, applyDepositEvent, chatContinued, chatFailedToStart, chatStarted, ipcErrorText, messageFailed, messageSent, newChat, restoredChat, type Chat } from './chats'
 
 /** Replies arrive a few characters at a time, so React draws them at this pace at most. */
@@ -10,8 +10,9 @@ const MAX_WAITING_EVENTS = 1000
 
 export interface ChatActions {
   /** Starts a chat with its first message and returns the chat's id. */
-  start(agent: AgentId, text: string): string
-  send(chat: Chat, text: string): void
+  /** Starts a chat with the person's message and the files they attached. */
+  start(agent: AgentId, text: string, files?: readonly ChatAttachment[]): string
+  send(chat: Chat, text: string, files?: readonly ChatAttachment[]): void
   stop(chat: Chat): void
   end(chat: Chat): void
   /** Goes on with a chat kept from before a restart, in a new session with the same agent. */
@@ -108,15 +109,15 @@ export function useChats(): [Chat[], ChatActions] {
 
   const actions = useMemo<ChatActions>(
     () => ({
-      start(agent, text) {
+      start(agent, text, files = []) {
         const id = crypto.randomUUID()
-        setChats((all) => [newChat(id, agent, text), ...all])
+        setChats((all) => [newChat(id, agent, text, files.map((file) => file.name)), ...all])
         window.ink.startChat(agent, { historyId: id }).then(
           (sessionId) => {
             chatIds.current.set(sessionId, id)
             update(id, (chat) => chatStarted(chat, sessionId))
             flush()
-            window.ink.sendToChat(sessionId, text).catch((error: unknown) => {
+            window.ink.sendToChat(sessionId, text, files.map((file) => file.id)).catch((error: unknown) => {
               update(id, (chat) => messageFailed(chat, ipcErrorText(error)))
             })
           },
@@ -124,10 +125,10 @@ export function useChats(): [Chat[], ChatActions] {
         )
         return id
       },
-      send(chat, text) {
+      send(chat, text, files = []) {
         if (!chat.sessionId) return
-        update(chat.id, (current) => messageSent(current, text))
-        window.ink.sendToChat(chat.sessionId, text).catch((error: unknown) => {
+        update(chat.id, (current) => messageSent(current, text, files.map((file) => file.name)))
+        window.ink.sendToChat(chat.sessionId, text, files.map((file) => file.id)).catch((error: unknown) => {
           update(chat.id, (current) => messageFailed(current, ipcErrorText(error)))
         })
       },

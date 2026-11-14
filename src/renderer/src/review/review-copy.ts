@@ -7,9 +7,11 @@ import type { ReviewFailure, ReviewState } from '../../../shared/review'
 
 /**
  * An address in full, split into groups that are easier to compare by eye. A
- * hex account goes in groups of 8; a named account stays whole. Nothing is cut.
+ * hex account or a base58 one, such as Solana's, goes in groups of 8; a named
+ * account stays whole. Nothing is cut.
  */
 export function groupAddress(address: string): string[] {
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address) && !/^[0-9a-fA-F]+$/.test(address)) return address.match(/.{1,8}/g) ?? [address]
   // EVM addresses carry their checksum in upper and lower case.
   const hex = /^(0x)?([0-9a-fA-F]+)$/.exec(address)
   if (!hex || address.length < 40) return [address]
@@ -94,7 +96,7 @@ export const ACCOUNT_KIND: Record<ReviewState['plan']['toKind'], string> = {
   named: 'A named NEAR account',
   implicit: 'An implicit NEAR account',
   'eth-implicit': 'An Ethereum-style NEAR account',
-  'other-chain': 'Your own address on that chain',
+  'other-chain': 'An address on another chain',
   evm: 'An EVM address',
   solana: 'A Solana address',
 }
@@ -111,3 +113,23 @@ export function sendSteps(state: ReviewState): { label: string; status: 'done' |
     { label: 'Confirmed on chain', status: 'pending' },
   ]
 }
+
+export { shortAmount } from '@/lib/amounts'
+
+/** An address cut to its ends for a row, where the full one is a tap away: `0xb737…C82F`. */
+export const shortAddress = (address: string): string => (address.length > 14 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address)
+
+/** Each chain's own colour, for its share of a payment's bar. */
+const CHAIN_COLOURS: Record<string, string> = {
+  near: '#00C08B',
+  ethereum: '#627EEA',
+  base: '#0052FF',
+  arbitrum: '#28A0F0',
+  optimism: '#FF0420',
+  polygon: '#8247E5',
+  bsc: '#F0B90B',
+  avalanche: '#E84142',
+  solana: '#9945FF',
+}
+
+export const chainColour = (mark: string): string => CHAIN_COLOURS[mark] ?? 'var(--ot-plan)'

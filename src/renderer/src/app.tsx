@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AgentId, AgentStatus, AppInfo, ExternalItem, SignerStatus } from '../../shared/ipc'
+import type { AgentId, AgentStatus, AppInfo, ChatAttachment, ExternalItem, SignerStatus } from '../../shared/ipc'
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { ChatView } from '@/components/chat/chat-view'
 import { HomeView } from '@/components/home/home-view'
@@ -132,17 +132,19 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [newChat, unlocked])
 
-  const send = () => {
+  /** Sends the draft and any files attached to it. Whether it went, so the composer knows to let the files go. */
+  const send = (files: readonly ChatAttachment[] = []): boolean => {
     const text = draft.trim()
-    if (!text) return
+    if (!text && files.length === 0) return false
     if (current) {
-      if (current.phase !== 'ready') return
-      chatActions.send(current, text)
+      if (current.phase !== 'ready') return false
+      chatActions.send(current, text, files)
     } else {
-      if (!selectedAgent) return
-      setView({ kind: 'chat', chatId: chatActions.start(selectedAgent, text) })
+      if (!selectedAgent) return false
+      setView({ kind: 'chat', chatId: chatActions.start(selectedAgent, text, files) })
     }
     setDraft('')
+    return true
   }
 
   const openChat = (chatId: string) => setView({ kind: 'chat', chatId })

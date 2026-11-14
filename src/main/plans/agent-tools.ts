@@ -1,6 +1,6 @@
 import type { Account } from '../../shared/accounts'
 import type { ChatSwap, PlanJourney } from '../../shared/ipc'
-import type { PlanIntent, PlanSummary, PlanToolResult, PlanTools } from '../../shared/plan'
+import type { PlanIntent, PlanSummary, PlanToolResult, PlanTools, Sent } from '../../shared/plan'
 import type { VaultResult } from '../../shared/vault'
 import type { PlanStore, PlanView } from './store'
 
@@ -9,7 +9,7 @@ export interface AgentPlanContext {
   /** The chat's session: only it may see and cancel the plans it made. */
   owner: string
   /** The person's own messages in that chat, as main captured them from the page. */
-  typed: () => readonly string[]
+  typed: () => readonly Sent[]
   /** The person's own addresses, which need the vault unlocked. */
   accounts: () => Promise<VaultResult<{ accounts: Account[] }>>
   /** Where a swap plan stands once its deposit landed, as main follows it. */

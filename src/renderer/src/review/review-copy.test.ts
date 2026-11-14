@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { ReviewState } from '../../../shared/review'
-import { ACCOUNT_KIND, approveLabel, canApprove, failureText, groupAddress, outcomeOf, sendSteps, shortHash, timeLeft } from './review-copy'
+import { ACCOUNT_KIND, approveLabel, canApprove, failureText, groupAddress, outcomeOf, sendSteps, shortAddress, shortAmount, shortHash, timeLeft } from './review-copy'
+
+const NEAR = { symbol: 'NEAR', chain: 'near', place: 'NEAR', id: null, icon: null }
+const SEND = { kind: 'Transfer' as const, amount: '1', attachAsset: 'NEAR', method: null, summary: 'Send 1 NEAR to alice.near', move: { amount: '1', token: NEAR, to: 'alice.near', role: 'recipient' as const } }
 
 const STATE: ReviewState = {
   plan: {
@@ -24,7 +27,9 @@ const STATE: ReviewState = {
     maxFee: '0.0003',
     maxFeeYocto: '300000000000000000000',
     maxTotal: '1.0003',
-    actions: [{ kind: 'Transfer', amount: '1', method: null, summary: 'Send 1 NEAR to alice.near' }],
+    actions: [SEND],
+    flow: { out: [{ token: NEAR, amount: '1' }], via: 'direct', in: { token: NEAR, amount: '1', exact: true, to: 'alice.near' } },
+    transactions: [{ chain: { mark: 'near', name: 'NEAR' }, key: 'ed25519', when: 'now', maxFee: '0.0003', feeAsset: 'NEAR', actions: [SEND] }],
     expiresAt: '2026-11-09T12:30:00.000Z',
   },
   status: 'awaiting_review',
@@ -135,5 +140,33 @@ describe('while it sends', () => {
     expect(Object.keys(ACCOUNT_KIND)).toHaveLength(6)
     expect(ACCOUNT_KIND.evm).toBe('An EVM address')
     expect(ACCOUNT_KIND.solana).toBe('A Solana address')
+  })
+})
+
+describe('a Solana address', () => {
+  it('goes in groups of 8 too, keeping every character', () => {
+    const address = '5QSRmvpHimVhXh2YP622A61vaThB8ut2iWJW9DPmCTNj'
+    expect(groupAddress(address)).toEqual(['5QSRmvpH', 'imVhXh2Y', 'P622A61v', 'aThB8ut2', 'iWJW9DPm', 'CTNj'])
+    expect(groupAddress(address).join('')).toBe(address)
+  })
+})
+
+describe('amounts in the money map', () => {
+  it('cuts long amounts to four decimals and says so, and leaves short ones exact', () => {
+    expect(shortAmount('5.289514481275175937')).toEqual({ text: '5.2895', cut: true })
+    expect(shortAmount('0.839343')).toEqual({ text: '0.8393', cut: true })
+    expect(shortAmount('6')).toEqual({ text: '6', cut: false })
+    expect(shortAmount('17.4005')).toEqual({ text: '17.4005', cut: false })
+  })
+
+  it('keeps enough digits that a tiny amount doesn’t read as nothing', () => {
+    expect(shortAmount('0.000000000000000000000001')).toEqual({ text: '0.000000000000000000000001', cut: false })
+    expect(shortAmount('0.0000123456')).toEqual({ text: '0.000012', cut: true })
+    expect(shortAmount('2.00000001')).toEqual({ text: '2', cut: true })
+  })
+
+  it('cuts long addresses to their ends', () => {
+    expect(shortAddress('0xb7373F60b76375B7CBd398117c5d6d637E24c82F')).toBe('0xb737…c82F')
+    expect(shortAddress('alice.near')).toBe('alice.near')
   })
 })

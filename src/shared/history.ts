@@ -7,7 +7,7 @@ import type { AgentId, ChatEvent } from './ipc'
  */
 export type SavedEvent =
   /** The person's own message. */
-  | { type: 'you'; text: string }
+  | { type: 'you'; text: string; files?: string[] }
   /** The chat went on after a restart, in a new session with this agent. */
   | { type: 'continued'; agent: AgentId; at: number }
   | Extract<ChatEvent, { type: 'text' | 'tool-call' | 'tool-result' | 'plan' | 'plan-status' | 'plan-swap' | 'plan-note' | 'deposit' | 'deposit-progress' | 'deposit-note' }>

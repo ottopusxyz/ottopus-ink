@@ -52,7 +52,9 @@ export interface ReviewPlan {
    */
   toKind: 'implicit' | 'eth-implicit' | 'named' | 'other-chain' | 'evm' | 'solana'
   /** Why Ink lets this plan pay `to`: it's the person's own address, or they typed it in the chat. */
-  toWhy: 'own' | 'typed'
+  toWhy: 'own' | 'typed' | 'attached'
+  /** For `attached`: the name of the file the address came from. */
+  toFile?: string
   /** What's sent, in `asset`: the NEAR sent or swapped, or the token a swap moves from the Intents balance. */
   amount: string
   /** Exactly what is sent, in the asset's smallest unit (yoctoNEAR for NEAR), for anyone checking the decimals. */
@@ -67,19 +69,74 @@ export interface ReviewPlan {
   maxTotal: string | null
   /** Each action the transaction holds, decoded. */
   actions: ReviewAction[]
+  /** What leaves, through what, and what arrives where, for the money map. Written from the same checked fields. */
+  flow: ReviewFlow
+  /** Each transaction the person signs, in the order Ink sends them, with its own actions. */
+  transactions: ReviewTransaction[]
   /** ISO 8601. After this the plan can't be approved. */
   expiresAt: string
+}
+
+/** A token as the review window draws it: its logo, its chain's badge, and where it sits. */
+export interface ReviewToken {
+  symbol: string
+  /** Ink's name for the chain it's on, for the badge: `base`, `bsc`, `solana`, or `near`, also for the NEAR Intents balance. */
+  chain: string
+  /** Where it is, as a person reads it: "Base", "NEAR Intents". */
+  place: string
+  /**
+   * What the plan checked it to be: its contract or mint, or 1Click's id for it. Null for a
+   * chain's own coin. Main finds its icon by this, never by the symbol, which anyone can copy.
+   */
+  id: string | null
+  /** Its icon from Zerion as a data: URL, when Ink ships no logo for it. Filled in by main, or null. */
+  icon: string | null
+}
+
+/** An amount of a token, as the money map draws it. */
+export interface ReviewAmount {
+  token: ReviewToken
+  /** In whole tokens, exactly: "5.289514481275175937". */
+  amount: string
+}
+
+/**
+ * What the plan moves: each source that leaves the person's wallet or Intents balance, and
+ * what arrives where. `via` is `intents` when NEAR Intents swaps or carries it in between.
+ */
+export interface ReviewFlow {
+  /** For a payment, `brings` is exactly what the source adds to the payout, in the payout's token. */
+  out: (ReviewAmount & { brings?: string })[]
+  via: 'direct' | 'intents'
+  /** `exact` when exactly this arrives; otherwise `least` is the floor, below which it's refunded. */
+  in: ReviewAmount & { exact: boolean; least?: string; to: string }
+}
+
+/** One transaction the person signs: where it runs, the key that signs it, when Ink sends it, and what's in it. */
+export interface ReviewTransaction {
+  chain: { mark: string; name: string }
+  key: 'ed25519' | 'secp256k1'
+  /** `later` for a payment's payout: signed now with the rest, and sent once every part has landed. */
+  when: 'now' | 'later'
+  /** The most its fees could take, in `feeAsset`. Null when the chain couldn't be asked. */
+  maxFee: string | null
+  feeAsset: string
+  actions: ReviewAction[]
 }
 
 /** One decoded action. A transfer calls no contract, so `method` is null for it. */
 export interface ReviewAction {
   kind: 'Transfer' | 'FunctionCall'
-  /** What it attaches, in `feeAsset`. */
+  /** What it attaches, in `attachAsset`. */
   amount: string
+  /** The coin it attaches: the coin of the chain that runs it. */
+  attachAsset: string
   /** The contract method a call action runs. */
   method: string | null
   /** What it does, in plain words, written by main from the decoded action. */
   summary: string
+  /** What it moves and to whom, for the action's row: null for a call that moves no token, such as registering. */
+  move: { amount: string; token: ReviewToken; to: string; role: 'recipient' | 'deposit' } | null
 }
 
 /** One leg of a payment: what pays, from where, and exactly what it pays out. */

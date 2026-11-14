@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import type { ChatPlan } from '../../shared/ipc'
-import type { PlanTools } from '../../shared/plan'
+import type { PlanTools, Sent } from '../../shared/plan'
 import { handleMcpMessage, parseErrorResponse, rpcError, type McpHandlers, type RpcId } from './protocol'
 
 export interface McpBridgeOptions {
@@ -25,7 +25,7 @@ export interface McpBridgeOptions {
    * One session's plan tools. `owner` names the session, so a chat only ever sees
    * its own plans, and `typed` gives the person's own messages in it.
    */
-  plans?: (session: { owner: string; typed: () => readonly string[] }) => PlanTools
+  plans?: (session: { owner: string; typed: () => readonly Sent[] }) => PlanTools
 }
 
 export interface McpSession {
@@ -43,7 +43,7 @@ export interface McpBridge {
    * keeps it under, so main can put it up for review. Typed gives what the
    * person typed in that chat.
    */
-  addSession(handlers?: { onPlan?: (plan: ChatPlan, owner: string) => void; onReceive?: (...args: [...Parameters<NonNullable<McpHandlers['onReceive']>>, owner: string]) => void; typed?: () => readonly string[] }): McpSession
+  addSession(handlers?: { onPlan?: (plan: ChatPlan, owner: string) => void; onReceive?: (...args: [...Parameters<NonNullable<McpHandlers['onReceive']>>, owner: string]) => void; typed?: () => readonly Sent[] }): McpSession
   close(): void
 }
 

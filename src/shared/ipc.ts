@@ -12,6 +12,18 @@ export interface ZerionKeyStatus {
   shared: boolean
 }
 
+/** Why Ink couldn't read a file: a kind it doesn't read, too big, no text in it (a scan), or broken. */
+export type AttachmentFailure = 'not-supported' | 'too-big' | 'no-text' | 'unreadable'
+
+/** A file the person attached, as the page sees it: its name and what Ink read, never its text. */
+export interface ChatAttachment {
+  id: string
+  name: string
+  pages: number | null
+  /** Whether Ink cut its text to the most the agent is given. */
+  cut: boolean
+}
+
 /**
  * The IPC contract between the renderer (through the preload bridge) and the
  * main process. Every channel the renderer can reach is listed here; the main
@@ -22,6 +34,8 @@ export const IPC = {
   detectAgents: 'agents:detect',
   startChat: 'chat:start',
   sendToChat: 'chat:send',
+  attachFile: 'chat:attach',
+  dropAttachment: 'chat:drop-attachment',
   stopChatTurn: 'chat:stop-turn',
   closeChat: 'chat:close',
   listExternalTools: 'external:list',
@@ -426,8 +440,15 @@ export interface InkBridge {
   savedChats(): Promise<SavedChat[]>
   deleteSavedChat(id: string): Promise<void>
   clearChatHistory(): Promise<void>
-  /** Starts a turn. Rejects while one is running. */
-  sendToChat(chatId: string, text: string): Promise<void>
+  /** Starts a turn, with the files picked through attachFile, by their ids. Rejects while one is running. */
+  sendToChat(chatId: string, text: string, attachments?: string[]): Promise<void>
+  /**
+   * Asks the person for a file in the system's own dialog, then reads its text in main.
+   * The page gets its name and an id to send it by, never its contents. Null if they cancel.
+   */
+  attachFile(): Promise<ChatAttachment | { failed: AttachmentFailure; name: string } | null>
+  /** Forgets a picked file the person took back before sending. */
+  dropAttachment(id: string): Promise<void>
   /** Stops the running turn and keeps the conversation. */
   stopChatTurn(chatId: string): Promise<void>
   closeChat(chatId: string): Promise<void>

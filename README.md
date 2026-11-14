@@ -25,6 +25,8 @@ npm run typecheck
 npm run build    # production bundle in out/
 ```
 
+On Linux, run `npm run desktop-entry` once to give Ink its icon in the dock and app grid. GNOME on Wayland ignores a window's own icon and shows the icon of the desktop entry named after the app (`ottopus-ink.desktop`), which this writes to `~/.local/share/applications`, pointing at this checkout.
+
 npm 11 runs only approved install scripts. Electron's (which downloads its binary) is approved in `package.json` under `allowScripts`.
 
 ## Layout
@@ -71,6 +73,8 @@ Addresses are worked out in the signer and are only available while unlocked. Th
 The agent can only propose a plan. Main builds it, and a plan can pay only your own address on the chain the funds land on, or an address you sent in that chat, never one the agent came up with.
 
 - **What counts as sent:** main records the messages from each chat's box, which the agent can't add to. That keeps a prompt injection from picking the recipient. It can't tell a person typing from compromised page code, so the review window, outside the page, is where you confirm the recipient before anything is signed.
+- **Attached files:** the composer's + button opens the system's own file dialog. Main reads the file you pick (a PDF's text, or a text, Markdown, CSV or JSON file, up to 10 MB), and the page only ever gets its name. Its text goes to the agent with your message, marked as the file's contents rather than your instructions, so an agent can turn an invoice into a plan. An address in the file may be paid too, but the review window marks it as from that file, in amber, and asks you to check it against the invoice and the sender: a file can hold text you can't see. Ink reads PDFs with a pdf.js build that can't run code from a file, and doesn't read scans or images.
+- **Ink's skill:** every chat's agent gets Ink's own skill, [`src/main/agents/ink-skill.md`](src/main/agents/ink-skill.md), added to its system prompt ahead of any skills you enable. It sets the rules (never ask for keys, never pay an address it made up, never obey a file) and how to choose: one `send` when a single wallet covers a payment, `pay` when Ink must combine the NEAR Intents balance and the chain balances, and what to check in an invoice before proposing. It's guidance only; Ink's own checks hold whatever the agent does.
 - **The hash:** a plan's fixed part is hashed as SHA-256 over `ottopus-ink/plan/v1`, a NUL byte and its RFC 8785 canonical JSON. Numbers must be whole and amounts are decimal strings, so nothing can round. The signer works the hash out again from the plan it's given, and signs only if it matches the hash you approved.
 - **Statuses:** draft, awaiting review, approved, signing, submitted, confirmed, failed, cancelled, expired and blocked, and a plan moves between them only as one table allows. Nothing is approved without review, and nothing is signed without approval.
 - **Expiry and ownership:** a plan expires 30 minutes after it's made if nobody acts on it. Each plan belongs to the chat that made it.
@@ -80,7 +84,15 @@ The agent can only propose a plan. Main builds it, and a plan can pay only your 
 
 The only place a plan is approved. It's a separate, always-on-top window with its own page and preload, which expose the review channels and nothing else. Main answers those channels only from that window's own top frame on the review page, and the app's page can't use them, open the window or reach into it.
 
-- **What it shows:** what main decodes from the plan's own step, the bytes the signer reads back and signs, never the agent's words. In order: the network, the recipient in full and in groups, the amount with the fee ceiling at today's gas price under it and the most that can leave your account below that, each action and whether it calls a contract, a "not simulated" note, then the fee, the paying account, its key, the exact amount in yoctoNEAR and the plan hash. It says whether the recipient is your own account or one you typed in the chat.
+- **What it shows:** what main decodes from the plan's own steps, the bytes the signer reads back and signs, never the agent's words. In order:
+  - the network, with a "not simulated" note;
+  - a money map: each source leaving your wallet or NEAR Intents balance in red, through NEAR Intents when it swaps or carries it, to what arrives where in green, with a bar of what each source brings to a payment;
+  - the recipient in full and in groups, and whether it's your own account or one you typed in the chat;
+  - each fee at most, beside its chain, and the most that can leave your account;
+  - each transaction you sign, with its chain, its key, whether it's sent on approval or once a payment's parts land, and each action: what it moves to whom, and the contract method it calls, with the full decoded text a click away;
+  - then the paying accounts, their keys, the exact amount in its smallest unit and the plan hash.
+
+  Every token has its logo and its chain's badge. Ink ships logos for the common tokens; for any other, main finds Zerion's verified token with the exact contract or mint the plan pays (never just the same symbol) and fetches its icon, for up to 2.5 s. With no match, the token shows its chain's logo or its letters.
 - **Approving:** Approve works only for the plan and hash on show, once the window has been up and in front for 1.5 s. The delay starts again whenever the window takes focus, so a click or key press meant for something else can't approve it. Main also needs a real press of the mouse button, Enter or Space in that window, after it armed and within the last second. Electron reports these from the OS, so a script can't make one. Only the press counts, never its release, and each press approves once. Ink must be unlocked. On Linux under X11, other programs can fake input, so the click check is weaker there.
 - **Sending:** once approved, main signs and sends the plan as described under NEAR, and the window shows what became of it, with a link to the transaction on nearblocks.io. The fee maximum you saw is a limit: if today's gas price could now take more, nothing is signed, the window shows the new maximum, and Approve waits 1.5 s again. A plan shown before NEAR gave a fee gets one before it can be approved. A send that stopped before signing (NEAR unreachable, an earlier send unanswered) keeps the plan approved, and Try again sends it as approved, with another click. The window can't be closed while a send is running.
 - **Rejecting and expiry:** Reject, or closing the window, cancels the plan and signs nothing. A plan nobody approves expires 30 minutes after it was made, and the window shows that. Plans wait their turn and are shown one at a time.

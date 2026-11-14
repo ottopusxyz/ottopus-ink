@@ -202,6 +202,8 @@ export interface ZerionToken {
   name: string | null
   /** Its icon on Zerion's image host, for main to fetch, or null. */
   icon: string | null
+  /** Its contract or mint on the chain searched, lower case for EVM; null for the chain's own coin. */
+  addresses: (string | null)[]
 }
 
 /** A token's name fit to show: plain words, short. Anyone can name a token anything. */
@@ -230,6 +232,13 @@ export async function zerionTokenSearch(query: string, chain: string, options: Z
     if (!symbol || !verified) return []
     const name = typeof attributes?.name === 'string' && NAME.test(attributes.name) ? attributes.name : null
     const icon = iconUrlOf((attributes?.icon as { url?: unknown } | null | undefined)?.url)
-    return [{ symbol, name, icon }]
+    const implementations = Array.isArray(attributes?.implementations) ? (attributes.implementations as unknown[]) : []
+    const addresses = implementations.flatMap((entry) => {
+      if (typeof entry !== 'object' || entry === null || (entry as { chain_id?: unknown }).chain_id !== chain) return []
+      const address = (entry as { address?: unknown }).address
+      if (address === null || address === undefined || address === '') return [null]
+      return typeof address === 'string' && address.length <= 100 ? [/^0x[0-9a-fA-F]{40}$/.test(address) ? address.toLowerCase() : address] : []
+    })
+    return [{ symbol, name, icon, addresses }]
   })
 }

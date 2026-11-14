@@ -12,6 +12,8 @@ export interface ReviewWindowOptions {
   /** Loads the review page into a new window. */
   load: (win: BrowserWindow) => void
   devTools: boolean
+  /** The app's icon, for the window and the taskbar. */
+  icon?: string
 }
 
 /** How often the window rechecks the plan, so expiry and arming show without waiting on anything else. */
@@ -28,7 +30,7 @@ const REFRESH_MS = 250
  * the arm delay, and about each real click or key press in it, which Electron
  * reports from the OS, out of any script's reach.
  */
-export function createReviewWindow({ preload, entry, load, devTools }: ReviewWindowOptions) {
+export function createReviewWindow({ preload, entry, load, devTools, icon }: ReviewWindowOptions) {
   let win: BrowserWindow | null = null
   let timer: ReturnType<typeof setInterval> | null = null
   let broker: ReviewBroker | null = null
@@ -44,6 +46,7 @@ export function createReviewWindow({ preload, entry, load, devTools }: ReviewWin
       minimizable: false,
       fullscreenable: false,
       title: 'Review · Ottopus Ink',
+      ...(icon ? { icon } : {}),
       backgroundColor: '#F7F2EA',
       webPreferences: secureWebPreferences(preload, { devTools }),
     })

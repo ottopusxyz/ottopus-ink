@@ -1,11 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AccountChain } from '../../../../shared/accounts'
-import type { ReceiveAnswer, ReceiveChain, ReceiveToken } from '../../../../shared/ipc'
+import type { ReceiveAnswer, ReceiveChain, ReceiveRoute, ReceiveRoutes, ReceiveToken } from '../../../../shared/ipc'
 import { Otto } from '@/components/brand/otto'
 import { Ring } from '@/components/motion/ring'
 import { Sea } from '@/components/motion/sea'
 import { CheckIcon, CloseIcon, CopyIcon, SearchIcon } from '@/components/shell/icons'
-import { Callout, Input, TokenLogo } from '@/components/ui'
+import { ChainLogo, Callout, Input, TokenLogo, Tooltip } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { isTokenSymbol } from '@/lib/logos'
 import { receiveCacheOfApp } from '@/lib/receive-cache'
@@ -433,13 +433,56 @@ function TokenSearch({ chain, onPick }: { chain: ReceiveChain; onPick: (token: R
 
 type Answer = { kind: 'loading' } | { kind: 'ready'; answer: ReceiveAnswer; for: string; chain: ReceiveChain }
 
+/**
+ * Which address to show: the wallet's own on the chain, or NEAR Intents' deposit address,
+ * whose funds land in the Intents balance. Ink picks NEAR Intents first; this lets the
+ * person choose. A route the chain or token can't take is shown, but can't be picked.
+ */
+function RouteSwitch({ chain, routes, value, onChange }: { chain: ReceiveChain; routes: ReceiveRoutes; value: 'own' | 'intents'; onChange: (route: 'own' | 'intents') => void }) {
+  const options = [
+    { id: 'own' as const, label: `${chain.name} wallet`, mark: <ChainMark chain={chain} size="xs" />, why: `You have no wallet address on ${chain.name}.` },
+    { id: 'intents' as const, label: 'NEAR Intents', mark: <ChainLogo chain="near" size="xs" />, why: `NEAR Intents doesn’t take this token on ${chain.name}.` },
+  ]
+  return (
+    <div className="ink-segmented ink-segmented--compact self-center" role="radiogroup" aria-label="Receive at">
+      {options.map((option) => {
+        const can = routes[option.id]
+        const button = (
+          <button
+            key={option.id}
+            type="button"
+            role="radio"
+            aria-checked={value === option.id}
+            aria-disabled={!can}
+            tabIndex={value === option.id ? 0 : -1}
+            className={cn('flex items-center gap-1.5', !can && 'cursor-not-allowed opacity-45')}
+            onClick={() => can && value !== option.id && onChange(option.id)}
+          >
+            {option.mark}
+            {option.label}
+          </button>
+        )
+        return can ? button : <Tooltip key={option.id} text={option.why}>{button}</Tooltip>
+      })}
+    </div>
+  )
+}
+
 /** The address main picked, with whose it is, its QR code, any memo, and what to send. */
 function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asset: string; icon: string | null; amount: string | null }) {
   const [state, setState] = useState<Answer>({ kind: 'loading' })
   const [copied, setCopied] = useState<'none' | 'address' | 'memo' | 'failed'>('none')
   const timer = useRef<number | undefined>(undefined)
-  const ask = useMemo(() => ({ chain: chain.id, asset, amount }), [chain.id, asset, amount])
-  const key = `${ask.chain} ${ask.asset} ${ask.amount ?? ''}`
+  // Ink picks until the person switches; a new chain or token goes back to Ink's pick.
+  const [route, setRoute] = useState<ReceiveRoute>('auto')
+  const picked = `${chain.id} ${asset}`
+  const [routeFor, setRouteFor] = useState(picked)
+  if (routeFor !== picked) {
+    setRouteFor(picked)
+    setRoute('auto')
+  }
+  const ask = useMemo(() => ({ chain: chain.id, asset, amount, route }), [chain.id, asset, amount, route])
+  const key = `${ask.chain} ${ask.asset} ${ask.amount ?? ''} ${ask.route}`
 
   useEffect(() => {
     let live = true
@@ -474,18 +517,32 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
       Updating
     </span>
   ) : null
+  // The switch, wherever both routes are possible, so a choice that can't take this can be undone.
+  const routes = answer.routes
+  const switcher =
+    routes && (routes.own || routes.intents) && (routes.own && routes.intents || route !== 'auto') ? (
+      <RouteSwitch chain={state.chain} routes={routes} value={answer.ok ? answer.kind : route === 'own' ? 'own' : 'intents'} onChange={setRoute} />
+    ) : null
   if (!answer.ok) {
+    const chose = route === 'intents'
     const text =
       answer.reason === 'locked'
         ? 'Unlock Ink to see where to receive.'
         : answer.reason === 'below-minimum'
-          ? `NEAR Intents credits at least ${answer.min} ${asset} on ${chain.name}, and you have no address of your own there. Send at least that.`
+          ? chose
+            ? `NEAR Intents credits at least ${answer.min} ${asset} on ${chain.name}. Send at least that, or switch to your wallet.`
+            : `NEAR Intents credits at least ${answer.min} ${asset} on ${chain.name}, and you have no address of your own there. Send at least that.`
           : answer.reason === 'not-supported'
-            ? `Neither NEAR Intents nor your own accounts take ${asset} on ${chain.name}.`
-            : 'Ink couldn’t work out an address right now. Try again in a moment.'
+            ? chose
+              ? `NEAR Intents doesn’t take ${asset} on ${chain.name}. Switch to your wallet.`
+              : `Neither NEAR Intents nor your own accounts take ${asset} on ${chain.name}.`
+            : chose
+              ? 'NEAR Intents couldn’t be reached. Try again in a moment, or switch to your wallet.'
+              : 'Ink couldn’t work out an address right now. Try again in a moment.'
     return (
       <section className="ink-address-card" aria-busy={stale}>
         {updating ? <div className="flex justify-end">{updating}</div> : null}
+        {switcher}
         <div className={cn('transition-opacity', stale && 'opacity-50')}>
           <Callout severity="block" title={answer.reason === 'locked' ? 'Ink is locked' : 'No address for this'} compact>
             {text}
@@ -503,7 +560,9 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
         ? `That’s under NEAR Intents’ ${answer.min} ${answer.asset} minimum, so this is your own address.`
         : answer.why === 'intents-unavailable'
           ? 'NEAR Intents couldn’t be reached, so this is your own address.'
-          : null
+          : answer.why === 'chosen'
+            ? 'Your own address, from your recovery phrase. What arrives shows on this chain in Portfolio.'
+            : null
       : null
   return (
     <section aria-label={intents ? `Your NEAR Intents deposit address on ${answer.chainName}` : `Your ${answer.chainName} address`} className="ink-address-card" aria-busy={stale}>
@@ -521,6 +580,7 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
         </div>
         {updating}
       </div>
+      {switcher}
       <div className={cn('flex flex-col gap-[14px] transition-opacity', stale && 'opacity-50')}>
         <div className="ink-qr-frame">
           <QrCode value={answer.address} label={`QR code for the address to receive ${answer.asset} on ${answer.chainName}`} size={216} />

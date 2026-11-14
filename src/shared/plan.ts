@@ -113,6 +113,13 @@ export interface PlanSwap {
   /** For `evm`: the chain id, and `native` or the token's contract, which the step must send. */
   sendChainId?: string
   sendToken?: string
+  /**
+   * `payout` for the last swap of a payment: the one transfer out of the Intents balance to
+   * the recipient, which Ink signs with the rest but sends only once the legs have landed.
+   */
+  role?: 'payout'
+  /** For a payout: how much of what it moves was in the Intents balance already, in its smallest unit. */
+  fromBalance?: string
 }
 
 /**

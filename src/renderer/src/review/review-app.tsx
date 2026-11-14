@@ -210,7 +210,7 @@ export function ReviewApp() {
         </Section>
         )}
 
-        {plan.legs ? <PayTerms legs={plan.legs} /> : null}
+        {plan.legs && plan.payout ? <PayTerms legs={plan.legs} payout={plan.payout} to={plan.to} on={plan.payChain?.name ?? ''} /> : null}
         <Section label="Amount" card>
           <p className="selectable m-0 flex items-center gap-2.5">
             <TokenLogo symbol={plan.asset} chain={plan.payChain?.mark ?? plan.chainMark} size="lg" />
@@ -379,19 +379,26 @@ export function ReviewApp() {
 }
 
 /**
- * A payment's parts, as NEAR Intents' quotes fixed them: what each sends and from where,
- * and exactly what each pays out. Together they pay the amount below, to one address.
+ * A payment, as NEAR Intents' quotes fixed it: each part brings exactly its amount into the
+ * Intents balance, then one payout sends exactly the total to the recipient, in one
+ * transfer. Ink signs the payout now and sends it once the parts have landed.
  */
-function PayTerms({ legs }: { legs: readonly ReviewLeg[] }) {
+function PayTerms({ legs, payout, to, on }: { legs: readonly ReviewLeg[]; payout: NonNullable<ReviewPlan['payout']>; to: string; on: string }) {
   return (
-    <Section label={`Paid in ${legs.length} part${legs.length === 1 ? '' : 's'} through NEAR Intents`} card>
+    <Section label="How it’s paid, through NEAR Intents" card>
       <ol className="m-0 flex list-none flex-col gap-2.5 p-0">
+        {payout.fromBalance ? (
+          <li className="border-b border-dashed border-[var(--ot-border)] pb-2.5 text-[13.5px]">
+            <strong className="selectable font-mono">{payout.fromBalance}</strong> <span className="text-[var(--ot-text-2)]">already in your NEAR Intents balance</span>
+          </li>
+        ) : null}
         {legs.map((leg, index) => (
-          <li key={index} className="flex flex-col gap-1 border-b border-dashed border-[var(--ot-border)] pb-2.5 last:border-b-0 last:pb-0">
+          <li key={index} className="flex flex-col gap-1 border-b border-dashed border-[var(--ot-border)] pb-2.5">
             <span className="text-[13.5px]">
               <strong className="selectable font-mono">{leg.send}</strong> <span className="text-[var(--ot-text-2)]">from {leg.fromPlace}</span>
               <span className="text-[var(--ot-text-3)]"> → exactly </span>
               <strong className="selectable font-mono">{leg.get}</strong>
+              <span className="text-[var(--ot-text-2)]"> into your NEAR Intents balance</span>
             </span>
             <span className="text-[12px] text-[var(--ot-text-3)]">
               NEAR Intents’ {leg.fee} fee is included. Anything it doesn’t need goes back {leg.from === 'intents' ? 'into your NEAR Intents balance' : `to ${leg.refundTo}`}.
@@ -399,6 +406,18 @@ function PayTerms({ legs }: { legs: readonly ReviewLeg[] }) {
             <Address value={leg.depositAddress} small />
           </li>
         ))}
+        <li className="flex flex-col gap-1">
+          <span className="text-[13.5px]">
+            <span className="text-[var(--ot-text-2)]">Then </span>
+            <strong className="selectable font-mono">exactly {payout.get}</strong>
+            <span className="text-[var(--ot-text-2)]"> to </span>
+            <span className="selectable font-mono [overflow-wrap:anywhere]">{to}</span>
+            <span className="text-[var(--ot-text-2)]"> on {on}, in one transfer</span>
+          </span>
+          <span className="text-[12px] text-[var(--ot-text-3)]">
+            Signed now with the rest, and sent by Ink once every part has landed. NEAR Intents’ {payout.fee} fee is included; anything left over stays in your NEAR Intents balance.
+          </span>
+        </li>
       </ol>
     </Section>
   )

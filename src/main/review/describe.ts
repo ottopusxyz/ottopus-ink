@@ -301,10 +301,17 @@ function describeEvmSwap(plan: PlanView, maxFee: bigint | null): ReviewPlan | nu
 function describePayment(plan: PlanView, stepFees: readonly (bigint | null)[]): ReviewPlan | null {
   const legs = plan.core.swaps ?? []
   const recipient = plan.core.recipient
-  const [first] = legs
-  if (!first || !recipient || plan.core.steps.length === 0 || plan.core.swap) return null
-  const sameTarget = legs.every((leg) => leg.recipient === recipient.address && leg.destinationAsset === first.destinationAsset && leg.getChain === first.getChain && leg.getDecimals === first.getDecimals && leg.amountOut === leg.minAmountOut && /^[1-9][0-9]*$/.test(leg.amountOut))
-  if (!sameTarget) return null
+  const payout = legs.at(-1)
+  if (!payout || !recipient || plan.core.steps.length === 0 || plan.core.swap) return null
+  const exact = (swap: PlanSwap) => swap.amountOut === swap.minAmountOut && /^[1-9][0-9]*$/.test(swap.amountOut) && /^[1-9][0-9]*$/.test(swap.amountIn)
+  // The payout: last, out of the Intents balance to the recipient, the same token it moves, exactly.
+  const payoutOk = payout.role === 'payout' && payout.payFrom === 'intents' && payout.recipient === recipient.address && payout.originAsset === payout.destinationAsset && exact(payout) && /^(0|[1-9][0-9]*)$/.test(payout.fromBalance ?? '0')
+  // Each leg: exactly its part into the person's own Intents balance, as the token the payout moves.
+  const before = legs.slice(0, -1)
+  const legsOk = before.every((leg) => leg.role !== 'payout' && leg.getChain === 'intents' && leg.recipient === payout.refundTo && leg.destinationAsset === payout.originAsset && exact(leg))
+  // Together with what the balance held already, the legs bring in exactly what the payout moves.
+  const brought = before.reduce((sum, leg) => sum + BigInt(leg.amountOut), 0n) + BigInt(payout.fromBalance ?? '0')
+  if (!payoutOk || !legsOk || brought !== BigInt(payout.amountIn)) return null
 
   const paid = new Set<number>()
   // Each step must pay exactly the legs its place says, since that's how each leg is followed once it's sent.
@@ -351,7 +358,7 @@ function describePayment(plan: PlanView, stepFees: readonly (bigint | null)[]): 
   }
   if (paid.size !== legs.length) return null
 
-  const reviewLegs = legs.map((leg) => {
+  const reviewLegs = before.map((leg) => {
     const chain = leg.payFrom === 'evm' ? evmChainById(Number(leg.sendChainId)) : null
     return {
       send: swapSent(leg) ?? leg.sendSymbol,
@@ -364,14 +371,21 @@ function describePayment(plan: PlanView, stepFees: readonly (bigint | null)[]): 
       seconds: Number(leg.seconds),
     }
   })
-  const total = legs.reduce((sum, leg) => sum + BigInt(leg.amountOut), 0n)
+  const total = BigInt(payout.amountOut)
   const last = chains.at(-1) as (typeof chains)[number]
+  const fromBalance = BigInt(payout.fromBalance ?? '0')
   return {
     id: plan.id,
     kind: 'pay',
     swap: null,
     legs: reviewLegs,
-    payChain: { mark: inkChainOf(first.getChain) ?? first.getChain, name: chainName(first.getChain) },
+    payout: {
+      get: tokenAmount(payout.amountOut, payout.getDecimals, payout.getSymbol) ?? payout.getSymbol,
+      fromBalance: fromBalance > 0n ? tokenAmount(fromBalance.toString(), payout.getDecimals, payout.getSymbol) : null,
+      fee: `${(Number(payout.feeBps) / 100).toFixed(2).replace(/\.?0+$/, '')}%`,
+      seconds: Number(payout.seconds),
+    },
+    payChain: { mark: inkChainOf(payout.getChain) ?? payout.getChain, name: chainName(payout.getChain) },
     stepFees: chains.map((chain, i) => {
       const fee = stepFees[i] ?? null
       return { chain: chain.name, feeAsset: chain.symbol, maxFee: fee === null ? null : formatUnits(fee, chain.symbol === 'NEAR' ? 24 : 18), maxFeeYocto: fee === null ? null : fee.toString() }
@@ -385,11 +399,11 @@ function describePayment(plan: PlanView, stepFees: readonly (bigint | null)[]): 
     from: legs.map((leg) => leg.refundTo).filter((address, i, all) => all.indexOf(address) === i).join(', '),
     publicKey: chains.map((chain) => (chain.symbol === 'NEAR' ? 'ed25519' : 'secp256k1')).filter((key, i, all) => all.indexOf(key) === i).join(' + '),
     to: recipient.address,
-    toKind: first.getChain === 'intents' ? 'implicit' : 'other-chain',
+    toKind: 'other-chain',
     toWhy: recipient.why,
-    amount: formatUnits(total, Number(first.getDecimals)),
+    amount: formatUnits(total, Number(payout.getDecimals)),
     amountYocto: total.toString(),
-    asset: first.getSymbol,
+    asset: payout.getSymbol,
     maxFee: null,
     maxFeeYocto: stepFees.every((fee) => fee !== null) && stepFees.length === chains.length ? '0' : null,
     maxTotal: null,

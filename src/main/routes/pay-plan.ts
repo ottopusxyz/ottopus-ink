@@ -17,17 +17,18 @@ import { accountChainFor, chainCode, tokenOn } from './route'
 import { SWAP_DEADLINE_AFTER_PLAN_MS } from './swap-plan'
 
 /**
- * Which legs a payment's step pays, by their place in `swaps`. The builder writes the
- * Intents legs first, all paid by the first step when it's the NEAR one, then each EVM leg
- * paid by its own step, in the same order.
+ * Which swaps a payment's step pays, by their place in `swaps`. The builder writes the
+ * Intents legs first, all paid by the first step when there are any, then each EVM leg paid
+ * by its own step, and last the payout, paid by the last step.
  */
 export function legsOfStep(core: { steps: readonly PlanStep[]; swaps?: readonly PlanSwap[] }, step: number): number[] {
   const swaps = core.swaps ?? []
-  const intents = swaps.flatMap((swap, index) => (swap.payFrom === 'intents' ? [index] : []))
+  const payout = swaps.findIndex((swap) => swap.role === 'payout')
+  if (payout >= 0 && step === core.steps.length - 1) return [payout]
+  const intents = swaps.flatMap((swap, index) => (swap.payFrom === 'intents' && swap.role !== 'payout' ? [index] : []))
   const evm = swaps.flatMap((swap, index) => (swap.payFrom === 'evm' ? [index] : []))
-  const nearFirst = core.steps[0]?.chain === 'near'
-  if (nearFirst && step === 0) return intents
-  const evmIndex = step - (nearFirst ? 1 : 0)
+  if (intents.length > 0 && step === 0) return intents
+  const evmIndex = step - (intents.length > 0 ? 1 : 0)
   return evm[evmIndex] === undefined ? [] : [evm[evmIndex] as number]
 }
 
@@ -76,12 +77,17 @@ interface Leg {
 const whole = (raw: bigint, decimals: number) => Number(raw) / 10 ** decimals
 
 /**
- * A payment of exactly `amount` of a token on a chain, from whatever the wallet holds that
- * can pay for it: the same token, or for a dollar stablecoin any other, in the Intents
- * balance or at the wallet's address on an EVM chain. The largest source goes first, and
- * each leg is an exact-output swap through 1Click to the same recipient, so together they
- * pay exactly the amount. The Intents legs move their tokens in one NEAR transaction; each
- * EVM leg is one transfer on its chain. A refund goes back where each leg came from.
+ * A payment of exactly `amount` of a token on a chain to one address, in one transfer, from
+ * whatever the wallet holds that can pay for it: the same token, or for a dollar stablecoin
+ * any other, in the Intents balance or at the wallet's address on an EVM chain.
+ *
+ * The payout is quoted first: an exact-output withdrawal of the token from the Intents
+ * balance to the recipient, which says what it needs moved in. What the Intents balance
+ * holds of that token already counts toward it; the rest comes in legs, largest source
+ * first, each an exact-output swap into the wallet's own Intents balance. The Intents legs
+ * move in one NEAR transaction, each EVM leg is one transfer, and the payout is a last NEAR
+ * transaction, signed with the rest but sent only once the legs have landed. A refund goes
+ * back where each came from.
  */
 export async function buildPayment(intent: PlanIntent, own: readonly Account[], { tokens, held, quote, fits, evmRpc, now = Date.now }: PayPlanDeps): Promise<PayPlanResult> {
   if (intent.outcome !== 'pay' || !intent.toChain) return { ok: false, reason: 'bad-request' }
@@ -102,24 +108,49 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
   const payoutChain = accountChainFor(toCode)
   if (!payoutChain) return { ok: false, reason: 'no-route' }
   if (intent.to && !isAddressOn(payoutChain, intent.to)) return { ok: false, reason: 'bad-address' }
-  const payout = intent.to ?? own.find((account) => account.chain === payoutChain)?.address
-  if (!payout) return { ok: false, reason: 'recipient-not-allowed' }
+  const payTo = intent.to ?? own.find((account) => account.chain === payoutChain)?.address
+  if (!payTo) return { ok: false, reason: 'recipient-not-allowed' }
 
   const holdings = await held().catch(() => null)
   if (!holdings) return { ok: false, reason: 'chain-unavailable' }
+  const deadline = new Date(now() + PLAN_TTL_MS + SWAP_DEADLINE_AFTER_PLAN_MS)
+  const alive = (closes: Date | null) => closes !== null && closes.getTime() >= now() + PLAN_TTL_MS + SWAP_DEADLINE_MARGIN_MS
+
+  // The payout: exactly the amount, out of the Intents balance to the recipient, in one transfer.
+  const payout = await quote({
+    originAsset: target.assetId,
+    destinationAsset: target.assetId,
+    swapType: 'EXACT_OUTPUT',
+    amount,
+    depositType: 'INTENTS',
+    refundTo: near,
+    recipient: payTo,
+    recipientType: 'DESTINATION_CHAIN',
+    dry: false,
+    deadline,
+    slippageBps: SLIPPAGE_BPS,
+  }).catch((): OneClickQuoteResult => ({ ok: false, reason: 'unavailable' }))
+  if (!payout.ok) return { ok: false, reason: payout.reason === 'too-small' || payout.reason === 'no-route' ? 'no-route' : payout.reason === 'bad-recipient' ? 'recipient-not-allowed' : 'chain-unavailable' }
+  const payoutIn = payout.quote.amountIn
+  const payoutAddress = payout.quote.depositAddress
+  if (!payoutAddress || !isNearAccountId(payoutAddress) || !alive(payout.quote.deadline)) return { ok: false, reason: 'chain-unavailable' }
+
+  // What the Intents balance holds of the token already pays first; the legs bring the rest in.
+  const inBalance = holdings.get(`intents:${target.assetId}`) ?? 0n
+  const fromBalance = inBalance < payoutIn ? inBalance : payoutIn
   const stable = STABLES.has(target.symbol.toUpperCase())
   const sameKind = (token: OneClickToken) => (stable ? STABLES.has(token.symbol.toUpperCase()) : token.symbol.toLowerCase() === target.symbol.toLowerCase())
   const sources: Source[] = listed
     .filter(sameKind)
     .flatMap((token): Source[] => {
-      const inIntents = holdings.get(`intents:${token.assetId}`) ?? 0n
+      const inIntents = token.assetId === target.assetId ? 0n : (holdings.get(`intents:${token.assetId}`) ?? 0n)
       const chain = evmChainOfOneClick(token.blockchain)
       const atWallet = chain && token.contract && evmFrom ? (holdings.get(`wallet:${token.assetId}`) ?? 0n) : 0n
       return [...(inIntents > 0n ? [{ from: 'intents' as const, token, held: inIntents, chain: null }] : []), ...(atWallet > 0n ? [{ from: 'evm' as const, token, held: atWallet, chain }] : [])]
     })
     .sort((a, b) => whole(b.held, b.token.decimals) - whole(a.held, a.token.decimals))
 
-  const deadline = new Date(now() + PLAN_TTL_MS + SWAP_DEADLINE_AFTER_PLAN_MS)
+  // Each leg pays exactly its part into the wallet's own Intents balance, as the token the payout moves.
   const ask = (source: Source, swapType: 'EXACT_INPUT' | 'EXACT_OUTPUT', value: bigint, dry: boolean) =>
     quote({
       originAsset: source.token.assetId,
@@ -128,15 +159,15 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
       amount: value,
       depositType: source.from === 'intents' ? 'INTENTS' : 'ORIGIN_CHAIN',
       refundTo: source.from === 'evm' && evmFrom ? evmFrom : near,
-      recipient: payout,
-      recipientType: 'DESTINATION_CHAIN',
+      recipient: near,
+      recipientType: 'INTENTS',
       dry,
       deadline,
       slippageBps: SLIPPAGE_BPS,
     }).catch((): OneClickQuoteResult => ({ ok: false, reason: 'unavailable' }))
 
   const legs: Leg[] = []
-  let left = amount
+  let left = payoutIn - fromBalance
   for (const source of sources) {
     if (left === 0n || legs.length === MAX_LEGS) break
     // One leg on each EVM chain, so no two transactions there wait on each other's nonce.
@@ -153,11 +184,11 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
     if (!bound.ok || bound.quote.amountIn > source.held || out === 0n) continue
     const { depositAddress, deadline: closes } = bound.quote
     const addressOk = source.from === 'evm' ? isEvmAddress(depositAddress ?? '') : isNearAccountId(depositAddress ?? '')
-    if (!depositAddress || !addressOk || !closes || closes.getTime() < now() + PLAN_TTL_MS + SWAP_DEADLINE_MARGIN_MS) continue
+    if (!depositAddress || !addressOk || !alive(closes)) continue
     legs.push({ source, quote: bound.quote, out })
     left -= out
   }
-  if (legs.length === 0 || left > 0n) return { ok: false, reason: 'insufficient-funds' }
+  if (left > 0n) return { ok: false, reason: 'insufficient-funds' }
 
   const termsOf = (leg: Leg): PlanSwap => ({
     via: '1click',
@@ -171,27 +202,32 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
     sendSymbol: leg.source.token.symbol,
     getSymbol: target.symbol,
     getDecimals: String(target.decimals),
-    getChain: target.blockchain,
-    recipient: payout,
+    getChain: 'intents',
+    recipient: near,
     refundTo: leg.source.from === 'evm' && evmFrom ? evmFrom : near,
     feeBps: String(leg.quote.feeBps),
     seconds: String(Math.round(leg.quote.seconds)),
     payFrom: leg.source.from,
     sendDecimals: String(leg.source.token.decimals),
   })
+  const nearFits = async (calls: NearCall[]) => {
+    try {
+      return (await fits(near, callsDeposit(calls), callsGas(calls), calls.length)) ? 'insufficient-funds' : null
+    } catch {
+      return 'chain-unavailable'
+    }
+  }
+  const nearStep = (calls: NearCall[]) => nearCallStep({ signerId: near, publicKey: nearPublicKey(hexToBytes(near)), receiverId: INTENTS_NEAR, calls })
 
-  // The Intents legs first, in one NEAR transaction; then each EVM leg's transfer.
+  // The Intents legs first, in one NEAR transaction; then each EVM leg's transfer; then the payout.
   const steps: PlanStep[] = []
   const swaps: PlanSwap[] = []
   const fromIntents = legs.filter((leg) => leg.source.from === 'intents')
   if (fromIntents.length > 0) {
     const calls: NearCall[] = fromIntents.map((leg) => ({ method: 'mt_transfer', receiverId: leg.quote.depositAddress as string, tokenId: leg.source.token.assetId, amount: leg.quote.amountIn }))
-    try {
-      if (await fits(near, callsDeposit(calls), callsGas(calls), calls.length)) return { ok: false, reason: 'insufficient-funds' }
-    } catch {
-      return { ok: false, reason: 'chain-unavailable' }
-    }
-    steps.push(nearCallStep({ signerId: near, publicKey: nearPublicKey(hexToBytes(near)), receiverId: INTENTS_NEAR, calls }))
+    const unfit = await nearFits(calls)
+    if (unfit) return { ok: false, reason: unfit }
+    steps.push(nearStep(calls))
     swaps.push(...fromIntents.map(termsOf))
   }
   for (const leg of legs.filter((each) => each.source.from === 'evm')) {
@@ -204,7 +240,33 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
     steps.push(...built.steps)
     swaps.push({ ...termsOf(leg), sendChainId: String(chain.chainId), sendToken: token.token })
   }
-  return { ok: true, steps, swaps, payout: { address: payout, chain: payoutChain } }
+  const payoutCalls: NearCall[] = [{ method: 'mt_transfer', receiverId: payoutAddress, tokenId: target.assetId, amount: payoutIn }]
+  const unfit = await nearFits(payoutCalls)
+  if (unfit) return { ok: false, reason: unfit }
+  steps.push(nearStep(payoutCalls))
+  swaps.push({
+    via: '1click',
+    depositAddress: payoutAddress,
+    deadline: (payout.quote.deadline as Date).toISOString(),
+    originAsset: target.assetId,
+    destinationAsset: target.assetId,
+    amountIn: payoutIn.toString(),
+    amountOut: amount.toString(),
+    minAmountOut: amount.toString(),
+    sendSymbol: target.symbol,
+    getSymbol: target.symbol,
+    getDecimals: String(target.decimals),
+    getChain: target.blockchain,
+    recipient: payTo,
+    refundTo: near,
+    feeBps: String(payout.quote.feeBps),
+    seconds: String(Math.round(payout.quote.seconds)),
+    payFrom: 'intents',
+    sendDecimals: String(target.decimals),
+    role: 'payout',
+    fromBalance: fromBalance.toString(),
+  })
+  return { ok: true, steps, swaps, payout: { address: payTo, chain: payoutChain } }
 }
 
 /**
@@ -216,7 +278,7 @@ export async function buildPayment(intent: PlanIntent, own: readonly Account[], 
 export function paymentProgress(swaps: readonly PlanSwap[], legs: readonly (ChatSwap | null)[]): ChatSwap | null {
   const known = legs.filter((leg): leg is ChatSwap => leg !== null)
   if (known.length === 0) return null
-  const first = swaps[0]
+  const first = swaps.find((swap) => swap.role === 'payout') ?? swaps[0]
   const link = known.find((leg) => leg.link)?.link ?? null
   const refunded = known.flatMap((leg) => (leg.refunded ? [leg.refunded] : [])).join(' + ') || null
   const any = (stage: ChatSwap['stage']) => known.some((leg) => leg.stage === stage)
@@ -224,7 +286,10 @@ export function paymentProgress(swaps: readonly PlanSwap[], legs: readonly (Chat
   if (any('refunded')) return { stage: 'refunded', got: null, refunded, link }
   if (any('unknown')) return { stage: 'unknown', got: null, refunded, link }
   if (known.length === swaps.length && known.every((leg) => leg.stage === 'done') && first) {
-    const total = swaps.reduce((sum, swap) => sum + BigInt(swap.amountOut), 0n)
+    // What the recipient got: the payout's exact amount, or every leg's together for a payment without one.
+    const payout = swaps.find((swap) => swap.role === 'payout')
+    const total = payout ? BigInt(payout.amountOut) : swaps.reduce((sum, swap) => sum + BigInt(swap.amountOut), 0n)
+    const link = (payout ? legs[swaps.indexOf(payout)]?.link : null) ?? known.find((leg) => leg.link)?.link ?? null
     return { stage: 'done', got: `${formatUnits(total, Number(first.getDecimals))} ${first.getSymbol}`, refunded: null, link }
   }
   return { stage: known.length === swaps.length && known.every((leg) => leg.stage !== 'deposited') ? 'swapping' : 'deposited', got: null, refunded: null, link }

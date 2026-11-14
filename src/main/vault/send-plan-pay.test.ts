@@ -26,20 +26,22 @@ const EVM_DEPOSIT = '0x8f436D184823B77188DE973322278686c3780C2c'
 const USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
 const PAY: PlanIntent = { outcome: 'pay', asset: 'USDC', amount: '15', chain: null, to: null, toAsset: null, toChain: 'solana' }
 
+const SOL_USDC = 'nep141:sol-usdc.omft.near'
+const PAYOUT_DEPOSIT = 'e'.repeat(64)
 const leg = (extra: Partial<PlanSwap>): PlanSwap => ({
   via: '1click',
   depositAddress: NEAR_DEPOSIT,
   deadline: new Date(Date.now() + PLAN_TTL_MS + 60 * 60_000).toISOString(),
   originAsset: 'nep141:bnb-usdt.omdep.near',
-  destinationAsset: 'nep141:sol-usdc.omft.near',
+  destinationAsset: SOL_USDC,
   amountIn: '5100000000000000000',
   amountOut: '5000000',
   minAmountOut: '5000000',
   sendSymbol: 'USDT',
   getSymbol: 'USDC',
   getDecimals: '6',
-  getChain: 'sol',
-  recipient: SOL,
+  getChain: 'intents',
+  recipient: NEAR_ID,
   refundTo: NEAR_ID,
   feeBps: '1',
   seconds: '20',
@@ -47,16 +49,24 @@ const leg = (extra: Partial<PlanSwap>): PlanSwap => ({
   sendDecimals: '18',
   ...extra,
 })
-const SWAPS = [leg({}), leg({ depositAddress: EVM_DEPOSIT, originAsset: 'nep141:base-usdc.omft.near', amountIn: '10200000', amountOut: '10000000', minAmountOut: '10000000', sendSymbol: 'USDC', refundTo: EVM, payFrom: 'evm', sendDecimals: '6', sendChainId: '8453', sendToken: USDC })]
+const SWAPS = [
+  leg({}),
+  leg({ depositAddress: EVM_DEPOSIT, originAsset: 'nep141:base-usdc.omft.near', amountIn: '10200000', amountOut: '10300000', minAmountOut: '10300000', sendSymbol: 'USDC', refundTo: EVM, payFrom: 'evm', sendDecimals: '6', sendChainId: '8453', sendToken: USDC }),
+  leg({ depositAddress: PAYOUT_DEPOSIT, originAsset: SOL_USDC, amountIn: '15300000', amountOut: '15000000', minAmountOut: '15000000', sendSymbol: 'USDC', sendDecimals: '6', getChain: 'sol', recipient: SOL, role: 'payout', fromBalance: '0' }),
+]
+const nearStep = (receiverId: string, tokenId: string, amount: bigint) =>
+  nearCallStep({ signerId: NEAR_ID, publicKey: nearPublicKey(hexToBytes(NEAR_ID)), receiverId: 'intents.near', calls: [{ method: 'mt_transfer', receiverId, tokenId, amount }] })
 const STEPS = [
-  nearCallStep({ signerId: NEAR_ID, publicKey: nearPublicKey(hexToBytes(NEAR_ID)), receiverId: 'intents.near', calls: [{ method: 'mt_transfer', receiverId: NEAR_DEPOSIT, tokenId: 'nep141:bnb-usdt.omdep.near', amount: 5_100_000_000_000_000_000n }] }),
+  nearStep(NEAR_DEPOSIT, 'nep141:bnb-usdt.omdep.near', 5_100_000_000_000_000_000n),
   evmTransferStep({ chainId: 8453, from: EVM, to: EVM_DEPOSIT, token: USDC, amount: 10_200_000n, gas: 60_000n, symbol: 'USDC', decimals: 6 }),
+  nearStep(PAYOUT_DEPOSIT, SOL_USDC, 15_300_000n),
 ]
 const SIGNED: SignedStep[] = [
   { signed: new Uint8Array([1]), transactionId: 'NearTx111' },
   { signed: new Uint8Array([2]), transactionId: `0x${'ab'.repeat(32)}` },
+  { signed: new Uint8Array([3]), transactionId: 'NearTx333' },
 ]
-const FEES = [10n ** 23n, 10n ** 13n]
+const FEES = [10n ** 23n, 10n ** 13n, 10n ** 23n]
 
 function fakeNear(change: Partial<Record<keyof NearRpc, unknown>> = {}) {
   return {
@@ -96,32 +106,51 @@ async function setup({ near = fakeNear(), evm = fakeEvm() } = {}) {
 }
 
 describe('sending an approved payment', () => {
-  it('signs every step together with its own live inputs, then sends each in order', async () => {
+  it('signs every step together, sends the legs in order, and keeps the payout until they land', async () => {
     const { store, id, near, evm, vault, sender, stepsDone } = await setup()
-    expect(await sender.send(id, OWNER, FEES)).toMatchObject({ ok: true, plan: { status: 'confirmed' } })
+    expect(await sender.send(id, OWNER, FEES)).toMatchObject({ ok: true, plan: { status: 'submitted' } })
     expect(vault.sign.mock.calls[0]?.[2]).toEqual([
       { nonce: '42', blockHash: '09'.repeat(32) },
       { nonce: '3', maxFeePerGas: '21000000', maxPriorityFeePerGas: '1000000' },
+      { nonce: '43', blockHash: '09'.repeat(32) },
     ])
-    expect(near.sendTransaction).toHaveBeenCalledWith(SIGNED[0]!.signed)
+    expect(near.sendTransaction.mock.calls.map((call) => call[0])).toEqual([SIGNED[0]!.signed])
     expect(evm.send).toHaveBeenCalledWith(SIGNED[1]!.signed)
-    expect(stepsDone).toEqual([
-      [0, 'NearTx111'],
-      [1, SIGNED[1]!.transactionId],
-    ])
+    expect(stepsDone.map(([step]) => step)).toEqual([0, 1])
+    expect(sender.holds(id)).toBe(true)
+    // Once the legs land, the payout goes, and the plan is confirmed.
+    expect(await sender.releasePayout(id)).toMatchObject({ ok: true, plan: { status: 'confirmed' }, transactionId: 'NearTx333' })
+    expect(near.sendTransaction.mock.calls.map((call) => call[0])).toEqual([SIGNED[0]!.signed, SIGNED[2]!.signed])
+    expect(stepsDone.map(([step]) => step)).toEqual([0, 1, 2])
+    expect(sender.holds(id)).toBe(false)
     expect(store.get(id, OWNER)?.status).toBe('confirmed')
   })
 
-  it('stops at a step that fails, and never sends the rest', async () => {
+  it('holds back other NEAR sends from the key while a payout waits, and drops the payout if a leg fails', async () => {
+    const { store, id, near, sender } = await setup()
+    await sender.send(id, OWNER, FEES)
+    const next = await store.create({ intent: PAY, createdBy: 'agent', owner: OWNER, own: OWN, typed: [] })
+    if (!next.ok) throw new Error(next.reason)
+    store.move(next.plan.id, OWNER, 'awaiting_review')
+    store.move(next.plan.id, OWNER, 'approved')
+    expect(await sender.send(next.plan.id, OWNER, FEES)).toMatchObject({ ok: false, reason: 'earlier-pending' })
+    sender.dropPayout(id)
+    expect(store.get(id, OWNER)?.status).toBe('failed')
+    expect(sender.holds(id)).toBe(false)
+    expect(near.sendTransaction).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops at a leg that fails, and never sends the rest or keeps the payout', async () => {
     const { id, evm, sender, stepsDone } = await setup({ near: fakeNear({ sendTransaction: vi.fn(async () => ({ transactionId: 'NearTx111', ok: false, failure: 'x' })) }) })
     expect(await sender.send(id, OWNER, FEES)).toMatchObject({ ok: true, plan: { status: 'failed' } })
     expect(evm.send).not.toHaveBeenCalled()
     expect(stepsDone).toEqual([])
+    expect(sender.holds(id)).toBe(false)
   })
 
   it('signs nothing when any step’s fees could now cost more than its own limit, or the limits don’t match the steps', async () => {
     const { id, vault, sender } = await setup()
-    expect(await sender.send(id, OWNER, [FEES[0]!, 1n])).toMatchObject({ ok: false, reason: 'fee-rose', status: 'approved' })
+    expect(await sender.send(id, OWNER, [FEES[0]!, 1n, FEES[2]!])).toMatchObject({ ok: false, reason: 'fee-rose', status: 'approved' })
     expect(await sender.send(id, OWNER, [FEES[0]!])).toMatchObject({ ok: false, reason: 'bad-request' })
     expect(await sender.send(id, OWNER, 10n ** 30n)).toMatchObject({ ok: false, reason: 'bad-request' })
     expect(vault.sign).not.toHaveBeenCalled()

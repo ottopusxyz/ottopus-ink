@@ -188,10 +188,15 @@ export function createPlanStore({ buildSteps = NO_STEPS, now = () => new Date(),
       if (built.swap || built.swaps || built.payout) {
         const payout = built.payout
         const paid = !payout ? null : intent.to ? (payout.address === intent.to ? recipient : null) : allowedRecipient(payout.address, payout.chain, own, [])
-        // A swap has one set of terms and a payment one for each leg; every one must pay the same allowed address.
+        // A swap has one set of terms, and pays the allowed address. A payment's legs pay only the person's own Intents
+        // balance, and its one payout, last, pays the allowed address.
         const terms = built.swaps ?? (built.swap ? [built.swap] : [])
         const fits = built.swaps ? intent.outcome === 'pay' && !built.swap : intent.outcome === 'swap'
-        if (!fits || terms.length === 0 || !payout || !paid || (!intent.to && paid.why !== 'own') || terms.some((each) => each.recipient !== paid.address)) return { ok: false, reason: 'recipient-not-allowed' }
+        const ownNear = own.find((account) => account.chain === 'near')?.address
+        const paysRight = built.swaps
+          ? terms.at(-1)?.role === 'payout' && terms.every((each, i) => (i === terms.length - 1 ? each.recipient === paid?.address : each.role !== 'payout' && each.getChain === 'intents' && each.recipient === ownNear))
+          : terms.every((each) => each.recipient === paid?.address)
+        if (!fits || terms.length === 0 || !payout || !paid || (!intent.to && paid.why !== 'own') || !paysRight) return { ok: false, reason: 'recipient-not-allowed' }
         if (terms.some((each) => !(Date.parse(each.deadline) >= at.getTime() + PLAN_TTL_MS + SWAP_DEADLINE_MARGIN_MS))) return { ok: false, reason: 'chain-unavailable' }
         payee = paid
       }

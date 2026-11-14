@@ -200,6 +200,8 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
     live: LiveInputs
     keyId: string
     nonce: bigint
+    /** For a NEAR step: the block its transaction was built on, which bounds how long it stays valid. */
+    blockHeight?: bigint
     /** Sends the signed step and waits for its chain's answer: true once it ran, false if it failed, null if no answer yet. */
     send: (signed: Uint8Array, transactionId: string) => Promise<boolean | null>
   }
@@ -260,6 +262,7 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
       live: { nonce: nonce.toString(), blockHash: bytesToHex(key.blockHash) },
       keyId,
       nonce,
+      blockHeight: key.blockHeight,
       send: async (signed) => {
         try {
           return (await rpc.sendTransaction(signed)).ok
@@ -316,8 +319,11 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
 
     const submitted = store.move(id, owner, 'submitted')
     if (!submitted.ok) return submitted
+    // A payout, last, waits for the legs before it: it's kept signed, and sent once they've landed.
+    const payoutLast = plan.core.swaps?.at(-1)?.role === 'payout' && read.length > 1
+    const sendNow = payoutLast ? read.length - 1 : read.length
     let last = ''
-    for (const [index, step] of read.entries()) {
+    for (const [index, step] of read.slice(0, sendNow).entries()) {
       const { signed: bytes, transactionId } = signed.signed[index] as SignedStep
       last = transactionId
       const ran = await step.send(bytes, transactionId)
@@ -328,10 +334,26 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
       }
       onStepConfirmed?.(plan, index, transactionId)
     }
-    const done = store.move(id, owner, 'confirmed')
-    if (done.ok) onConfirmed?.(done.plan, last)
-    return done.ok ? { ok: true, plan: done.plan, transactionId: last } : done
+    if (payoutLast) {
+      const step = read[sendNow] as PaymentStep
+      const { signed: bytes, transactionId } = signed.signed[sendNow] as SignedStep
+      held.set(id, { owner, step, index: sendNow, bytes, transactionId })
+      // Nothing else is sent from its key meanwhile: a later nonce landing first would void it.
+      unanswered.set(step.keyId, { nonce: step.nonce, blockHeight: step.blockHeight ?? 0n })
+      return { ok: true, plan: submitted.plan, transactionId: last }
+    }
+    return finish(plan, owner, last)
   }
+
+  /** Moves a sent payment to confirmed and says so. */
+  const finish = (plan: PlanView, owner: string, transactionId: string): SendResult => {
+    const done = store.move(plan.id, owner, 'confirmed')
+    if (done.ok) onConfirmed?.(done.plan, transactionId)
+    return done.ok ? { ok: true, plan: done.plan, transactionId } : done
+  }
+
+  /** Payouts signed with their payment and kept until its legs land, by plan id. */
+  const held = new Map<string, { owner: string; step: PaymentStep; index: number; bytes: Uint8Array; transactionId: string }>()
 
   /**
    * An EVM plan's one transfer, the same way: checks the chain, the balance and today's fees
@@ -408,6 +430,42 @@ export function createPlanSender({ store, vault, rpc, evmRpc, onConfirmed, onSte
   }
 
   return {
+    /** Whether a payment's payout is signed and waiting for its legs. */
+    holds: (id: string): boolean => held.has(id),
+
+    /**
+     * Sends a payment's kept payout, once its legs have landed in the Intents balance, and
+     * moves the plan to confirmed when NEAR runs it. With no answer it stays submitted.
+     */
+    async releasePayout(id: string): Promise<SendResult | null> {
+      const kept = held.get(id)
+      if (!kept) return null
+      held.delete(id)
+      unanswered.delete(kept.step.keyId)
+      const plan = store.get(id, kept.owner)
+      if (!plan) return null
+      const ran = await kept.step.send(kept.bytes, kept.transactionId)
+      if (ran === null) return { ok: true, plan, transactionId: kept.transactionId }
+      if (!ran) {
+        const failed = store.move(id, kept.owner, 'failed')
+        return failed.ok ? { ok: true, plan: failed.plan, transactionId: kept.transactionId } : failed
+      }
+      onStepConfirmed?.(plan, kept.index, kept.transactionId)
+      return finish(plan, kept.owner, kept.transactionId)
+    },
+
+    /**
+     * Throws away a payment's kept payout, never sent, once a leg failed or was refunded:
+     * what did land stays in the Intents balance. The plan moves to failed.
+     */
+    dropPayout(id: string): void {
+      const kept = held.get(id)
+      if (!kept) return
+      held.delete(id)
+      unanswered.delete(kept.step.keyId)
+      store.move(id, kept.owner, 'failed')
+    },
+
     /**
      * Sends the plan, if the fees can't cost more than `maxFee`, the most the person was shown
      * when they approved: in yoctoNEAR for NEAR, in the chain's wei for an EVM chain.

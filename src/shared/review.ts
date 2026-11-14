@@ -13,8 +13,13 @@ export interface ReviewPlan {
   kind: 'send' | 'swap' | 'pay'
   /** What a swap's quote promised, for a swap. Null for a send. */
   swap: ReviewSwap | null
-  /** A payment's legs, each an exact swap paying part of it. Absent from anything else. */
+  /** A payment's legs, each an exact swap into the Intents balance. Absent from anything else. */
   legs?: ReviewLeg[]
+  /**
+   * A payment's one payout to the recipient: exactly what it pays, how much of what it moves
+   * was in the Intents balance already, and NEAR Intents' fee. Ink sends it once the legs land.
+   */
+  payout?: { get: string; fromBalance: string | null; fee: string; seconds: number }
   /**
    * For a payment, whose steps run on more than one chain: each step's chain and the most
    * its fees could take, in its own coin. Main sends only while no step's fees can cost
@@ -84,7 +89,7 @@ export interface ReviewLeg {
   from: 'evm' | 'intents'
   /** Where it pays from, as a person reads it: "Base", "your NEAR Intents balance". */
   fromPlace: string
-  /** Exactly what it pays out: "9.7 USDC". */
+  /** Exactly what it puts in the Intents balance: "9.7 USDC". */
   get: string
   depositAddress: string
   /** Where a refund of anything unswapped goes. */

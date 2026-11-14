@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, powerMonitor, safeStorage, session, shell, type IpcMainInvokeEvent } from 'electron'
 import type { Account } from '../shared/accounts'
+import type { PlanStatus } from '../shared/plan'
 import { IPC, type AgentId, type AgentStatus, type AppInfo, type ChatEvent, type ChatSwap, type IntentsDepositChain, type ReceiveAnswer, type RecentSwap, type ZerionKeyStatus } from '../shared/ipc'
 import { createDepositJournal } from './intents/deposit-journal'
 import { evmChainById, type EvmChain } from '../shared/evm/chains'
@@ -233,6 +234,34 @@ function getSwapJournal(): SwapJournal {
 }
 
 /** Follows each swap once NEAR ran its deposit, across restarts, and tells the chat that made it and Home. */
+/** Each plan's chat, told of a status the review window didn't see: a payment's payout, sent after it closed. */
+const statusListeners = new Map<string, (status: PlanStatus, transactionId: string | null) => void>()
+
+/**
+ * Sends a payment's kept payout once every leg has landed in the Intents balance, or drops
+ * it, never sent, once any leg failed or was refunded. Either way the chat hears where the
+ * plan now stands.
+ */
+function settlePayout(planId: string, core: PlanView['core']): void {
+  if (!sender.holds(planId) || !core.swaps) return
+  const legs = core.swaps.flatMap((swap, leg) => (swap.role === 'payout' ? [] : [swapTracker.get(`${planId}#${leg}`)]))
+  const told = (status: PlanStatus, transactionId: string | null) => {
+    statusListeners.get(planId)?.(status, transactionId)
+    const follow = followed.get(planId)
+    if (follow && transactionId) follow.transactionId = transactionId
+    endingOf(planId)
+  }
+  if (legs.some((leg) => leg && (leg.stage === 'failed' || leg.stage === 'refunded' || leg.stage === 'unknown'))) {
+    sender.dropPayout(planId)
+    told('failed', null)
+    return
+  }
+  if (!legs.every((leg) => leg?.stage === 'done')) return
+  void sender.releasePayout(planId).then((sent) => {
+    if (sent?.ok) told(sent.plan.status, sent.transactionId)
+  })
+}
+
 const swapTracker = createSwapTracker({
   submit: (deposit) => submitDeposit(deposit),
   status: (depositAddress) => swapStatus(depositAddress),
@@ -246,6 +275,8 @@ const swapTracker = createSwapTracker({
       const together = plan ? swapStateOf(planId, plan.core) : null
       if (together) follow.swap(together)
     }
+    const plan = follow ? plans.get(planId, follow.owner) : null
+    if (plan) settlePayout(planId, plan.core)
     endingOf(planId)
     sendToWindows(IPC.swapsChanged)
   },
@@ -475,10 +506,8 @@ async function describePlan(plan: PlanView) {
   return describeForReview(plan, `NEAR ${NEAR_NETWORK}`, fee)
 }
 
-/** The only way a plan is approved: from the review window, by a person, then signed and sent. */
-const reviews = createReviewBroker({
-  store: plans,
-  sender: createPlanSender({
+/** Signs and sends each plan approved in the review window. */
+const sender = createPlanSender({
     store: plans,
     // Looked up each time, since the vault is made on first use.
     vault: { sign: (core, hash, live) => getVault().sign(core, hash, live) },
@@ -494,7 +523,12 @@ const reviews = createReviewBroker({
         if (swap) void swapTracker.follow(`${plan.id}#${leg}`, swap, transactionId)
       }
     },
-  }),
+})
+
+/** The only way a plan is approved: from the review window, by a person, then signed and sent. */
+const reviews = createReviewBroker({
+  store: plans,
+  sender,
   describe: describePlan,
   unlocked: () => vault?.isUnlocked() === true,
   onState: (state) => reviewWindow.update(state),
@@ -749,6 +783,8 @@ function registerIpc(): void {
       shim: join(import.meta.dirname, 'shim.js'),
       review: (planId: string, owner: string, notify: NonNullable<Parameters<typeof reviews.offer>[2]>) =>
         void reviews.offer(planId, owner, (status, transactionId) => {
+          statusListeners.set(planId, notify)
+          if (statusListeners.size > MAX_FOLLOWED) statusListeners.delete(statusListeners.keys().next().value as string)
           notify(status, transactionId)
           const follow = followed.get(planId)
           if (follow && transactionId) follow.transactionId = transactionId

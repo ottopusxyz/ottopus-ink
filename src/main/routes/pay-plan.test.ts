@@ -28,7 +28,7 @@ const EVM_DEPOSIT = '0x8f436D184823B77188DE973322278686c3780C2c'
 const NEAR_DEPOSIT = 'd'.repeat(64)
 
 /** Each source's decimals, so the fake quotes convert between them at a dollar each. */
-const DECIMALS: Record<string, number> = { [USDC_BASE.assetId]: 6, [USDT_BSC.assetId]: 18 }
+const DECIMALS: Record<string, number> = { [USDC_BASE.assetId]: 6, [USDT_BSC.assetId]: 18, [USDC_SOL.assetId]: 6 }
 const scale = (raw: bigint, from: number, to: number) => (to >= from ? raw * 10n ** BigInt(to - from) : raw / 10n ** BigInt(from - to))
 
 /** 1Click as a dollar for a dollar, less 1% on an exact input and plus 2% on an exact output. */
@@ -68,30 +68,41 @@ function deps(held: Record<string, bigint>, overrides: Partial<PayPlanDeps> = {}
 const TWO = { [`wallet:${USDC_BASE.assetId}`]: 10_000_000n, [`intents:${USDT_BSC.assetId}`]: 10n * 10n ** 18n }
 
 describe('building a payment from several sources', () => {
-  it('pays exactly the amount in exact parts, the Intents part in one NEAR call and the EVM part in one transfer', async () => {
+  it('brings exactly what the payout needs into the Intents balance, then pays the total out in one transfer', async () => {
     const { options, asked } = deps(TWO)
     const built = await buildPayment(PAY, OWN, options)
     if (!built.ok) throw new Error(built.reason)
-    const total = (built.swaps ?? []).reduce((sum, swap) => sum + BigInt(swap.amountOut), 0n)
-    expect(total).toBe(15_000_000n)
-    expect(built.swaps?.map((swap) => [swap.payFrom, swap.amountOut === swap.minAmountOut, swap.recipient])).toEqual([
-      ['intents', true, SOL],
-      ['evm', true, SOL],
+    const swaps = built.swaps ?? []
+    const payout = swaps.at(-1)!
+    // The payout: exactly 15 USDC out of the Intents balance to the person's own Solana address, quoted first.
+    expect(payout).toMatchObject({ role: 'payout', payFrom: 'intents', originAsset: USDC_SOL.assetId, destinationAsset: USDC_SOL.assetId, amountOut: '15000000', minAmountOut: '15000000', recipient: SOL, getChain: 'sol', fromBalance: '0' })
+    expect(asked[0]).toMatchObject({ swapType: 'EXACT_OUTPUT', amount: 15_000_000n, depositType: 'INTENTS', recipient: SOL, recipientType: 'DESTINATION_CHAIN', dry: false })
+    // The legs: exactly what the payout moves, together, into the person's own Intents balance.
+    const legs = swaps.slice(0, -1)
+    expect(legs.reduce((sum, leg) => sum + BigInt(leg.amountOut), 0n)).toBe(BigInt(payout.amountIn))
+    expect(legs.map((leg) => [leg.payFrom, leg.recipient, leg.getChain, leg.destinationAsset, leg.refundTo])).toEqual([
+      ['intents', NEAR_ID, 'intents', USDC_SOL.assetId, NEAR_ID],
+      ['evm', NEAR_ID, 'intents', USDC_SOL.assetId, EVM],
     ])
-    expect(built.steps.map((step) => step.chain)).toEqual(['near', 'evm'])
-    expect(callsOfStep(built.steps[0]!).calls).toEqual([{ method: 'mt_transfer', receiverId: NEAR_DEPOSIT, tokenId: USDT_BSC.assetId, amount: BigInt(built.swaps![0]!.amountIn) }])
-    expect(built.steps[1]?.fields).toMatchObject({ chainId: '8453', to: EVM_DEPOSIT, amount: built.swaps![1]!.amountIn })
-    // Every binding quote is an exact output to the person's own Solana address; refunds go back where each part came from.
-    expect(asked.filter((request) => !request.dry).every((request) => request.swapType === 'EXACT_OUTPUT' && request.recipient === SOL)).toBe(true)
-    expect(built.swaps?.map((swap) => swap.refundTo)).toEqual([NEAR_ID, EVM])
+    expect(asked.filter((request) => !request.dry && request.recipient === NEAR_ID).every((request) => request.recipientType === 'INTENTS' && request.swapType === 'EXACT_OUTPUT')).toBe(true)
+    // The Intents leg, then the EVM leg, then the payout, which moves exactly what it needs.
+    expect(built.steps.map((step) => step.chain)).toEqual(['near', 'evm', 'near'])
+    expect(callsOfStep(built.steps[0]!).calls).toEqual([{ method: 'mt_transfer', receiverId: NEAR_DEPOSIT, tokenId: USDT_BSC.assetId, amount: BigInt(legs[0]!.amountIn) }])
+    expect(built.steps[1]?.fields).toMatchObject({ chainId: '8453', to: EVM_DEPOSIT, amount: legs[1]!.amountIn })
+    expect(callsOfStep(built.steps[2]!).calls).toEqual([{ method: 'mt_transfer', receiverId: NEAR_DEPOSIT, tokenId: USDC_SOL.assetId, amount: BigInt(payout.amountIn) }])
     expect(built.payout).toEqual({ address: SOL, chain: 'solana' })
   })
 
-  it('pays from one source when it covers the amount', async () => {
-    const built = await buildPayment({ ...PAY, amount: '5' }, OWN, deps(TWO).options)
-    if (!built.ok) throw new Error(built.reason)
-    expect(built.swaps).toHaveLength(1)
-    expect(built.swaps?.[0]?.amountOut).toBe('5000000')
+  it('counts what the Intents balance holds of the token already, and needs no legs when it covers the payout', async () => {
+    const some = await buildPayment(PAY, OWN, deps({ ...TWO, [`intents:${USDC_SOL.assetId}`]: 5_000_000n }).options)
+    if (!some.ok) throw new Error(some.reason)
+    const payout = some.swaps!.at(-1)!
+    expect(payout.fromBalance).toBe('5000000')
+    expect(some.swaps!.slice(0, -1).reduce((sum, leg) => sum + BigInt(leg.amountOut), 0n)).toBe(BigInt(payout.amountIn) - 5_000_000n)
+    const all = await buildPayment(PAY, OWN, deps({ [`intents:${USDC_SOL.assetId}`]: 20_000_000n }).options)
+    if (!all.ok) throw new Error(all.reason)
+    expect(all.swaps).toHaveLength(1)
+    expect(all.steps.map((step) => step.chain)).toEqual(['near'])
   })
 
   it('refuses what everything held together can’t cover, and a payment with nowhere to land', async () => {
@@ -102,18 +113,18 @@ describe('building a payment from several sources', () => {
     expect(await buildPayment(PAY, OWN, deps(TWO, { held: async () => null }).options)).toEqual({ ok: false, reason: 'chain-unavailable' })
   })
 
-  it('maps each step to the legs it pays', async () => {
+  it('maps each step to the swaps it pays, the payout last', async () => {
     const built = await buildPayment(PAY, OWN, deps(TWO).options)
     if (!built.ok) throw new Error(built.reason)
     const core = { steps: built.steps, swaps: built.swaps }
-    expect([legsOfStep(core, 0), legsOfStep(core, 1), legsOfStep(core, 2)]).toEqual([[0], [1], []])
+    expect([legsOfStep(core, 0), legsOfStep(core, 1), legsOfStep(core, 2)]).toEqual([[0], [1], [2]])
   })
 
-  it('is shown for review only when every step pays its leg exactly, with each step’s fee', async () => {
+  it('is shown for review only when every step pays its part exactly, with each step’s fee and the one payout', async () => {
     const store = createPlanStore({ buildSteps: (intent, own) => buildPayment(intent, own, deps(TWO).options) })
     const made = await store.create({ intent: PAY, createdBy: 'agent', owner: 'chat', own: OWN, typed: [] })
     if (!made.ok) throw new Error(made.reason)
-    const review = describeForReview(made.plan, '', null, [10n ** 21n, 10n ** 12n])
+    const review = describeForReview(made.plan, '', null, [10n ** 21n, 10n ** 12n, 10n ** 21n])
     expect(review).toMatchObject({
       kind: 'pay',
       amount: '15',
@@ -122,17 +133,31 @@ describe('building a payment from several sources', () => {
       toWhy: 'own',
       network: 'NEAR mainnet + Base mainnet',
       payChain: { mark: 'solana', name: 'Solana' },
+      payout: { get: '15 USDC', fromBalance: null },
       stepFees: [
         { chain: 'NEAR', feeAsset: 'NEAR', maxFee: '0.001' },
         { chain: 'Base', feeAsset: 'ETH', maxFee: '0.000001' },
+        { chain: 'NEAR', feeAsset: 'NEAR', maxFee: '0.001' },
       ],
     })
     expect(review?.legs?.map((leg) => leg.fromPlace)).toEqual(['your NEAR Intents balance', 'Base'])
-    // Steps in another order than their legs are followed by, or a leg's amount changed, and it isn't shown.
+    // Steps out of the order their swaps are followed in, a leg bringing in less, or a payout to anyone else, and it isn't shown.
     const swapped = { ...made.plan, core: { ...made.plan.core, steps: [...made.plan.core.steps].reverse() } }
-    expect(describeForReview(swapped, '', null, [null, null])).toBeNull()
-    const changed = { ...made.plan, core: { ...made.plan.core, swaps: made.plan.core.swaps!.map((swap, i) => (i === 0 ? { ...swap, amountIn: '1' } : swap)) } }
-    expect(describeForReview(changed, '', null, [null, null])).toBeNull()
+    expect(describeForReview(swapped, '', null, [null, null, null])).toBeNull()
+    const short = { ...made.plan, core: { ...made.plan.core, swaps: made.plan.core.swaps!.map((swap, i) => (i === 0 ? { ...swap, amountOut: '1', minAmountOut: '1' } : swap)) } }
+    expect(describeForReview(short, '', null, [null, null, null])).toBeNull()
+    const elsewhere = { ...made.plan, core: { ...made.plan.core, swaps: made.plan.core.swaps!.map((swap) => (swap.role === 'payout' ? { ...swap, recipient: 'Elsewhere1111111111111111111111111111111111' } : swap)) } }
+    expect(describeForReview(elsewhere, '', null, [null, null, null])).toBeNull()
+  })
+
+  it('is refused by the store when a leg pays anyone but the person’s own Intents balance', async () => {
+    const store = createPlanStore({
+      buildSteps: async (intent, own) => {
+        const built = await buildPayment(intent, own, deps(TWO).options)
+        return built.ok ? { ...built, swaps: built.swaps!.map((swap, i) => (i === 0 ? { ...swap, recipient: 'b'.repeat(64) } : swap)) } : built
+      },
+    })
+    expect(await store.create({ intent: PAY, createdBy: 'agent', owner: 'chat', own: OWN, typed: [] })).toEqual({ ok: false, reason: 'recipient-not-allowed' })
   })
 })
 

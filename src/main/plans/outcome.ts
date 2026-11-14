@@ -117,32 +117,39 @@ export function planOutcome(planId: string, core: PlanCore, status: PlanStatus, 
  * paid out, or any was refunded or lost track of. `swap` is all its legs together.
  */
 function paymentOutcome(planId: string, legs: readonly PlanSwap[], status: PlanStatus, transactionId: string | null, swap: ChatSwap | null): PlanOutcome | null {
-  const [first] = legs
+  // The payout pays the recipient; the legs before it only bring the money into the Intents balance.
+  const payout = legs.find((leg) => leg.role === 'payout')
+  const first = payout ?? legs[0]
   if (!first) return null
-  const total = `${formatUnits(legs.reduce((sum, leg) => sum + BigInt(leg.amountOut), 0n), Number(first.getDecimals))} ${first.getSymbol}`
+  const paidOut = payout ? BigInt(payout.amountOut) : legs.reduce((sum, leg) => sum + BigInt(leg.amountOut), 0n)
+  const total = `${formatUnits(paidOut, Number(first.getDecimals))} ${first.getSymbol}`
   const to = `${first.recipient} on ${chainName(first.getChain)}`
-  const parts = legs.map((leg) => `${swapSent(leg) ?? leg.sendSymbol} from ${leg.payFrom === 'evm' ? 'your wallet on its chain' : 'your NEAR Intents balance'}`).join(', ')
+  const parts =
+    legs
+      .filter((leg) => leg.role !== 'payout')
+      .map((leg) => `${swapSent(leg) ?? leg.sendSymbol} from ${leg.payFrom === 'evm' ? 'your wallet on its chain' : 'your NEAR Intents balance'}`)
+      .join(', ') || 'your NEAR Intents balance'
   if (status === 'failed') {
-    const why = 'A step failed on chain, and the steps after it weren’t sent. Anything already deposited, NEAR Intents pays out or refunds on its own.'
+    const why = 'A step failed on chain, or a part wasn’t swapped, so the payout wasn’t sent. What did arrive stays in your NEAR Intents balance, and anything refunded goes back where it came from.'
     return { note: { tone: 'block', title: 'Payment not finished', lines: [`${total} to ${to}: ${why}`], links: [] }, forAgent: toAgent(planId, `The payment of ${total} to ${to} failed. ${why}`) }
   }
   if (status !== 'confirmed' || !swap) return null
-  const payout = swap.link ? [{ label: 'Payout', url: swap.link }] : []
+  const payoutLink = swap.link ? [{ label: 'Payout', url: swap.link }] : []
   switch (swap.stage) {
     case 'done':
       return {
-        note: { tone: 'ok', title: 'Paid', lines: [`${total} paid to ${to}, from ${parts}.`], links: payout },
+        note: { tone: 'ok', title: 'Paid', lines: [`${total} paid to ${to} in one transfer, from ${parts}.`], links: payoutLink },
         forAgent: toAgent(planId, `NEAR Intents finished the payment: exactly ${total} paid to ${to}, from ${parts}.${transactionId ? ` Last transaction ${transactionId}.` : ''}`),
       }
     case 'refunded':
     case 'failed':
       return {
-        note: { tone: 'block', title: 'Payment not completed', lines: [`NEAR Intents couldn’t pay all of ${total} to ${to}. ${swap.refunded ? `Refunded: ${swap.refunded}, each back where it came from.` : 'Any refund goes back where each part came from.'}`], links: payout },
+        note: { tone: 'block', title: 'Payment not completed', lines: [`NEAR Intents couldn’t pay all of ${total} to ${to}. ${swap.refunded ? `Refunded: ${swap.refunded}, each back where it came from.` : 'Any refund goes back where each part came from.'}`], links: payoutLink },
         forAgent: toAgent(planId, `NEAR Intents couldn’t pay all of ${total} to ${to}; ${swap.refunded ? `refunded ${swap.refunded}` : 'any refund goes back where each part came from'}.`),
       }
     case 'unknown':
       return {
-        note: { tone: 'info', title: 'Payment still open', lines: [`Ink stopped checking the payment of ${total} to ${to}. NEAR Intents still pays out or refunds each part on its own.`], links: payout },
+        note: { tone: 'info', title: 'Payment still open', lines: [`Ink stopped checking the payment of ${total} to ${to}. NEAR Intents still pays out or refunds each part on its own.`], links: payoutLink },
         forAgent: toAgent(planId, `Ink stopped checking the payment of ${total} to ${to}; NEAR Intents still pays out or refunds each part on its own.`),
       }
     default:

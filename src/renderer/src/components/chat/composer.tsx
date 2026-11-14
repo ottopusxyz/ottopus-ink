@@ -99,11 +99,15 @@ export function Composer({
           </button>
         )}
       </div>
-      {compact ? (
-        <span className="ink-composer__hint">
-          <kbd className="ink-kbd">Enter</kbd> sends · <kbd className="ink-kbd">Shift Enter</kbd> new line
-        </span>
-      ) : null}
     </form>
+  )
+}
+
+/** The keys a chat's composer takes, shown under it, outside its box, as the design has it. */
+export function ComposerHint({ className }: { className?: string }) {
+  return (
+    <p className={cn('ink-composer__hint m-0', className)}>
+      <kbd className="ink-kbd">Enter</kbd> sends · <kbd className="ink-kbd">Shift Enter</kbd> new line
+    </p>
   )
 }

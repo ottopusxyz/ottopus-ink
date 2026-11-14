@@ -32,7 +32,7 @@ beforeAll(async () => {
     login: `echo 'Not logged in' >&2; exit 1`,
   })
   // Present but not executable: must not count as installed.
-  await writeFile(join(bin, 'opencode'), '#!/bin/sh\necho 1.0.0\n')
+  await writeFile(join(bin, 'grok'), '#!/bin/sh\necho 1.0.0\n')
 })
 
 afterAll(() => rm(root, { recursive: true, force: true }))
@@ -43,14 +43,14 @@ describe('findExecutable', () => {
   })
 
   it('skips files that are not executable, and folders', async () => {
-    expect(await findExecutable('opencode', bin)).toBeNull()
+    expect(await findExecutable('grok', bin)).toBeNull()
     expect(await findExecutable('bin', root)).toBeNull()
   })
 })
 
 describe('detectAgents', () => {
   it('reports each agent’s state, version, missing flags and sign-in', async () => {
-    const [claude, codex, opencode] = await detectAgents({ PATH: bin })
+    const [claude, codex, grok] = await detectAgents({ PATH: bin })
     expect(claude).toEqual({
       id: 'claude-code',
       state: 'ready',
@@ -60,7 +60,7 @@ describe('detectAgents', () => {
       signedIn: true,
     })
     expect(codex).toMatchObject({ id: 'codex', state: 'outdated', version: '0.1.0', missing: ['app-server'], signedIn: false })
-    expect(opencode).toMatchObject({ id: 'opencode', state: 'missing', path: null })
+    expect(grok).toMatchObject({ id: 'grok', state: 'missing', path: null })
   })
 
   it('calls an agent broken, not outdated, when --help fails, and tries again next time', async () => {

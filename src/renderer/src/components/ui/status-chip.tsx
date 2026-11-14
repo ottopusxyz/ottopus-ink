@@ -54,7 +54,7 @@ const TONES: Record<PlanStatus, Tone> = {
   submitted: 'plan',
   confirmed: 'ok',
   failed: 'block',
-  expired: 'neutral',
+  expired: 'warn',
   blocked: 'block',
   superseded: 'neutral',
   cancelled: 'neutral',
@@ -76,6 +76,8 @@ export function StatusChip({ status, className }: StatusChipProps) {
       // Screen readers get the same word the chip shows, not the raw enum.
       aria-label={`Status: ${LABELS[status]}`}
     >
+      {/* The design's status tags lead with a dot in the tag's own colour. */}
+      <span className="size-1.5 flex-none rounded-full bg-current" aria-hidden />
       {LABELS[status]}
     </Badge>
   )

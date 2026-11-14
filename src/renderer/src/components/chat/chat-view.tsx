@@ -9,7 +9,7 @@ import { chatTurns, lockStatus, trimmedPlan, type Chat, type ChatItem } from '@/
 import { cn } from '@/lib/cn'
 import { AgentThinking } from '@/vendor/boardui/agent-thinking'
 import { AgentMark } from './agent-picker'
-import { Composer, toolsChip } from './composer'
+import { Composer, ComposerHint, toolsChip } from './composer'
 import { DepositCard } from './deposit-card'
 import { InkNoteCard } from './ink-note'
 import { Markdown } from './markdown'
@@ -114,7 +114,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onCont
 
       <div
         ref={scroller}
-        className="relative min-h-0 flex-1 overflow-auto px-6 py-5"
+        className="ink-chat-scroll relative min-h-0 flex-1 overflow-auto px-6 py-5"
         onScroll={(event) => {
           const { scrollHeight, scrollTop, clientHeight } = event.currentTarget
           following.current = scrollHeight - scrollTop - clientHeight < FOLLOW_PX
@@ -191,6 +191,7 @@ export function ChatView({ chat, draft, onDraft, onSubmit, onStop, onEnd, onCont
             placeholder={chat.restored ? 'Continue this chat to reply.' : chat.phase === 'ended' ? 'This chat has ended. Start a new one to keep going.' : 'Reply to your agent'}
           />
         </div>
+        <ComposerHint className="mx-auto mt-1.5 max-w-[760px] text-right" />
       </div>
     </main>
   )

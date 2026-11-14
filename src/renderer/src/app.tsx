@@ -3,7 +3,7 @@ import type { AgentId, AgentStatus, AppInfo, ExternalItem, SignerStatus } from '
 import { AgentPicker } from '@/components/chat/agent-picker'
 import { ChatView } from '@/components/chat/chat-view'
 import { HomeView } from '@/components/home/home-view'
-import { PageView } from '@/components/pages/page-view'
+import { ActivityView } from '@/components/pages/activity-view'
 import { PortfolioView } from '@/components/portfolio/portfolio-view'
 import { SettingsDialog, type SettingsTab } from '@/components/settings/settings-dialog'
 import { AppShell } from '@/components/shell/app-shell'
@@ -207,8 +207,8 @@ export function App() {
         <ReceiveView key={receiveChain ?? 'any'} startChain={receiveChain} />
       ) : page === 'portfolio' ? (
         <PortfolioView onAsk={askOnHome} onReceive={(chain) => openReceive(chain)} onSettings={() => openSettings('wallet')} />
-      ) : page ? (
-        <PageView page={page} />
+      ) : page === 'activity' ? (
+        <ActivityView chats={chats} onOpenChat={openChat} />
       ) : current ? (
         <ChatView
           chat={current}

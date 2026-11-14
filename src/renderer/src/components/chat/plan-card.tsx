@@ -1,7 +1,8 @@
 import type { ChatPlan, ChatSwap } from '../../../../shared/ipc'
 import type { PlanStatus } from '../../../../shared/plan'
 import { Otto, type PoseName } from '@/components/brand/otto'
-import { StatusChip, TokenLogo } from '@/components/ui'
+import { ChainLogo, StatusChip, TokenLogo } from '@/components/ui'
+import { isChainId, type ChainId } from '@/lib/logos'
 import { planHeadline } from '@/lib/chats'
 
 /** Otto's pose for where a plan stands: holding it up, juggling while it goes, cheering, or in the ink. */
@@ -62,7 +63,7 @@ export function swapLine({ stage, got, refunded }: ChatSwap): string {
 export function PlanCard({ plan }: { plan: ChatPlan }) {
   const target = plan.outcome === 'swap' ? plan.toAsset : plan.to
   const details = [
-    ['On', plan.chain],
+    ['Network', plan.chain],
     ['To', plan.to],
     ['Arriving on', plan.toChain],
   ].filter((row): row is [string, string] => row[1] !== null)
@@ -72,7 +73,7 @@ export function PlanCard({ plan }: { plan: ChatPlan }) {
       <div className="ink-ticket__head">
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="ink-eyebrow">{KIND[plan.outcome]} plan</span>
+            <span className="ink-eyebrow text-[var(--ot-coral-text)]">{KIND[plan.outcome]} plan</span>
             <StatusChip status={plan.status} />
           </div>
           <p className="ink-ticket__lead selectable m-0">
@@ -107,7 +108,11 @@ export function PlanCard({ plan }: { plan: ChatPlan }) {
             {details.map(([label, value]) => (
               <div key={label} className="contents">
                 <dt className="text-[var(--ot-text-3)]">{label}</dt>
-                <dd className="selectable m-0 min-w-0 font-mono [overflow-wrap:anywhere]">{value}</dd>
+                <dd className="selectable m-0 flex min-w-0 items-center gap-1.5 font-mono [overflow-wrap:anywhere]">
+                  {/* A chain Ink knows gets its mark beside the agent's own word for it, which stays as written. */}
+                  {label !== 'To' && isChainId(value.toLowerCase()) ? <ChainLogo chain={value.toLowerCase() as ChainId} size="xs" /> : null}
+                  {value}
+                </dd>
               </div>
             ))}
           </dl>

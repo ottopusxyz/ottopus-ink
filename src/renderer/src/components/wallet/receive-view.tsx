@@ -14,7 +14,8 @@ import { ChainMark } from './chain-mark'
 import { QrCode } from './qr-code'
 
 /** Chains shown before any search. */
-const SHOWN_CHAINS = 5
+/** Chains shown before any search: two full rows of the three-wide grid. */
+const SHOWN_CHAINS = 6
 
 /** The receive chain a wallet account opens on, as when Portfolio asks for one chain's address. */
 const START: Record<AccountChain, string> = { near: 'near', evm: 'ethereum', solana: 'solana', bitcoin: 'bitcoin', tron: 'tron', sui: 'sui', aptos: 'aptos' }
@@ -293,7 +294,7 @@ export function ReceiveView({ startChain = null }: { /** The chain to open on: a
                     <span className="ink-step__n">3</span>How much? <span className="font-normal text-[var(--ot-text-3)]">Optional</span>
                   </h2>
                   <div className="flex max-w-[360px] items-center gap-2">
-                    <Input aria-label={`How much ${token.symbol}`} inputMode="decimal" placeholder={`${token.min ?? '0'} or more`} value={amount} onChange={(event) => setAmount(event.target.value.trim())} mono />
+                    <Input aria-label={`How much ${token.symbol}`} inputMode="decimal" placeholder={`${token.min ?? '0'} or more`} value={amount} onChange={(event) => setAmount(event.target.value.trim())} mono className="h-[38px] rounded-[12px]! bg-[var(--ot-card)]! py-0!" />
                     <span className="text-[13px] font-semibold">{token.symbol}</span>
                   </div>
                   <p className="m-0 text-[12px] text-[var(--ot-text-3)]">{chain.own ? `Under ${token.min} ${token.symbol}, Ink gives your own address instead.` : `Under ${token.min} ${token.symbol} isn’t credited.`}</p>
@@ -554,7 +555,7 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
           {answer.kind === 'intents' ? <span>{minOf(answer.min) ? 'Less isn’t credited. ' : ''}The address isn’t from your recovery phrase; what arrives shows under In Intents in Portfolio.</span> : ownNote ? <span>{ownNote}</span> : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="ink-copy" disabled={stale} onClick={() => void copy('address')} aria-label={`Copy the address to receive ${answer.asset} on ${answer.chainName}`}>
+          <button type="button" className="ink-copy flex-1" disabled={stale} onClick={() => void copy('address')} aria-label={`Copy the address to receive ${answer.asset} on ${answer.chainName}`}>
             {copied === 'address' ? <CheckIcon /> : <CopyIcon />}
             {copied === 'address' ? 'Copied' : copied === 'failed' ? 'Couldn’t copy' : 'Copy address'}
           </button>

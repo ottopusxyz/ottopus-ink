@@ -5,7 +5,7 @@ import {
   missingFromHelp,
   parseClaudeAuth,
   parseCodexAuth,
-  parseOpenCodeAuth,
+  parseGrokAuth,
   parseVersion,
 } from './specs'
 
@@ -44,25 +44,25 @@ describe('missingFromHelp', () => {
   app-server        [experimental] Run the app server or related tooling
 Options:
   -c, --config <key=value>`
-  // OpenCode 1.19.5 builds its help with yargs and scriptName("opencode"), so
-  // commands carry the program name. Written from its source, not captured.
-  const opencodeHelp = `opencode [project]
+  // Grok 1.0.77's help, the part that lists commands.
+  const grokHelp = `Usage: grok [OPTIONS] [PROMPT] [COMMAND]
 
 Commands:
-  opencode completion          generate shell completion script
-  opencode acp                 start ACP (Agent Client Protocol) server
-  opencode providers           manage AI providers and credentials  [aliases: auth]`
-  // The rewritten CLI in OpenCode's dev branch lists commands bare.
-  const opencodeNextHelp = `SUBCOMMANDS
-  acp    Start the ACP server
-  auth   Manage credentials`
+  agent        Run Grok without the interactive UI
+  login        Sign in to Grok
+  mcp          Manage MCP server configurations
+  models       List available models and exit`
+  // A CLI built with yargs puts the program's name before each command.
+  const yargsHelp = `Commands:
+  some-cli completion          generate shell completion script
+  some-cli acp                 start ACP (Agent Client Protocol) server`
 
   it('passes each CLI’s real help', () => {
     const claude = ['--print', '--input-format', '--output-format', '--mcp-config', '--strict-mcp-config']
     expect(missingFromHelp(claudeHelp, [...claude, '--setting-sources', '--plugin-dir', '--tools', '--allowedTools'], 'claude')).toEqual([])
     expect(missingFromHelp(codexHelp, ['app-server', '--config'], 'codex')).toEqual([])
-    expect(missingFromHelp(opencodeHelp, ['acp'], 'opencode')).toEqual([])
-    expect(missingFromHelp(opencodeNextHelp, ['acp'], 'opencode')).toEqual([])
+    expect(missingFromHelp(grokHelp, ['agent', 'mcp'], 'grok')).toEqual([])
+    expect(missingFromHelp(yargsHelp, ['acp'], 'some-cli')).toEqual([])
   })
 
   it('doesn’t count a mention in another item’s description', () => {
@@ -72,11 +72,12 @@ Commands:
 
   it('doesn’t match a longer flag or command that contains the word', () => {
     expect(missingFromHelp(claudeHelp, ['--strict', '--plugin'], 'claude')).toEqual(['--strict', '--plugin'])
-    expect(missingFromHelp(opencodeHelp, ['ac'], 'opencode')).toEqual(['ac'])
+    expect(missingFromHelp(yargsHelp, ['ac'], 'some-cli')).toEqual(['ac'])
+    expect(missingFromHelp(grokHelp, ['model'], 'grok')).toEqual(['model'])
   })
 
   it('doesn’t take another program’s name for the prefix', () => {
-    expect(missingFromHelp('  other acp   something', ['acp'], 'opencode')).toEqual(['acp'])
+    expect(missingFromHelp('  other acp   something', ['acp'], 'some-cli')).toEqual(['acp'])
   })
 })
 
@@ -103,22 +104,9 @@ describe('parseCodexAuth', () => {
   })
 })
 
-describe('parseOpenCodeAuth', () => {
-  it('counts stored credentials and environment keys', () => {
-    expect(parseOpenCodeAuth(run('●  Anthropic oauth\n└  1 credentials'))).toBe(true)
-    expect(parseOpenCodeAuth(run('└  0 credentials\n└  2 environment variables'))).toBe(true)
-    expect(parseOpenCodeAuth(run('└  0 credentials'))).toBe(false)
-  })
-
-  it('reads the newer CLI’s connection rows', () => {
-    expect(parseOpenCodeAuth(run('Anthropic  Claude Max                  stored\n'))).toBe(true)
-    expect(parseOpenCodeAuth(run('OpenAI     OPENAI_API_KEY              environment\n'))).toBe(true)
-    expect(parseOpenCodeAuth(run('No authenticated integrations\n'))).toBe(false)
-  })
-
-  it('returns null when it fails or prints no count', () => {
-    expect(parseOpenCodeAuth(run('', 1))).toBeNull()
-    expect(parseOpenCodeAuth(run('something else'))).toBeNull()
+describe('parseGrokAuth', () => {
+  it('can’t tell, since Grok’s CLI has no sign-in status', () => {
+    expect(parseGrokAuth()).toBeNull()
   })
 })
 

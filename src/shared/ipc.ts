@@ -50,6 +50,7 @@ export const IPC = {
   saveZerionKey: 'wallet:save-zerion-key',
   removeZerionKey: 'wallet:remove-zerion-key',
   recentSwaps: 'wallet:recent-swaps',
+  activity: 'wallet:activity',
   savedChats: 'chat:saved',
   receiveChains: 'wallet:receive-chains',
   searchReceiveTokens: 'wallet:search-receive-tokens',
@@ -60,6 +61,8 @@ export const IPC = {
   clearChatHistory: 'chat:clear-history',
   /** Main to renderer: a followed swap moved on. It carries nothing: the page asks for them, which needs Ink unlocked. */
   swapsChanged: 'wallet:swaps-changed',
+  /** Main to renderer: a plan moved on. It carries nothing: the page asks for Activity, which needs Ink unlocked. */
+  activityChanged: 'wallet:activity-changed',
   /** Main to renderer: a deposit of a kept chat whose session is gone moved on, with the chat's id. Only while unlocked. */
   depositEvent: 'wallet:deposit-event',
   /** Main to renderer: the vault's status, sent on every change. */
@@ -77,7 +80,7 @@ export interface AppInfo {
 }
 
 /** The agents Ink drives in the first release, in the order pickers list them. */
-export const AGENT_IDS = ['claude-code', 'codex', 'opencode'] as const
+export const AGENT_IDS = ['claude-code', 'codex', 'grok'] as const
 export type AgentId = (typeof AGENT_IDS)[number]
 
 /**
@@ -233,6 +236,26 @@ export interface ChatDeposit {
 }
 
 /** A swap Ink followed lately, for Home: what went in, what it's for, and where it stands. */
+/** A plan as the Activity page shows it: the chat's plan, with its journey, when it was made and how it ended. */
+export interface ActivityPlan {
+  plan: ChatPlan
+  /** ISO 8601, set by main. */
+  createdAt: string
+  /** ISO 8601: past this it can't be approved. */
+  expiresAt: string
+  /** How it ended, in Ink's own words: the first line of its note in the chat. Null while it's under way. */
+  ending: string | null
+}
+
+/**
+ * Everything Ink has done lately, newest first: each plan of this run, and the swaps it
+ * still follows from before it last started, whose plans are gone.
+ */
+export interface Activity {
+  plans: ActivityPlan[]
+  earlier: RecentSwap[]
+}
+
 export interface RecentSwap {
   planId: string
   /** "2 NEAR". */
@@ -455,6 +478,9 @@ export interface InkBridge {
   /** The swaps Ink followed lately, newest first. Empty while Ink is locked. */
   recentSwaps(): Promise<RecentSwap[]>
   onSwapsChanged(listener: () => void): () => void
+  /** Every plan of this run, and swaps from before, newest first. Empty while Ink is locked. */
+  activity(): Promise<Activity>
+  onActivityChanged(listener: () => void): () => void
   /** A deposit of a kept chat, with no session now, moved on. `chatId` is the page's id for the chat. */
   onDepositEvent(listener: (chatId: string, event: Extract<ChatEvent, { type: 'deposit-progress' | 'deposit-note' }>) => void): () => void
 }

@@ -18,6 +18,9 @@ import type { ChainId } from '@/lib/logos'
 import { TOOL_COPY } from '@/lib/tool-copy'
 import { INK_TOOLS, type AgentId, type ChatPlan } from '../../../../shared/ipc'
 
+
+/** A sentence fragment after a comma: its first letter lowered, so chain names keep their capitals ("on NEAR", not "on near"). */
+const lowerFirst = (text: string) => (text ? `${text[0]?.toLowerCase() ?? ''}${text.slice(1)}` : text)
 /** Starting points, filled into the composer rather than sent, each with the marks of what it moves. */
 const SUGGESTIONS: readonly { text: string; tokens?: readonly string[]; chains?: readonly ChainId[] }[] = [
   { text: 'Send 2 NEAR to alice.near', tokens: ['NEAR'] },
@@ -70,7 +73,7 @@ function PortfolioGlance({ onOpen }: { onOpen: () => void }) {
           </span>
           <span className="text-[12px] leading-[1.45] text-[var(--ot-text-2)]">
             {money
-              ? `${view.rows.length === 1 ? '1 asset' : `${view.rows.length} assets`}, ${spread(view.rows).toLowerCase()}.${result?.ok && result.zerion === 'off' ? ' Add a Zerion key in Settings for other chains.' : ''}`
+              ? `${view.rows.length === 1 ? '1 asset' : `${view.rows.length} assets`}, ${lowerFirst(spread(view.rows))}.${result?.ok && result.zerion === 'off' ? ' Add a Zerion key in Settings for other chains.' : ''}`
               : 'Prices couldn’t be read, so there’s no total.'}
           </span>
         </>
@@ -128,7 +131,7 @@ export function HomeView({
   return (
     <main className="ink-panel" id="main">
       <Sea />
-      <div className="ink-panel__scroll px-8 pt-16 pb-8">
+      <div className="ink-panel__scroll px-8 pt-10 pb-8">
         <div className="mx-auto flex max-w-[880px] flex-col gap-4">
           <div className="flex flex-wrap items-end gap-5">
             <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-2">
@@ -222,7 +225,7 @@ export function HomeView({
             >
               <span className="flex items-center gap-2">
                 <span className="ink-eyebrow flex-1 text-[var(--ot-warn-text)]">Before you hold more</span>
-                <Badge tone="warn">Paper only</Badge>
+                <Badge tone="warn" className="border border-[var(--ot-warn-border)] bg-[var(--ot-card)]">Paper only</Badge>
               </span>
               <span className="text-[15px] font-extrabold">Keep your recovery phrase safe</span>
               <span className="text-[12px] leading-[1.45] text-[var(--ot-text)]">
@@ -231,21 +234,24 @@ export function HomeView({
             </button>
           </div>
 
-          <div className="mt-1 flex flex-wrap items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <span className="text-[12px] text-[var(--ot-text-3)]">
               {external.length === 0 ? 'Your agent gets seven Ottopus tools, nothing else:' : 'Your agent gets seven Ottopus tools, and what you turned on:'}
             </span>
-            {INK_TOOLS.map((tool) => {
-              const Glyph = TOOL_GLYPHS[tool]
-              return (
-                <span key={tool} className="ink-tool-chip">
-                  <span className="ink-tool__glyph" style={{ background: TOOL_COPY[tool].tint }} aria-hidden>
-                    <Glyph size={11} />
+            {/* The chips wrap as one group, so a second row starts under the first chip, not under the label. */}
+            <span className="flex flex-wrap gap-1.5">
+              {INK_TOOLS.map((tool) => {
+                const Glyph = TOOL_GLYPHS[tool]
+                return (
+                  <span key={tool} className="ink-tool-chip">
+                    <span className="ink-tool__glyph" style={{ background: TOOL_COPY[tool].tint }} aria-hidden>
+                      <Glyph size={11} />
+                    </span>
+                    <span className="font-mono">{tool}</span>
                   </span>
-                  <span className="font-mono">{tool}</span>
-                </span>
-              )
-            })}
+                )
+              })}
+            </span>
           </div>
         </div>
       </div>

@@ -14,6 +14,7 @@ export function LockScreen() {
     <WalletPanel
       guide={{
         pose: 'base',
+        size: 150,
         title: 'I’m keeping watch.',
         text: 'While Ink is locked, your agent can’t read balances or draft plans. Unlock and we pick up where we were.',
       }}
@@ -23,7 +24,7 @@ export function LockScreen() {
           <LockIcon size={12} />
           Locked
         </Badge>
-        <WalletHeading title="Ink is locked">Enter your password to unlock your wallet. You’ll be back where you were.</WalletHeading>
+        <WalletHeading title="Ink is locked" size={36}>Enter your password to unlock your wallet. You’ll be back where you were.</WalletHeading>
       </div>
       <form
         className="ink-form-card flex flex-col gap-4 p-4"

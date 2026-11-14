@@ -4,9 +4,33 @@
 @import "./water.css";
 @import "./otto.css";
 @import "./sea.css";
-@import "./shell.css";
+/* Ink's own component classes sit in Tailwind's components layer, so a utility on the
+   same element (p-0, h-[34px], text-…) still wins, as Tailwind intends. Unlayered,
+   they silently beat every utility. */
+@import "./shell.css" layer(components);
 @import "./boardui-bridge.css";
-@import "./kit.css";
+@import "./kit.css" layer(components);
+
+/* The shared Dialog (ui/dialog.tsx) sized for Settings' two columns. Its panel is a flex
+   column; this rule stays unlayered, so it wins over the panel's Tailwind width, padding
+   and gap without touching the ported file. */
+.ink-settings .ot-dialog-panel {
+  width: min(900px, calc(100vw - 48px));
+  height: min(640px, calc(100vh - 48px));
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--ot-surface);
+  box-shadow: 0 2px 6px rgba(22, 33, 62, 0.08), 0 24px 64px rgba(22, 33, 62, 0.22);
+}
+
+/* The composer rim's orbiting angle, animatable. Kept out of the layer, where @property can't go. */
+@property --ink-rim-a {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
 
 /* Divergences from the design project live here, never in the ported files, so
    re-syncing tokens.css cannot silently drop them. The first two blocks are
@@ -109,10 +133,13 @@ body {
 
 /* Visible focus is a security affordance: people tab through a review before
    signing, and an invisible focus ring means signing the wrong button. */
-:focus-visible {
-  outline: 2px solid var(--ot-plan);
-  outline-offset: 2px;
-  border-radius: var(--ot-radius-sm);
+/* The outline follows each element's own corners, so a pill stays a pill when focused.
+   In the base layer, so a component that draws its own focus (the composer, a field) can turn it off. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--ot-plan);
+    outline-offset: 2px;
+  }
 }
 
 .sr-only {

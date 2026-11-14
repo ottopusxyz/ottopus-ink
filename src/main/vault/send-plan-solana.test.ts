@@ -188,13 +188,14 @@ describe('a swap the wallet pays on Solana', () => {
   it('is shown for review only while the transfer and the terms agree', async () => {
     const { result } = await built()
     if (!result.ok || !('swap' in result) || !result.swap) throw new Error('no swap')
-    const store = createPlanStore({ buildSteps: async () => result })
+    // The same clock as the quote, so its deadline is as far ahead whenever this runs.
+    const store = createPlanStore({ buildSteps: async () => result, now: () => new Date(NOW) })
     const made = await store.create({ intent: SWAP, createdBy: 'ui', owner: OWNER, own, typed: [] })
     if (!made.ok) throw new Error(made.reason)
     const review = describeForReview(store.get(made.plan.id, OWNER)!, '', MAX_FEE)
     expect(review).toMatchObject({ kind: 'swap', chain: 'Solana', to: EVM, toKind: 'other-chain', swap: { from: 'solana', send: '6 USDC', refundTo: FROM, getChain: 'Base' } })
     const tampered = { ...result, swap: { ...result.swap, amountIn: '5000000' } }
-    const other = createPlanStore({ buildSteps: async () => tampered })
+    const other = createPlanStore({ buildSteps: async () => tampered, now: () => new Date(NOW) })
     const again = await other.create({ intent: SWAP, createdBy: 'ui', owner: OWNER, own, typed: [] })
     if (!again.ok) throw new Error(again.reason)
     expect(describeForReview(other.get(again.plan.id, OWNER)!, '', MAX_FEE)).toBeNull()

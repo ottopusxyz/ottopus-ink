@@ -1,0 +1,72 @@
+name: Release
+
+# Pushing a tag such as v0.1.0 builds the Linux and macOS packages and publishes them,
+# with a SHA256SUMS file, as a GitHub release. Running it by hand builds the packages
+# and keeps them as workflow artifacts, without releasing anything.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            files: |
+              dist/*.AppImage
+              dist/*.deb
+          # A .dmg can only be made on macOS. The runner is Apple Silicon; the Intel
+          # build is made there too.
+          - os: macos-latest
+            platform: mac
+            files: dist/*.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Check the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag is $GITHUB_REF_NAME but package.json says $version." >&2
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm test
+      - run: npm run dist:${{ matrix.platform }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ottopus-ink-${{ matrix.platform }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Write SHA256SUMS
+        working-directory: packages
+        run: sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" packages/* --title "Ottopus Ink $GITHUB_REF_NAME" --notes-file docs/install.md

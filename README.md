@@ -1,10 +1,129 @@
-# Ottopus Ink
+<div align="center">
 
-A desktop universal wallet whose brain is the coding agent you already have installed (Claude Code, Codex or OpenCode). The agent proposes plans; you review and sign them in the app. Cross-chain value moves through NEAR Intents.
+<img src="resources/icon.svg" width="84" height="84" alt="Ottopus Ink's icon: Otto's face" />
 
-> Work in progress for the NEAR hackathon. You can set up, lock and unlock the wallet, see your addresses, and approve a NEAR send from a chat in the review window. No send has been tried on mainnet yet, and nothing has been audited: don't give it a recovery phrase that holds real funds.
+<h1>Ottopus Ink</h1>
 
-## Rules that never change
+<p><strong>Every crypto move, one ask away.</strong></p>
+
+<p>
+A desktop wallet for Mac and Linux, driven by the agent already on your computer.<br />
+Ask it to pay, swap or send. It works out which wallet, chain and asset to use,<br />
+NEAR Intents carries it across chains, and Ink's review window shows you the exact bytes.<br />
+<em>The agent proposes. You sign. Your keys never leave your computer.</em>
+</p>
+
+<p>
+<a href="https://ink.ottopus.xyz">Website</a> ·
+<a href="https://x.com/rajkoshik/status/2121727647701254646">Demo video</a> ·
+<a href="https://github.com/ottopusxyz/ottopus-ink/releases/latest">Download</a> ·
+<a href="#how-it-works">How it works</a> ·
+<a href="#what-works-today">Features</a> ·
+<a href="#architecture">Architecture</a> ·
+<a href="#run-it-locally">Run it locally</a> ·
+<a href="#contributing">Contributing</a>
+</p>
+
+<p>
+<a href="https://github.com/ottopusxyz/ottopus-ink/actions/workflows/ci.yml"><img src="https://github.com/ottopusxyz/ottopus-ink/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
+<a href="https://github.com/ottopusxyz/ottopus-ink/releases/latest"><img src="https://img.shields.io/github/v/release/ottopusxyz/ottopus-ink?color=F58A6A" alt="Latest release" /></a>
+<img src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-16213E" alt="macOS and Linux" />
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license" /></a>
+</p>
+
+<p>Built at the <strong>NEAR hackathon</strong>. <a href="https://x.com/rajkoshik/status/2121727647701254646">Watch the demo</a>.</p>
+
+<a href="https://x.com/rajkoshik/status/2121727647701254646"><img src=".github/assets/hero.svg" width="860" alt="Watch the Ottopus Ink demo. Under water, Otto sits on Ink's chat window: asked to pay an invoice, Claude Code reads it, checks the wallet and plans a payment of 250 USDC on Base from two balances, 180 from NEAR Intents and 70 from Solana, which is approved in the review window and lands." /></a>
+
+</div>
+
+## Why
+
+Agents run our daily work, but they haven't made our crypto life any easier. One payment can still mean choosing a wallet, finding a chain with enough of the right token, bridging, swapping and pasting addresses by hand.
+
+Ottopus Ink hands that work to the agent you already use. Ask for an outcome, such as "pay this invoice", and the agent reads what you hold and proposes a plan. Ink builds the exact transactions, routes them through [NEAR Intents](https://near.org/intents) when the token or chain changes, and shows you every byte in its own review window before anything is signed.
+
+The agent never gets a key. It can read and propose; signing happens in a separate process on your computer, and only after you approve.
+
+## How it works
+
+1. **Set up a wallet.** Make a new recovery phrase or restore one, and pick a password. The seed is encrypted on your computer and only ever decrypted in Ink's signer process.
+2. **Meet your agent.** Ink finds the coding agent you already have and are signed in to, and starts each chat locked to Ink's own tools: no shell, files or web.
+3. **Ask.** *"Pay this invoice"*, with the PDF attached. The agent reads it, checks your balances on every chain, and proposes a plan. Ink builds it, finds the route, and opens the review window: a money map of what leaves where and what lands where, every fee, and each transaction decoded from its bytes. You approve with a real click, and Ink signs, sends and follows the money until it lands.
+
+## Download
+
+| You have | Download |
+|---|---|
+| A Mac with Apple Silicon (M1 or later) | `ottopus-ink-<version>-mac-arm64.dmg` |
+| A Mac with an Intel chip | `ottopus-ink-<version>-mac-x64.dmg` |
+| Ubuntu, Debian or another Debian-based Linux (Intel or AMD) | `ottopus-ink-<version>-linux-amd64.deb` |
+| Any other 64-bit Linux (Intel or AMD) | `ottopus-ink-<version>-linux-x86_64.AppImage` |
+
+Get them from the [latest release](https://github.com/ottopusxyz/ottopus-ink/releases/latest), with a `SHA256SUMS` file to check them against. The builds aren't signed with a developer certificate yet (the Mac app is ad-hoc signed), so the first launch needs a step or two: [docs/install.md](docs/install.md) has them.
+
+Chats run on [Claude Code](https://claude.com/claude-code), so install it and sign in first. Ink finds it by itself.
+
+> [!WARNING]
+> Ink is a hackathon build. Nothing has been audited: don't give it a recovery phrase that holds more than you can afford to lose.
+
+## What works today
+
+- **Chats with your own agent.** Claude Code runs each chat, locked to Ink's tools, with Ink's payments skill in its prompt. Chats are kept across restarts, sealed by the system keyring, and can be continued.
+- **Send** a chain's own coin or a token on NEAR, on EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain, Avalanche and more) and on Solana.
+- **Swap and bridge through NEAR Intents,** paid from the wallet on NEAR, an EVM chain or Solana, or from your NEAR Intents balance. The plan's hash holds a binding 1Click quote, and Ink follows the swap until it pays out or refunds.
+- **Pay an exact amount from several balances.** When no one balance covers a payment, Ink combines up to three, from the NEAR Intents balance and the wallet's EVM and Solana addresses (any dollar stablecoin counts for another), and pays the recipient once they land. One approval.
+- **Pay an invoice.** Attach a PDF, text, CSV or JSON file. The agent reads who to pay, how much and where; the review window marks an address from the file in amber so you check it against the sender.
+- **Receive on any chain,** NEAR Intents first: a deposit address that lands in your NEAR Intents balance, or the wallet's own address, with its QR code. Ink watches it and says when the money arrives.
+- **One portfolio** across NEAR, EVM chains, Solana, Tron and the NEAR Intents balance, priced, with the last read shown while a new one runs.
+- **A review window that's a security boundary:** its own page and preload, decoded bytes rather than the agent's words, a pause before Approve arms, and approval only from a real press, bound to the plan's hash.
+- **Activity and notifications.** Every plan's journey, from review to the money landing, with a notification if it ends while Ink is in the background.
+- **Outside tools, only when you say so.** Settings lists the MCP servers, skills and plugins your agent already has. Each stays off until you agree in a native dialog, and a chat using one says so.
+- **Installers** for macOS (Apple Silicon and Intel) and Linux (`.deb` and AppImage), published by CI from a version tag, with checksums.
+
+Not there yet:
+
+- **Codex and Grok.** Ink finds them and reads their sign-in, but only Claude Code runs chats so far.
+- **Staking.** The agent can ask for a stake, but Ink doesn't build one yet, so the plan stays a draft.
+- **Bitcoin, Tron, Sui and Aptos.** Ink derives these addresses and reads Tron balances, but doesn't sign on them yet. NEAR Intents still reaches them through its deposit addresses.
+- **Signing and audits.** No Apple Developer ID signing or notarization, no audit, and no Windows or Linux on ARM.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    You(["You"])
+    Agent["Your agent<br/>Claude Code"]
+
+    subgraph Ink["Ottopus Ink · on your computer"]
+        Page["App page<br/>React · sandboxed"]
+        Review["Review window<br/>its own page and preload"]
+        Main["Main<br/>chats · plans · routes · RPCs"]
+        Shim["Tool bridge<br/>MCP over stdio"]
+        Signer["Signer<br/>the only place the seed lives"]
+    end
+
+    subgraph Net["Network"]
+        Intents["NEAR Intents<br/>1Click · bridge"]
+        Chains["NEAR · EVM · Solana RPCs"]
+        Service["Ink service<br/>Cloudflare Worker · Zerion"]
+    end
+
+    You -- "ask" --> Page
+    Page -- "window.ink" --> Main
+    Agent -- "get_portfolio · create_plan …" --> Shim
+    Shim -- "socket + token" --> Main
+    Main -- "plan" --> Review
+    You -- "approve" --> Review
+    Main -- "approved plan" --> Signer
+    Main --> Intents
+    Main -- "signed bytes" --> Chains
+    Main --> Service
+```
+
+Main never holds a seed, the signer never touches the network, and the page only draws what main sends it. The agent reaches Ink through one MCP server, the tool bridge, which Ink's own binary runs in Node mode and which proves itself to main with a token made for that chat.
+
+### Rules that never change
 
 1. **No agent wallet.** The agent can read and propose. It has no tool that signs, approves or touches keys.
 2. **The review window shows decoded bytes, not the agent's words.** The signer re-checks the plan hash before it signs.
@@ -12,31 +131,7 @@ A desktop universal wallet whose brain is the coding agent you already have inst
 4. **Each dependent step gets its own review** once its exact bytes are known.
 5. **Chats started by the app are locked to Ottopus Ink tools,** with no shell, file or web access, unless you turn on an outside tool or skill in Settings. Each stays off until you agree in a dialog, and the chat then says it isn't Ottopus tools only. Ink can't see what an outside tool does: one that holds its own keys could move funds outside Ink's review. A remote server that needs a sign-in stays out of chats until you sign in from Settings. Ink keeps that sign-in encrypted and sends it only to that server's address, and the agent in a chat using the tool can read it while the chat runs.
 
-## Install
-
-Download the macOS `.dmg`, or the Linux `.deb` or AppImage, from [Releases](https://github.com/ottopusxyz/ottopus-ink/releases). The builds aren't signed with a developer certificate yet (the macOS app is ad-hoc signed), so the first launch needs a step or two: see [docs/install.md](docs/install.md), which is also each release's notes.
-
-## Run it
-
-Requires Node 22.12+ (CI uses 24) on Linux or macOS.
-
-```bash
-npm ci
-npm start        # dev mode with hot reload
-npm test
-npm run lint
-npm run typecheck
-npm run build    # production bundle in out/
-npm run dist     # installers for this OS in dist/ (dist:linux, dist:mac for one)
-```
-
-`npm run dist` packages with [electron-builder](https://www.electron.build) (config in `electron-builder.yml`): an AppImage and a `.deb` on Linux, and a `.dmg` for Apple Silicon and Intel on macOS, which can only be built on a Mac. To publish a release, set `version` in `package.json` and push a matching tag (`v0.1.0`). The Release workflow builds every package and attaches them to a GitHub release with a `SHA256SUMS` file.
-
-On Linux, run `npm run desktop-entry` once to give Ink its icon in the dock and app grid. GNOME on Wayland ignores a window's own icon and shows the icon of the desktop entry named after the app (`ottopus-ink.desktop`), which this writes to `~/.local/share/applications`, pointing at this checkout. It does nothing once the `.deb` is installed, because that ships its own entry with the same name and one in your home folder would hide it.
-
-npm 11 runs only approved install scripts. Electron's (which downloads its binary) is approved in `package.json` under `allowScripts`.
-
-## Layout
+### Who may touch what
 
 | Path | Process | Trusted |
 |---|---|---|
@@ -49,73 +144,87 @@ npm 11 runs only approved install scripts. Electron's (which downloads its binar
 
 The renderer may import only from `src/shared` and its own files; a lint rule enforces it.
 
-## The vault
+**[docs/architecture.md](docs/architecture.md)** goes through each part in detail: the vault and its encryption, the accounts on each chain, the agent's tools, how a plan is hashed and moves between statuses, the review window's checks, the routes through NEAR Intents, and how each chain is signed and sent.
 
-One recovery phrase per install, 12 or 24 words.
+## Run it locally
 
-- **Encryption:** the seed is encrypted with your password, using scrypt (N=2^17, r=8, p=1) and AES-256-GCM, in `vault.bin` in the app's data folder.
-- **Password:** every unlock needs it. An OS keyring can be read by other programs running as you, including an agent, so it never stands in for the password.
-- **Keyring:** when there's a real one, it adds a second layer around the file, so a copy of the file alone can't be attacked. Linux's `basic_text` isn't a real one, so there the password is the only layer. A vault sealed with a keyring can't be opened if that keyring is lost, and you'd restore from your words.
-- **Backup check:** a new vault isn't saved until you've given back three of its words. Ink never replaces an existing vault.
-- **Locking:** Ink locks after 10 minutes with no input to its windows, and when the computer sleeps. On macOS and Windows it also locks when the screen locks; Electron doesn't report a screen lock on Linux. Bytes are wiped on lock. JavaScript can't wipe strings, so the phrase and password can stay in memory for a while after you type them.
+You need Node 22.12 or newer (CI uses 24) on Linux or macOS, and [Claude Code](https://claude.com/claude-code) signed in to chat.
 
-## Accounts
+```bash
+git clone https://github.com/ottopusxyz/ottopus-ink.git
+cd ottopus-ink
+npm ci
+npm start          # the app in dev mode, with hot reload
+```
 
-The phrase gives one account on each chain, at the path most wallets use, so restoring the same phrase in another wallet shows the same addresses. Tests check each one against that chain's reference library.
+Ink works on mainnet. Use a fresh recovery phrase and small amounts while you develop.
 
-| Chain | Path | Address |
-|---|---|---|
-| NEAR | `m/44'/397'/0'` | Implicit account (64 hex), which is also your NEAR Intents account |
-| EVM | `m/44'/60'/0'/0/0` | One `0x` address on every EVM chain |
-| Solana | `m/44'/501'/0'/0'` | Base58 |
-| Bitcoin | `m/84'/0'/0'/0/0` | Native SegWit `bc1q…` |
-| Tron | `m/44'/195'/0'/0/0` | `T…` |
-| Sui | `m/44'/784'/0'/0'/0'` | `0x…` |
-| Aptos | `m/44'/637'/0'/0'/0'` | `0x…`, until you rotate its key |
+npm 11 runs only approved install scripts. Electron's, which downloads its binary, is approved in `package.json` under `allowScripts`.
 
-Addresses are worked out in the signer and are only available while unlocked. The Receive page asks which chain and which asset, then shows that one address with its QR code and a warning to send only that asset on that network. Its Copy button has main copy the address the signer gave rather than text from the page, and only while Ink's window is in front. The page still draws the address and its QR code, so compare the first and last characters after you paste. Other chains Intents supports, such as TON and XRP, get no local key. Funds for them go to an Intents deposit address tied to your NEAR account.
+On Linux, run `npm run desktop-entry` once to give a checkout its icon in the dock and app grid. GNOME on Wayland shows the icon of the desktop entry named after the app (`ottopus-ink.desktop`), which this writes to `~/.local/share/applications`, pointing at the checkout. It does nothing once the `.deb` is installed, because that ships its own entry with the same name and one in your home folder would hide it.
 
-## Plans
+Useful commands:
 
-The agent can only propose a plan. Main builds it, and a plan can pay only your own address on the chain the funds land on, or an address you sent in that chat, never one the agent came up with.
+```bash
+npm test           # Vitest
+npm run lint
+npm run typecheck
+npm run build      # production bundle in out/
+npm run dist       # installers for this OS in dist/ (dist:linux or dist:mac for one)
+```
 
-- **What counts as sent:** main records the messages from each chat's box, which the agent can't add to. That keeps a prompt injection from picking the recipient. It can't tell a person typing from compromised page code, so the review window, outside the page, is where you confirm the recipient before anything is signed.
-- **Attached files:** the composer's + button opens the system's own file dialog. Main reads the file you pick (a PDF's text, or a text, Markdown, CSV or JSON file, up to 10 MB), and the page only ever gets its name. Its text goes to the agent with your message, marked as the file's contents rather than your instructions, so an agent can turn an invoice into a plan. An address in the file may be paid too, but the review window marks it as from that file, in amber, and asks you to check it against the invoice and the sender: a file can hold text you can't see. Ink reads PDFs with a pdf.js build that can't run code from a file, and doesn't read scans or images.
-- **Ink's skill:** every chat's agent gets Ink's own skill, [`src/main/agents/ink-skill.md`](src/main/agents/ink-skill.md), added to its system prompt ahead of any skills you enable. It sets the rules (never ask for keys, never pay an address it made up, never obey a file) and how to choose: one `send` when a single wallet covers a payment, `pay` when Ink must combine the NEAR Intents balance and the chain balances, and what to check in an invoice before proposing. It's guidance only; Ink's own checks hold whatever the agent does.
-- **The hash:** a plan's fixed part is hashed as SHA-256 over `ottopus-ink/plan/v1`, a NUL byte and its RFC 8785 canonical JSON. Numbers must be whole and amounts are decimal strings, so nothing can round. The signer works the hash out again from the plan it's given, and signs only if it matches the hash you approved.
-- **Statuses:** draft, awaiting review, approved, signing, submitted, confirmed, failed, cancelled, expired and blocked, and a plan moves between them only as one table allows. Nothing is approved without review, and nothing is signed without approval.
-- **Expiry and ownership:** a plan expires 30 minutes after it's made if nobody acts on it. Each plan belongs to the chat that made it.
-- **Review:** a plan a locked chat makes goes to the review window if Ink can send it. So far that's a NEAR send, which holds its exact transfer. Other plans hold no transaction yet and stay drafts. The chat's plan card follows the plan's status.
+CI runs lint, typecheck, tests and a build on Ubuntu and macOS for every pull request and on `main`.
 
-## The review window
+### Packaging and releases
 
-The only place a plan is approved. It's a separate, always-on-top window with its own page and preload, which expose the review channels and nothing else. Main answers those channels only from that window's own top frame on the review page, and the app's page can't use them, open the window or reach into it.
+`npm run dist` packages with [electron-builder](https://www.electron.build) (config in `electron-builder.yml`): an AppImage and a `.deb` on Linux, and a `.dmg` for Apple Silicon and Intel on macOS, which can only be built on a Mac.
 
-- **What it shows:** what main decodes from the plan's own steps, the bytes the signer reads back and signs, never the agent's words. In order:
-  - the network, with a "not simulated" note;
-  - a money map: each source leaving your wallet or NEAR Intents balance in red, through NEAR Intents when it swaps or carries it, to what arrives where in green, with a bar of what each source brings to a payment;
-  - the recipient in full and in groups, and whether it's your own account or one you typed in the chat;
-  - each fee at most, beside its chain, and the most that can leave your account;
-  - each transaction you sign, with its chain, its key, whether it's sent on approval or once a payment's parts land, and each action: what it moves to whom, and the contract method it calls, with the full decoded text a click away;
-  - then the paying accounts, their keys, the exact amount in its smallest unit and the plan hash.
+To publish a release, set `version` in `package.json` and push a matching tag (`v0.1.0`). The Release workflow builds every package, writes `SHA256SUMS`, and publishes a GitHub release with [docs/install.md](docs/install.md) as its notes. A tag with a suffix (`v0.2.0-beta.1`) becomes a prerelease, which the website skips.
 
-  Every token has its logo and its chain's badge. Ink ships logos for the common tokens; for any other, main finds Zerion's verified token with the exact contract or mint the plan pays (never just the same symbol) and fetches its icon, for up to 2.5 s. With no match, the token shows its chain's logo or its letters.
-- **Approving:** Approve works only for the plan and hash on show, once the window has been up and in front for 1.5 s. The delay starts again whenever the window takes focus, so a click or key press meant for something else can't approve it. Main also needs a real press of the mouse button, Enter or Space in that window, after it armed and within the last second. Electron reports these from the OS, so a script can't make one. Only the press counts, never its release, and each press approves once. Ink must be unlocked. On Linux under X11, other programs can fake input, so the click check is weaker there.
-- **Sending:** once approved, main signs and sends the plan as described under NEAR, and the window shows what became of it, with a link to the transaction on nearblocks.io. The fee maximum you saw is a limit: if today's gas price could now take more, nothing is signed, the window shows the new maximum, and Approve waits 1.5 s again. A plan shown before NEAR gave a fee gets one before it can be approved. A send that stopped before signing (NEAR unreachable, an earlier send unanswered) keeps the plan approved, and Try again sends it as approved, with another click. The window can't be closed while a send is running.
-- **Rejecting and expiry:** Reject, or closing the window, cancels the plan and signs nothing. A plan nobody approves expires 30 minutes after it was made, and the window shows that. Plans wait their turn and are shown one at a time.
+### The website and the service
 
-## NEAR
+- [`site/`](site/README.md) is the landing page at [ink.ottopus.xyz](https://ink.ottopus.xyz): static files with no build step (`python3 -m http.server 4173 --directory site`). Its download buttons link the latest release's files.
+- [`service/`](service/README.md) is the Ink service, a Cloudflare Worker that reads Zerion with Ottopus's key so the app ships none. It sees only public data, and Ink works without it.
 
-Ink talks to NEAR mainnet through [FastNEAR](https://fastnear.com)'s free RPC, and falls back to `rpc.mainnet.near.org` when FastNEAR is down. No key or account is needed.
+## Project layout
 
-- **Balance:** what you can send is your balance less what NEAR holds back for storage (10^19 yoctoNEAR a byte). An account using 770 bytes or fewer, such as a plain one with a single key, is stored free (NEP-448), so nothing is held back. Staked NEAR is read from each pool, using FastNEAR's index only to find which pools to ask. `get_portfolio` gives the agent these figures, and holds them back if Ink locks while they're read.
-- **A new account:** your NEAR address is an implicit account. It doesn't exist on chain until something is sent to it, and until then its balance is zero.
-- **Sending:** `create_plan` for NEAR on NEAR builds one Transfer from your implicit account, with the amount in yoctoNEAR. It refuses an amount NEAR can't send exactly, a named recipient that doesn't exist (only implicit accounts are created by a transfer), and a balance that can't cover the amount plus the most the fees could cost. Fees come from mainnet's protocol config and are worked out as nearcore does. Send fees are burnt at the gas price, and exec fees are bought at no less than the 10^9 yoctoNEAR receipt price (NEP-642), with room for the gas price to double. A transfer to an implicit account also pays for creating the account (and, for a NEAR implicit one, its key), whether or not it exists yet. That's about 0.0003 NEAR to a named account and 0.0077 NEAR to an implicit one, and most of it comes back. NEAR's 0.007 NEAR account creation charge comes out of that refund.
-- **Encoding:** Ink writes and reads NEAR transactions itself, in one small file (`src/shared/near/transaction.ts`). It reads only a version 0 transaction holding one ed25519 Transfer, so the signer can refuse anything it couldn't read. Tests check the bytes, hash and signature against near-api-js 7.4.0, which is a dev dependency only.
-- **Signing:** the signer derives the key at `m/44'/397'/0'`, signs, and wipes the key and seed right after. It signs only a transfer from your own implicit account, after reading its own bytes back, and signs nothing while locked. A lock while it signs wins, even if Ink is unlocked again straight after, and what was signed is dropped unsent.
-- **Before signing:** while the plan is still approved, main checks that the RPC says it's on mainnet, checks again that your balance covers the amount and the most the fees could take at today's gas price, and reads your key's next nonce and a recent block. If any of that fails, the plan stays approved and nothing is signed. Main sends one plan at a time, and signs each above every nonce it has already signed with that key. After a send that got no answer, that key sends nothing more until the chain shows the send can't land any more: it landed, its nonce was used, or its block is more than 86,400 blocks old. Otherwise a later send could land first and leave the earlier one unable to land. Ink keeps this in memory only while it runs.
-- **Broadcast:** main, not the signer, sends the signed bytes, so the process holding the seed never touches the network. The plan moves to confirmed or failed by NEAR's final outcome. A send that gets no answer stays submitted, because it may still go through. So does one turned away by the fallback RPC after FastNEAR didn't answer, since FastNEAR may have sent it first.
-- **Outcomes:** a sent transfer counts as done only from a final outcome about that transaction: its hash and signer must match, and the transaction and every receipt must have run.
+```
+src/
+  main/          Electron main
+    agents         finding agents, running Claude Code, Ink's skill
+    mcp            the tool bridge and the tools the agent gets
+    plans          the plan store, statuses, recipients, Activity
+    review         the review window, decoding, input checks
+    routes         NEAR Intents quotes, swaps and payments
+    intents        deposit addresses, and watching them
+    near, evm, solana   each chain's RPC and transaction building
+    portfolio      balances and prices on every chain
+    vault          the vault as main sees it
+    external       outside MCP servers, skills and plugins
+  preload/       window.ink, and the review window's own preload
+  renderer/      the React app and the review page
+  signer/        the signer process: vault crypto, keys, signing
+  shared/        types and pure helpers: plans, transactions, chains
+service/         the Ink service (Cloudflare Worker)
+site/            the landing page
+docs/            install steps, and how Ink works
+scripts/         the desktop entry, and the README's hero
+resources/       the app icon
+build/icons/     Linux icons at each size
+```
+
+## Contributing
+
+Issues and pull requests are welcome. [AGENTS.md](AGENTS.md) has the conventions in full; in short:
+
+- **Read the rules first.** The [five rules](#rules-that-never-change) define the product, and the [layout table](#who-may-touch-what) says which process may touch what. A change that works around either needs to say so.
+- **Branch from `main`** as `<type>/m<milestone>-<issue>-<slug>`, for example `feat/m2-60-receive-addresses`.
+- **Commit small:** one feature or fix per commit, each building and passing on its own, with a type prefix such as `feat:`, `fix:`, `docs:`, `test:` or `refactor:`.
+- **Describe the pull request** in two parts: a summary of what changed and why, and numbered manual tests someone can follow in `npm start`, including an edge case.
+- **Run `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`** before you open it, and add tests for anything that touches the vault, the signer, plan hashing or the review window.
+- **Never commit secrets:** no API keys, real quote IDs or recovery phrases, not even in tests.
+
+The hero at the top of this page is made by `python3 scripts/readme-hero.py` from the landing page's fonts, logos and colours. Run it again after changing them.
 
 ## Prior work
 
@@ -134,8 +243,10 @@ Copied from [BoardUI](https://github.com/BoardUI/boardui) 0.5.9 (MIT, Copyright 
 - Agent Thinking in `src/renderer/src/vendor/boardui`, with its licence
 - the keyframes and label shimmer in `src/renderer/src/styles/boardui-bridge.css`, which carries them over onto our tokens
 
+The README's hero uses the landing page's copies of the Claude, Codex and Grok marks and the NEAR, Base, Solana and USDC marks, and its Quicksand, Figtree and JetBrains Mono fonts (SIL Open Font License).
+
 Everything else here is new.
 
 ## Licence
 
-MIT
+[MIT](LICENSE)

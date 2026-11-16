@@ -288,7 +288,7 @@
    */
   function agents(list) {
     if (still) return
-    const count = window.innerWidth < 600 ? 2 : window.innerWidth < 900 ? 3 : 4
+    const count = window.innerWidth < 600 ? 2 : 3
     const chips = [...list.children].map((chip) => {
       const copy = document.createElement('span')
       copy.className = 'agent'
@@ -398,6 +398,10 @@
   async function downloads() {
     const cards = Object.fromEntries(Object.keys(BUILDS).map((os) => [os, document.querySelector(`[data-dl="${os}"]`)]))
     const mine = visitorOs()
+    // The hero's one button names the visitor's system when Ink runs on it, and is a
+    // plain "Download" otherwise. Either way it leads to the cards, which hold the files.
+    const heroLabel = document.querySelector('[data-get-label]')
+    if (heroLabel && mine) heroLabel.textContent = `Download for ${BUILDS[mine].name}`
     if (mine && cards[mine]) cards[mine].classList.add('is-yours')
 
     // The newest release, or null when none is published. Asking for the list (rather

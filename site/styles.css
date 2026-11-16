@@ -134,6 +134,19 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
 .built { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: var(--text-2); }
 .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding-top: 4px; }
 .hero__art { flex: 1 1 460px; min-width: 0; position: relative; }
+
+/* Under the buttons: the agents Ink works with, a few at a time. */
+.works { display: flex; flex-direction: column; gap: 12px; padding-top: 10px; }
+.works__label { font-size: 12.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); }
+.agents__row, .agents__live { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.agent { display: flex; align-items: center; gap: 10px; font: 700 16px/1.2 var(--display); white-space: nowrap; }
+/* Live, each slot shows one agent: it lifts away as the next pops in. */
+.agents__live { gap: 10px 8px; }
+.slot { position: relative; width: 158px; height: 40px; }
+.slot .agent { position: absolute; inset: 0; opacity: 0; transform: translateY(12px) scale(.92); filter: blur(5px); transition: opacity .4s var(--ease-out), transform .5s var(--ease-bounce), filter .4s var(--ease-out); }
+.slot .agent.is-out { transform: translateY(-12px) scale(.92); }
+.slot .agent.is-on { opacity: 1; transform: none; filter: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .hero__otto { position: absolute; right: 150px; top: -118px; width: 144px; height: 144px; }
 
 /* The app's window: a soft card, no navy edge. */
@@ -173,7 +186,7 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
 .mark img { width: 100%; height: 100%; }
 .mark--sm { width: 18px; height: 18px; border-radius: 5px; }
 .mark--turn { width: 28px; height: 28px; border-radius: 9px; box-shadow: 0 0 0 1px var(--border), 0 2px 6px rgba(22,33,62,.1); }
-.mark--lg { width: 40px; height: 40px; border-radius: 12px; box-shadow: 0 0 0 1px var(--border), 0 4px 12px rgba(22,33,62,.08); }
+.mark--md { width: 32px; height: 32px; border-radius: 10px; box-shadow: 0 0 0 1px rgba(22,33,62,.08), 0 3px 10px rgba(22,33,62,.1); }
 
 /* The app's tentacle ring: eight dots, never six, never twelve. */
 .ring { --size: 15px; position: relative; display: inline-block; flex: none; width: var(--size); height: var(--size); animation: ring-spin 2.4s linear infinite; animation-play-state: var(--play); }
@@ -313,19 +326,6 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
 .stack--lg { gap: 44px; }
 .head { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
 .head--center { align-items: center; margin: 0 auto; text-align: center; }
-
-.band--agents { padding: 76px var(--gutter); }
-.agents { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
-.agents__row, .agents__live { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px 36px; margin-top: 14px; }
-.agent { display: flex; align-items: center; gap: 12px; font: 700 18px/1.2 var(--display); white-space: nowrap; }
-.mark--text { font: 700 15px/1 var(--display); letter-spacing: -.02em; }
-/* Live, each slot shows one agent: it lifts away as the next pops in. */
-.agents__live { gap: 14px 12px; }
-.slot { position: relative; width: 196px; height: 48px; }
-.slot .agent { position: absolute; inset: 0; justify-content: center; opacity: 0; transform: translateY(12px) scale(.92); filter: blur(5px); transition: opacity .4s var(--ease-out), transform .5s var(--ease-bounce), filter .4s var(--ease-out); }
-.slot .agent.is-out { transform: translateY(-12px) scale(.92); }
-.slot .agent.is-on { opacity: 1; transform: none; filter: none; }
-.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* How it works. Plain, it is a list of beats beside the chat. Live, one beat shows at
    a time. Pinned, the section holds under the bar while scroll moves through them. */
@@ -472,7 +472,7 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
 @media (max-width: 760px) {
   .bar__link { display: none; }
   .bar .btn { margin-left: 0; }
-  .band, .band--agents { padding: 60px var(--gutter); }
+  .band { padding: 60px var(--gutter); }
   .deep, .close { padding: 72px var(--gutter); }
   .lede { font-size: 18px; }
   .chat { height: 500px; padding: 0 12px; }
@@ -489,13 +489,10 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
   .map__out, .map__in { flex: none; }
   .map__arrow { align-self: center; transform: rotate(90deg); }
   .dl { padding: 22px; }
-  .agents__row { gap: 14px 24px; }
-  .slot { width: 168px; }
-  .slot .agent { font-size: 16px; }
+  .slot { width: 150px; }
 }
 @media (max-width: 420px) {
   .btn { padding: 0 18px; }
-  .cta .btn:not(.btn--ghost) { width: 100%; }
   .conn { display: none; }
 }
 

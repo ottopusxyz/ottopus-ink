@@ -74,15 +74,29 @@
       <h1>Every crypto move, <span class="coral">one ask away.</span></h1>
       <p class="lede">Ask the agent on your own computer to pay, swap or send. NEAR Intents finds the route across chains, and nothing moves until you sign.</p>
       <div class="cta">
+        <!-- The script names the visitor's system here when it can tell. -->
         <a class="btn btn--coral" href="#download">
           <svg aria-hidden="true" width="18" height="18" viewBox="0 0 16 16"><use href="#i-download"/></svg>
-          Download for macOS
+          <span data-get-label>Download</span>
         </a>
-        <a class="btn btn--paper" href="#download">Download for Linux</a>
         <a class="btn btn--ghost" href="https://x.com/rajkoshik/status/2121727647701254646" target="_blank" rel="noopener noreferrer">
           <svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="11" cy="11" r="9"/><path d="M9 7.5v7l6-3.5-6-3.5Z" fill="currentColor"/></svg>
           See how it works
         </a>
+      </div>
+      <div class="works">
+        <p class="works__label">Works with any of your local agents</p>
+        <!-- Every agent, as a plain list. With scripts on, a few show at a time and each lifts away for the next. -->
+        <ul class="agents__row" role="list" data-agents>
+          <li class="agent"><span class="mark mark--md"><img src="assets/logos/agent-claude.svg" alt="" width="32" height="32"></span>Claude Code</li>
+          <li class="agent"><span class="mark mark--md"><img src="assets/logos/agent-codex.svg" alt="" width="32" height="32"></span>Codex</li>
+          <li class="agent"><span class="mark mark--md"><img src="assets/logos/agent-grok.svg" alt="" width="32" height="32"></span>Grok</li>
+          <li class="agent"><span class="mark mark--md"><img src="assets/logos/agent-gemini.svg" alt="" width="32" height="32"></span>Gemini</li>
+          <li class="agent"><span class="mark mark--md"><img src="assets/logos/agent-opencode.svg" alt="" width="32" height="32"></span>OpenCode</li>
+          <li class="agent"><span class="mark mark--md"><img src="assets/logos/agent-cline.svg" alt="" width="32" height="32"></span>Cline</li>
+          <li class="agent"><span class="mark mark--md"><img src="assets/logos/agent-pi.svg" alt="" width="32" height="32"></span>Pi</li>
+          <li class="agent"><span class="mark mark--md"><img src="assets/logos/agent-cursor.svg" alt="" width="32" height="32"></span>Cursor</li>
+        </ul>
       </div>
     </div>
 
@@ -301,24 +315,6 @@
         </g>
       </svg>
     </div>
-  </div>
-</section>
-
-<section class="band band--agents">
-  <div class="wrap agents">
-    <h2>Works with the agent you already have.</h2>
-    <p class="lede lede--sm">Your own sign-in. No API key.</p>
-    <!-- Every agent, as a plain list. With scripts on, a few show at a time and fade for the next. -->
-    <ul class="agents__row" role="list" data-agents>
-      <li class="agent"><span class="mark mark--lg"><img src="assets/logos/agent-claude.svg" alt="" width="40" height="40"></span>Claude Code</li>
-      <li class="agent"><span class="mark mark--lg"><img src="assets/logos/agent-codex.svg" alt="" width="40" height="40"></span>Codex</li>
-      <li class="agent"><span class="mark mark--lg"><img src="assets/logos/agent-grok.svg" alt="" width="40" height="40"></span>Grok</li>
-      <li class="agent"><span class="mark mark--lg mark--text" style="background: #E8F0FF; color: #1D4FB0" aria-hidden="true">Ge</span>Gemini</li>
-      <li class="agent"><span class="mark mark--lg mark--text" style="background: #16213E; color: #F5F0E6" aria-hidden="true">Oc</span>OpenCode</li>
-      <li class="agent"><span class="mark mark--lg mark--text" style="background: #E1F6EC; color: #0E6642" aria-hidden="true">Cl</span>Cline</li>
-      <li class="agent"><span class="mark mark--lg mark--text" style="background: #FFF3D6; color: #7A4E00" aria-hidden="true">Pi</span>Pi</li>
-      <li class="agent"><span class="mark mark--lg mark--text" style="background: #FFE6DC; color: #B3421F" aria-hidden="true">Cu</span>Cursor</li>
-    </ul>
   </div>
 </section>
 

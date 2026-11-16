@@ -8,6 +8,8 @@
 
   const REPO = 'ottopusxyz/ottopus-ink'
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  // Styles that hide something until a script shows it apply only under this class.
+  document.documentElement.classList.add('js')
 
   /* ---------- smooth scroll ---------- */
 
@@ -274,6 +276,86 @@
     paint(false)
   }
 
+  /* ---------- the agents: a few at a time ---------- */
+
+  // How long before the next slot changes, in milliseconds.
+  const AGENT_TICK_MS = 700
+
+  /**
+   * Shows the list of agents a few at a time. The slots take turns swapping theirs for
+   * the one that has waited longest, so the set on show keeps changing. The plain list
+   * stays for a screen reader, which has no use for the turns.
+   */
+  function agents(list) {
+    if (still) return
+    const count = window.innerWidth < 600 ? 2 : window.innerWidth < 900 ? 3 : 4
+    const chips = [...list.children].map((chip) => {
+      const copy = document.createElement('span')
+      copy.className = 'agent'
+      copy.append(...[...chip.childNodes].map((node) => node.cloneNode(true)))
+      return copy
+    })
+    if (chips.length <= count) return
+    const live = document.createElement('div')
+    live.className = 'agents__live'
+    live.setAttribute('aria-hidden', 'true')
+    // The first few start on show, one a slot. The rest wait their turn in line.
+    const slots = chips.slice(0, count).map((chip) => {
+      const el = document.createElement('div')
+      el.className = 'slot'
+      chip.classList.add('is-on')
+      el.append(chip)
+      live.append(el)
+      return { el, shown: chip }
+    })
+    const waiting = chips.slice(count)
+    list.classList.add('sr-only')
+    list.after(live)
+
+    let turn = 0
+    let timer = 0
+    function swap() {
+      const slot = slots[turn % count]
+      turn += 1
+      const leaving = slot.shown
+      const coming = waiting.shift()
+      waiting.push(leaving)
+      coming.classList.remove('is-on', 'is-out')
+      slot.el.append(coming)
+      void coming.offsetWidth // so it starts from below, not where it last was
+      coming.classList.add('is-on')
+      leaving.classList.remove('is-on')
+      leaving.classList.add('is-out')
+      window.setTimeout(() => {
+        if (leaving.classList.contains('is-on')) return
+        leaving.remove()
+        leaving.classList.remove('is-out')
+      }, 520)
+      slot.shown = coming
+    }
+    watch(live, (seen) => {
+      window.clearInterval(timer)
+      if (seen) timer = window.setInterval(() => document.hidden || swap(), AGENT_TICK_MS)
+    })
+  }
+
+  /* ---------- sections that pop in ---------- */
+
+  /** Marks a section once it comes on screen, which lets its pieces pop in. */
+  function reveals() {
+    const seen = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          entry.target.classList.add('is-in')
+          seen.unobserve(entry.target)
+        }
+      },
+      { threshold: 0.18 },
+    )
+    for (const section of document.querySelectorAll('[data-reveal]')) seen.observe(section)
+  }
+
   /* ---------- the downloads ---------- */
 
   // Each card's files, best first. The first one the release has is the button; the next
@@ -370,5 +452,8 @@
   if (heroStage) hero(heroStage)
   const storyStage = document.querySelector('[data-story]')
   if (storyStage) story(storyStage)
+  const agentList = document.querySelector('[data-agents]')
+  if (agentList) agents(agentList)
+  reveals()
   downloads()
 })()

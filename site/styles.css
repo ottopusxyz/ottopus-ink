@@ -316,8 +316,16 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
 
 .band--agents { padding: 76px var(--gutter); }
 .agents { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
-.agents__row { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px 36px; margin-top: 14px; }
-.agents__row li { display: flex; align-items: center; gap: 12px; font: 700 18px/1.2 var(--display); }
+.agents__row, .agents__live { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px 36px; margin-top: 14px; }
+.agent { display: flex; align-items: center; gap: 12px; font: 700 18px/1.2 var(--display); white-space: nowrap; }
+.mark--text { font: 700 15px/1 var(--display); letter-spacing: -.02em; }
+/* Live, each slot shows one agent: it lifts away as the next pops in. */
+.agents__live { gap: 14px 12px; }
+.slot { position: relative; width: 196px; height: 48px; }
+.slot .agent { position: absolute; inset: 0; justify-content: center; opacity: 0; transform: translateY(12px) scale(.92); filter: blur(5px); transition: opacity .4s var(--ease-out), transform .5s var(--ease-bounce), filter .4s var(--ease-out); }
+.slot .agent.is-out { transform: translateY(-12px) scale(.92); }
+.slot .agent.is-on { opacity: 1; transform: none; filter: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* How it works. Plain, it is a list of beats beside the chat. Live, one beat shows at
    a time. Pinned, the section holds under the bar while scroll moves through them. */
@@ -354,7 +362,25 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
 .deep .wrap { position: relative; }
 .flow { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 24px 28px; padding: clamp(20px, 3vw, 36px); border-radius: var(--r-lg); background: rgba(255,252,247,.94); box-shadow: var(--soft); }
 .flow__col { flex: 1 1 250px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
-.flow__arrow { color: var(--navy); }
+.flow__arrow { position: relative; display: inline-grid; color: var(--navy); }
+.flow__coin { position: absolute; top: 50%; left: -6px; width: 20px; height: 20px; margin-top: -10px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); opacity: 0; }
+
+/* A section's pieces pop in as it comes on screen, one after another. Only with scripts on. */
+.js .reveal { opacity: 0; transform: translateY(18px) scale(.94); transition: opacity .45s var(--ease-out), transform .55s var(--ease-bounce); transition-delay: calc(var(--i, 0) * 60ms); }
+.js .fades { opacity: 0; transition: opacity .4s var(--ease-out); transition-delay: calc(var(--i, 0) * 60ms); }
+.js .is-in .reveal { opacity: 1; transform: none; }
+.js .is-in .fades { opacity: 1; }
+
+/* Then value keeps moving: each balance leaves, a coin crosses to the hub, the hub
+   takes it, a coin crosses to the payee, and the payee's amount lands. */
+.is-in .hold { animation: hold-go 4.8s var(--ease-out) infinite; animation-delay: calc(1.6s + var(--k, 0) * .14s); animation-play-state: var(--play); }
+@keyframes hold-go { 0%, 13%, 100% { transform: none; background: var(--water-1); } 5% { transform: translateX(8px) scale(1.03); background: var(--coral-soft); } }
+.is-in .flow__coin { animation: coin-go 4.8s linear infinite; animation-delay: var(--d, 0s); animation-play-state: var(--play); }
+@keyframes coin-go { 0% { opacity: 0; transform: translateX(0) scale(.6); } 3% { opacity: 1; transform: translateX(3px) scale(1); } 14% { opacity: 1; transform: translateX(34px) scale(1); } 17%, 100% { opacity: 0; transform: translateX(38px) scale(.6); } }
+.is-in .hub img { animation: hub-pop 4.8s var(--ease-bounce) infinite; animation-delay: 2.6s; animation-play-state: var(--play); }
+@keyframes hub-pop { 0%, 12%, 100% { scale: 1; } 5% { scale: 1.16; } }
+.is-in .gets { animation: gets-pop 4.8s var(--ease-bounce) infinite; animation-delay: 3.8s; animation-play-state: var(--play); }
+@keyframes gets-pop { 0%, 14%, 100% { transform: none; box-shadow: 0 0 0 0 rgba(31,181,122,0); } 5% { transform: scale(1.05); box-shadow: 0 0 0 9px rgba(31,181,122,.2); } }
 .hold { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-md); background: var(--water-1); }
 .hold b { font-size: 15px; font-weight: 600; }
 .flow__hub { flex: 0 1 220px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
@@ -464,6 +490,8 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
   .map__arrow { align-self: center; transform: rotate(90deg); }
   .dl { padding: 22px; }
   .agents__row { gap: 14px 24px; }
+  .slot { width: 168px; }
+  .slot .agent { font-size: 16px; }
 }
 @media (max-width: 420px) {
   .btn { padding: 0 18px; }
@@ -483,4 +511,6 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
   .ring i { opacity: .55; }
   .tide span { width: 100%; opacity: .4; }
   .btn, .item, .beat, .rail button, .track li::before, .track li::after { transition: none !important; }
+  .js .reveal, .js .fades { opacity: 1 !important; transform: none !important; transition: none !important; }
+  .hold, .flow__coin, .hub img, .gets { animation: none !important; }
 }

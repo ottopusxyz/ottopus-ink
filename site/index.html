@@ -31,7 +31,6 @@
     <nav class="bar__nav" aria-label="Sections">
       <a class="bar__link" href="#how">How it works</a>
       <a class="bar__link" href="#intents">NEAR Intents</a>
-      <a class="bar__link" href="#safety">Safety</a>
       <a class="bar__link" href="https://github.com/ottopusxyz/ottopus-ink" rel="noreferrer">GitHub</a>
       <a class="btn btn--coral btn--sm" href="#download">
         <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><use href="#i-download"/></svg>
@@ -80,7 +79,7 @@
           Download for macOS
         </a>
         <a class="btn btn--paper" href="#download">Download for Linux</a>
-        <a class="btn btn--ghost" href="#how">
+        <a class="btn btn--ghost" href="https://x.com/rajkoshik/status/2121727647701254646" target="_blank" rel="noopener noreferrer">
           <svg aria-hidden="true" width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="11" cy="11" r="9"/><path d="M9 7.5v7l6-3.5-6-3.5Z" fill="currentColor"/></svg>
           See how it works
         </a>
@@ -309,10 +308,16 @@
   <div class="wrap agents">
     <h2>Works with the agent you already have.</h2>
     <p class="lede lede--sm">Your own sign-in. No API key.</p>
-    <ul class="agents__row" role="list">
-      <li><span class="mark mark--lg"><img src="assets/logos/agent-claude.svg" alt="" width="40" height="40"></span>Claude Code</li>
-      <li><span class="mark mark--lg"><img src="assets/logos/agent-codex.svg" alt="" width="40" height="40"></span>Codex</li>
-      <li><span class="mark mark--lg"><img src="assets/logos/agent-grok.svg" alt="" width="40" height="40"></span>Grok</li>
+    <!-- Every agent, as a plain list. With scripts on, a few show at a time and fade for the next. -->
+    <ul class="agents__row" role="list" data-agents>
+      <li class="agent"><span class="mark mark--lg"><img src="assets/logos/agent-claude.svg" alt="" width="40" height="40"></span>Claude Code</li>
+      <li class="agent"><span class="mark mark--lg"><img src="assets/logos/agent-codex.svg" alt="" width="40" height="40"></span>Codex</li>
+      <li class="agent"><span class="mark mark--lg"><img src="assets/logos/agent-grok.svg" alt="" width="40" height="40"></span>Grok</li>
+      <li class="agent"><span class="mark mark--lg mark--text" style="background: #E8F0FF; color: #1D4FB0" aria-hidden="true">Ge</span>Gemini</li>
+      <li class="agent"><span class="mark mark--lg mark--text" style="background: #16213E; color: #F5F0E6" aria-hidden="true">Oc</span>OpenCode</li>
+      <li class="agent"><span class="mark mark--lg mark--text" style="background: #E1F6EC; color: #0E6642" aria-hidden="true">Cl</span>Cline</li>
+      <li class="agent"><span class="mark mark--lg mark--text" style="background: #FFF3D6; color: #7A4E00" aria-hidden="true">Pi</span>Pi</li>
+      <li class="agent"><span class="mark mark--lg mark--text" style="background: #FFE6DC; color: #B3421F" aria-hidden="true">Cu</span>Cursor</li>
     </ul>
   </div>
 </section>
@@ -525,41 +530,47 @@
     <svg class="life life--swim" viewBox="0 0 28 16" style="left: 4%; top: 82%; width: 60px; --travel: 200px; --lift: -16px; --dur: 90s"><use href="#s-turtle"/></svg>
     <svg class="life life--float" viewBox="0 0 18 24" style="left: 94%; top: 30%; width: 30px; --travel: 12px; --lift: -120px; --dur: 58s; animation-delay: -10s"><use href="#s-jelly"/></svg>
   </div>
-  <div class="wrap stack stack--lg">
+  <div class="wrap stack stack--lg" data-reveal>
     <div class="head head--center">
-      <p class="kicker kicker--ink"><img src="assets/logos/chain-near.svg" alt="" width="22" height="22">Powered by NEAR Intents</p>
-      <h2 class="h2--xl">Hold it anywhere. Pay on any chain.</h2>
-      <p class="lede lede--sm lede--ink">Ink combines your balances. NEAR Intents carries them and pays out the exact amount.</p>
+      <p class="kicker kicker--ink reveal"><img src="assets/logos/chain-near.svg" alt="" width="22" height="22">Powered by NEAR Intents</p>
+      <h2 class="h2--xl reveal" style="--i: 1">Hold it anywhere. Pay on any chain.</h2>
+      <p class="lede lede--sm lede--ink reveal" style="--i: 2">Ink combines your balances. NEAR Intents carries them and pays out the exact amount.</p>
     </div>
 
-    <div class="flow">
+    <div class="flow reveal" style="--i: 3">
       <div class="flow__col">
-        <p class="eyebrow">What you hold</p>
-        <div class="hold"><img src="assets/logos/chain-bsc.svg" alt="" width="28" height="28"><b>USDC on BNB Chain</b></div>
-        <div class="hold"><img src="assets/logos/chain-near.svg" alt="" width="28" height="28"><b>USDC in NEAR Intents</b></div>
-        <div class="hold"><img src="assets/logos/chain-base.svg" alt="" width="28" height="28"><b>A top-up sent on Base</b></div>
+        <p class="eyebrow reveal" style="--i: 5">What you hold</p>
+        <div class="hold reveal" style="--i: 6; --k: 0"><img src="assets/logos/chain-bsc.svg" alt="" width="28" height="28"><b>USDC on BNB Chain</b></div>
+        <div class="hold reveal" style="--i: 7; --k: 1"><img src="assets/logos/chain-near.svg" alt="" width="28" height="28"><b>USDC in NEAR Intents</b></div>
+        <div class="hold reveal" style="--i: 8; --k: 2"><img src="assets/logos/chain-base.svg" alt="" width="28" height="28"><b>A top-up sent on Base</b></div>
       </div>
-      <svg class="flow__arrow" aria-hidden="true" width="44" height="16" viewBox="0 0 44 16"><use href="#i-arrow-lg"/></svg>
-      <div class="flow__hub">
+      <span class="flow__arrow fades" style="--i: 10; --d: 1.9s" aria-hidden="true">
+        <svg width="44" height="16" viewBox="0 0 44 16"><use href="#i-arrow-lg"/></svg>
+        <img class="flow__coin" src="assets/logos/token-usdc.svg" alt="" width="16" height="16">
+      </span>
+      <div class="flow__hub reveal" style="--i: 11">
         <span class="hub"><img src="assets/logos/chain-near.svg" alt="" width="56" height="56"></span>
         <b>NEAR Intents</b>
         <span>One approval covers every part.</span>
       </div>
-      <svg class="flow__arrow" aria-hidden="true" width="44" height="16" viewBox="0 0 44 16"><use href="#i-arrow-lg"/></svg>
+      <span class="flow__arrow fades" style="--i: 13; --d: 3.1s" aria-hidden="true">
+        <svg width="44" height="16" viewBox="0 0 44 16"><use href="#i-arrow-lg"/></svg>
+        <img class="flow__coin" src="assets/logos/token-usdc.svg" alt="" width="16" height="16">
+      </span>
       <div class="flow__col">
-        <p class="eyebrow">What the payee gets</p>
-        <div class="gets"><div><img src="assets/logos/chain-solana.svg" alt="" width="30" height="30"><strong>+ 25 USDC</strong></div><span>Exactly, on Solana.</span></div>
+        <p class="eyebrow reveal" style="--i: 14">What the payee gets</p>
+        <div class="gets reveal" style="--i: 15"><div><img src="assets/logos/chain-solana.svg" alt="" width="30" height="30"><strong>+ 25 USDC</strong></div><span>Exactly, on Solana.</span></div>
       </div>
     </div>
 
     <ul class="chains" role="list" aria-label="Chains Ink holds funds on">
-      <li><img src="assets/logos/chain-near.svg" alt="" width="20" height="20">NEAR</li>
-      <li><img src="assets/logos/chain-solana.svg" alt="" width="20" height="20">Solana</li>
-      <li><img src="assets/logos/chain-base.svg" alt="" width="20" height="20">Base</li>
-      <li><img src="assets/logos/chain-ethereum.svg" alt="" width="20" height="20">Ethereum</li>
-      <li><img src="assets/logos/chain-bsc.svg" alt="" width="20" height="20">BNB Chain</li>
-      <li><img src="assets/logos/chain-arbitrum.svg" alt="" width="20" height="20">Arbitrum</li>
-      <li><img src="assets/logos/chain-bitcoin.svg" alt="" width="20" height="20">Bitcoin</li>
+      <li class="reveal" style="--i: 17"><img src="assets/logos/chain-near.svg" alt="" width="20" height="20">NEAR</li>
+      <li class="reveal" style="--i: 18"><img src="assets/logos/chain-solana.svg" alt="" width="20" height="20">Solana</li>
+      <li class="reveal" style="--i: 19"><img src="assets/logos/chain-base.svg" alt="" width="20" height="20">Base</li>
+      <li class="reveal" style="--i: 20"><img src="assets/logos/chain-ethereum.svg" alt="" width="20" height="20">Ethereum</li>
+      <li class="reveal" style="--i: 21"><img src="assets/logos/chain-bsc.svg" alt="" width="20" height="20">BNB Chain</li>
+      <li class="reveal" style="--i: 22"><img src="assets/logos/chain-arbitrum.svg" alt="" width="20" height="20">Arbitrum</li>
+      <li class="reveal" style="--i: 23"><img src="assets/logos/chain-bitcoin.svg" alt="" width="20" height="20">Bitcoin</li>
     </ul>
   </div>
 </section>

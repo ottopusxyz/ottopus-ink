@@ -5,7 +5,7 @@ import globals from 'globals'
 
 export default tseslint.config(
   // The service is its own project, with its own config and checks.
-  { ignores: ['out/', 'dist/', 'node_modules/', 'service/'] },
+  { ignores: ['out/', 'dist/', 'node_modules/', 'service/', 'site/assets/vendor/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

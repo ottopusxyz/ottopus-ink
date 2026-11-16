@@ -5,6 +5,15 @@
   "version": "0.1.0",
   "description": "A desktop universal wallet driven by the coding agent you already have. The agent proposes, you sign.",
   "license": "MIT",
+  "author": {
+    "name": "Ottopus",
+    "url": "https://ottopus.xyz"
+  },
+  "homepage": "https://ink.ottopus.xyz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ottopusxyz/ottopus-ink.git"
+  },
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
@@ -14,6 +23,9 @@
   "scripts": {
     "start": "electron-vite dev",
     "build": "electron-vite build",
+    "dist": "electron-vite build && electron-builder --publish never",
+    "dist:linux": "electron-vite build && electron-builder --linux --publish never",
+    "dist:mac": "electron-vite build && electron-builder --mac --publish never",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
@@ -28,6 +40,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.2.0",
     "electron": "45.2.1",
+    "electron-builder": "26.18.0",
     "electron-vite": "6.0.0",
     "eslint": "10.14.0",
     "eslint-plugin-react-hooks": "7.1.1",

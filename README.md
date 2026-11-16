@@ -7,9 +7,10 @@
 <p><strong>Every crypto move, one ask away.</strong></p>
 
 <p>
-A desktop wallet for Mac and Linux, driven by the agent already on your computer.<br />
-Ask it to pay, swap or send. It works out which wallet, chain and asset to use,<br />
-NEAR Intents carries it across chains, and Ink's review window shows you the exact bytes.<br />
+A desktop app for Mac and Linux, driven by the agent already on your computer.<br />
+Ask it to perform any crypto interaction using your wallet, like payments or recurring routine transactions.<br />
+It works out which wallet, chain and asset to use, NEAR Intents carries it across chains,<br />
+and Ink's review window shows you the exact bytes.<br />
 <em>The agent proposes. You sign. Your keys never leave your computer.</em>
 </p>
 
@@ -157,39 +158,7 @@ CI runs lint, typecheck, tests and a build on Ubuntu and macOS for every pull re
 
 `npm run dist` packages with [electron-builder](https://www.electron.build) (config in `electron-builder.yml`): an AppImage and a `.deb` on Linux, and a `.dmg` for Apple Silicon and Intel on macOS, which can only be built on a Mac.
 
-To publish a release, set `version` in `package.json` and push a matching tag (`v0.1.0`). The Release workflow builds every package, writes `SHA256SUMS`, and publishes a GitHub release with [docs/install.md](docs/install.md) as its notes. A tag with a suffix (`v0.2.0-beta.1`) becomes a prerelease, which the website skips.
-
-### The website and the service
-
-- [`site/`](site/README.md) is the landing page at [ink.ottopus.xyz](https://ink.ottopus.xyz): static files with no build step (`python3 -m http.server 4173 --directory site`). Its download buttons link the latest release's files.
-- [`service/`](service/README.md) is the Ink service, a Cloudflare Worker that reads Zerion with Ottopus's key so the app ships none. It sees only public data, and Ink works without it.
-
-## Project layout
-
-```
-src/
-  main/          Electron main
-    agents         finding agents, running Claude Code, Ink's skill
-    mcp            the tool bridge and the tools the agent gets
-    plans          the plan store, statuses, recipients, Activity
-    review         the review window, decoding, input checks
-    routes         NEAR Intents quotes, swaps and payments
-    intents        deposit addresses, and watching them
-    near, evm, solana   each chain's RPC and transaction building
-    portfolio      balances and prices on every chain
-    vault          the vault as main sees it
-    external       outside MCP servers, skills and plugins
-  preload/       window.ink, and the review window's own preload
-  renderer/      the React app and the review page
-  signer/        the signer process: vault crypto, keys, signing
-  shared/        types and pure helpers: plans, transactions, chains
-service/         the Ink service (Cloudflare Worker)
-site/            the landing page
-docs/            install steps, and how Ink works
-scripts/         the desktop entry, and the README's hero
-resources/       the app icon
-build/icons/     Linux icons at each size
-```
+To publish a release, set `version` in `package.json` and push a matching tag (`v0.1.0`). The Release workflow builds every package, writes `SHA256SUMS`, and publishes a GitHub release with [docs/install.md](docs/install.md) as its notes. A tag with a suffix (`v0.2.0-beta.1`) becomes a prerelease.
 
 ## Contributing
 
@@ -202,7 +171,7 @@ Issues and pull requests are welcome. [AGENTS.md](AGENTS.md) has the conventions
 - **Run `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`** before you open it, and add tests for anything that touches the vault, the signer, plan hashing or the review window.
 - **Never commit secrets:** no API keys, real quote IDs or recovery phrases, not even in tests.
 
-The hero at the top of this page is made by `python3 scripts/readme-hero.py` from the landing page's fonts, logos and colours. Run it again after changing them.
+The hero at the top of this page is made by `python3 scripts/readme-hero.py`.
 
 ## Licence
 

@@ -12,6 +12,10 @@ A desktop universal wallet whose brain is the coding agent you already have inst
 4. **Each dependent step gets its own review** once its exact bytes are known.
 5. **Chats started by the app are locked to Ottopus Ink tools,** with no shell, file or web access, unless you turn on an outside tool or skill in Settings. Each stays off until you agree in a dialog, and the chat then says it isn't Ottopus tools only. Ink can't see what an outside tool does: one that holds its own keys could move funds outside Ink's review. A remote server that needs a sign-in stays out of chats until you sign in from Settings. Ink keeps that sign-in encrypted and sends it only to that server's address, and the agent in a chat using the tool can read it while the chat runs.
 
+## Install
+
+Download the macOS `.dmg`, or the Linux `.deb` or AppImage, from [Releases](https://github.com/ottopusxyz/ottopus-ink/releases). The builds aren't signed with a developer certificate yet (the macOS app is ad-hoc signed), so the first launch needs a step or two: see [docs/install.md](docs/install.md), which is also each release's notes.
+
 ## Run it
 
 Requires Node 22.12+ (CI uses 24) on Linux or macOS.
@@ -23,9 +27,12 @@ npm test
 npm run lint
 npm run typecheck
 npm run build    # production bundle in out/
+npm run dist     # installers for this OS in dist/ (dist:linux, dist:mac for one)
 ```
 
-On Linux, run `npm run desktop-entry` once to give Ink its icon in the dock and app grid. GNOME on Wayland ignores a window's own icon and shows the icon of the desktop entry named after the app (`ottopus-ink.desktop`), which this writes to `~/.local/share/applications`, pointing at this checkout.
+`npm run dist` packages with [electron-builder](https://www.electron.build) (config in `electron-builder.yml`): an AppImage and a `.deb` on Linux, and a `.dmg` for Apple Silicon and Intel on macOS, which can only be built on a Mac. To publish a release, set `version` in `package.json` and push a matching tag (`v0.1.0`). The Release workflow builds every package and attaches them to a GitHub release with a `SHA256SUMS` file.
+
+On Linux, run `npm run desktop-entry` once to give Ink its icon in the dock and app grid. GNOME on Wayland ignores a window's own icon and shows the icon of the desktop entry named after the app (`ottopus-ink.desktop`), which this writes to `~/.local/share/applications`, pointing at this checkout. It does nothing once the `.deb` is installed, because that ships its own entry with the same name and one in your home folder would hide it.
 
 npm 11 runs only approved install scripts. Electron's (which downloads its binary) is approved in `package.json` under `allowScripts`.
 

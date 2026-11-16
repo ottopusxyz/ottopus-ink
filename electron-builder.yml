@@ -1,0 +1,49 @@
+# How `npm run dist` packages Ink: an AppImage and a .deb for Linux, a .dmg for macOS.
+#
+# The builds are not signed with a developer certificate. The macOS app is ad-hoc signed,
+# which Apple Silicon needs before it will run anything; Gatekeeper still warns on first
+# open. docs/install.md has the first-launch steps.
+appId: xyz.ottopus.ink
+productName: Ottopus Ink
+copyright: Copyright © 2026 Ottopus
+artifactName: ottopus-ink-${version}-${os}-${arch}.${ext}
+
+directories:
+  output: dist
+
+# Only what the built app reads: the bundles, the icon main loads by path, and package.json.
+files:
+  - out/**
+  - resources/**
+  - package.json
+
+linux:
+  target:
+    - AppImage
+    - deb
+  # Matches desktopName in package.json, so GNOME finds the icon for Ink's windows.
+  executableName: ottopus-ink
+  # One PNG per size: GNOME's icon theme has no 1024px folder, so the single large icon never shows.
+  icon: build/icons
+  category: Office
+  synopsis: A desktop wallet your coding agent plans for and you sign
+  maintainer: Ottopus
+  desktop:
+    entry:
+      StartupWMClass: ottopus-ink
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  icon: resources/icon.png
+  category: public.app-category.finance
+  # Ad-hoc: no certificate, but a valid signature, which Apple Silicon requires.
+  identity: '-'
+  # The hardened runtime only matters for notarization, which needs a Developer ID.
+  hardenedRuntime: false
+
+dmg:
+  title: Ottopus Ink ${version}

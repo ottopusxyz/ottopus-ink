@@ -119,9 +119,28 @@
 
   /* ---------- the downloads ---------- */
 
+  // Each card's files, best first. The first one the release has is the button; the next
+  // one with an `alt` line is offered under it. A browser can't tell an Apple Silicon Mac
+  // from an Intel one, so the Mac card offers both: most Macs sold since 2021 are Apple
+  // Silicon, and the Intel build won't run as well there, nor the Apple Silicon one at all
+  // on an Intel Mac.
   const BUILDS = {
-    mac: { name: 'macOS', files: [/\.dmg$/i, /(mac|darwin).*\.zip$/i] },
-    linux: { name: 'Linux', files: [/\.AppImage$/i, /\.deb$/i] },
+    mac: {
+      name: 'macOS',
+      choices: [
+        { file: /arm64\.dmg$/i, label: 'Download for Apple Silicon', alt: 'Apple Silicon Mac? Download that build' },
+        { file: /x64\.dmg$/i, label: 'Download for Intel Macs', alt: 'Intel Mac? Download the Intel build' },
+        { file: /\.dmg$/i, label: 'Download for macOS' },
+        { file: /(mac|darwin).*\.zip$/i, label: 'Download for macOS' },
+      ],
+    },
+    linux: {
+      name: 'Linux',
+      choices: [
+        { file: /\.AppImage$/i, label: 'Download for Linux', alt: 'Any 64-bit Linux? Download the AppImage' },
+        { file: /\.deb$/i, label: 'Download the .deb', alt: 'Ubuntu or Debian? Download the .deb' },
+      ],
+    },
   }
 
   function megabytes(bytes) {
@@ -161,14 +180,27 @@
       const link = card.querySelector('[data-dl-link]')
       const meta = card.querySelector('[data-dl-meta]')
       const text = card.querySelector('[data-dl-label]')
+      const alt = card.querySelector('[data-dl-alt]')
       const assets = release && Array.isArray(release.assets) ? release.assets : []
-      const asset = build.files.map((pattern) => assets.find((each) => pattern.test(String(each.name)))).find(Boolean)
-      // Only a file from this repository's own releases becomes the button's link.
-      const ours = asset && String(asset.browser_download_url).startsWith(`https://github.com/${REPO}/releases/download/`)
-      if (ours) {
-        link.href = asset.browser_download_url
+      // Only a file from this repository's own releases becomes a link.
+      const ours = (each) => String(each.browser_download_url).startsWith(`https://github.com/${REPO}/releases/download/`)
+      const found = []
+      for (const choice of build.choices) {
+        const asset = assets.find((each) => choice.file.test(String(each.name)) && ours(each))
+        if (asset && !found.some((seen) => seen.asset === asset)) found.push({ choice, asset })
+      }
+      const [main] = found
+      const second = found.slice(1).find((each) => each.choice.alt)
+      if (main) {
+        link.href = main.asset.browser_download_url
+        text.textContent = main.choice.label
         note.textContent = `The latest packaged build for ${build.name}.`
-        meta.textContent = `${release.tag_name} · ${asset.name} · ${megabytes(asset.size)}`
+        meta.textContent = `${release.tag_name} · ${main.asset.name} · ${megabytes(main.asset.size)}`
+        if (second && alt) {
+          alt.href = second.asset.browser_download_url
+          alt.textContent = second.choice.alt
+          alt.hidden = false
+        }
       } else {
         note.textContent = `A packaged build for ${build.name} is on the way. Until then, build from source.`
         text.textContent = 'See releases on GitHub'

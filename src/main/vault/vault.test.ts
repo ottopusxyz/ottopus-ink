@@ -474,11 +474,12 @@ describe('accounts', () => {
     const service = createVaultService({
       store: createVaultStore({ file, box: noKeyring }),
       ask: async (request) => {
+        // Claim the hold when the request arrives, not when the signer answers: the read after the
+        // unlock can be answered first, and holding it would wait for a release that never comes.
+        const hold = request.op === 'accounts' && holdNext
+        if (hold) holdNext = false
         const result = await signer.handle(request)
-        if (request.op === 'accounts' && holdNext) {
-          holdNext = false
-          await held
-        }
+        if (hold) await held
         return result
       },
       onStatus: () => {},

@@ -18,7 +18,6 @@ NEAR Intents carries it across chains, and Ink's review window shows you the exa
 <a href="https://x.com/rajkoshik/status/2121727647701254646">Demo video</a> ·
 <a href="https://github.com/ottopusxyz/ottopus-ink/releases/latest">Download</a> ·
 <a href="#how-it-works">How it works</a> ·
-<a href="#what-works-today">Features</a> ·
 <a href="#architecture">Architecture</a> ·
 <a href="#run-it-locally">Run it locally</a> ·
 <a href="#contributing">Contributing</a>
@@ -66,27 +65,6 @@ Chats run on [Claude Code](https://claude.com/claude-code), so install it and si
 
 > [!WARNING]
 > Ink is a hackathon build. Nothing has been audited: don't give it a recovery phrase that holds more than you can afford to lose.
-
-## What works today
-
-- **Chats with your own agent.** Claude Code runs each chat, locked to Ink's tools, with Ink's payments skill in its prompt. Chats are kept across restarts, sealed by the system keyring, and can be continued.
-- **Send** a chain's own coin or a token on NEAR, on EVM chains (Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Chain, Avalanche and more) and on Solana.
-- **Swap and bridge through NEAR Intents,** paid from the wallet on NEAR, an EVM chain or Solana, or from your NEAR Intents balance. The plan's hash holds a binding 1Click quote, and Ink follows the swap until it pays out or refunds.
-- **Pay an exact amount from several balances.** When no one balance covers a payment, Ink combines up to three, from the NEAR Intents balance and the wallet's EVM and Solana addresses (any dollar stablecoin counts for another), and pays the recipient once they land. One approval.
-- **Pay an invoice.** Attach a PDF, text, CSV or JSON file. The agent reads who to pay, how much and where; the review window marks an address from the file in amber so you check it against the sender.
-- **Receive on any chain,** NEAR Intents first: a deposit address that lands in your NEAR Intents balance, or the wallet's own address, with its QR code. Ink watches it and says when the money arrives.
-- **One portfolio** across NEAR, EVM chains, Solana, Tron and the NEAR Intents balance, priced, with the last read shown while a new one runs.
-- **A review window that's a security boundary:** its own page and preload, decoded bytes rather than the agent's words, a pause before Approve arms, and approval only from a real press, bound to the plan's hash.
-- **Activity and notifications.** Every plan's journey, from review to the money landing, with a notification if it ends while Ink is in the background.
-- **Outside tools, only when you say so.** Settings lists the MCP servers, skills and plugins your agent already has. Each stays off until you agree in a native dialog, and a chat using one says so.
-- **Installers** for macOS (Apple Silicon and Intel) and Linux (`.deb` and AppImage), published by CI from a version tag, with checksums.
-
-Not there yet:
-
-- **Codex and Grok.** Ink finds them and reads their sign-in, but only Claude Code runs chats so far.
-- **Staking.** The agent can ask for a stake, but Ink doesn't build one yet, so the plan stays a draft.
-- **Bitcoin, Tron, Sui and Aptos.** Ink derives these addresses and reads Tron balances, but doesn't sign on them yet. NEAR Intents still reaches them through its deposit addresses.
-- **Signing and audits.** No Apple Developer ID signing or notarization, no audit, and no Windows or Linux on ARM.
 
 ## Architecture
 
@@ -225,27 +203,6 @@ Issues and pull requests are welcome. [AGENTS.md](AGENTS.md) has the conventions
 - **Never commit secrets:** no API keys, real quote IDs or recovery phrases, not even in tests.
 
 The hero at the top of this page is made by `python3 scripts/readme-hero.py` from the landing page's fonts, logos and colours. Run it again after changing them.
-
-## Prior work
-
-Ported from [ottopusxyz/ottopus](https://github.com/ottopusxyz/ottopus) (MIT, built for BNB Hack):
-
-- the design tokens and water and Otto styles in `src/renderer/src/styles` (`tokens.css`, `dialog.css`, `water.css`, `otto.css`)
-- the UI primitives in `src/renderer/src/components/ui`
-- Otto and his badge in `src/renderer/src/components/brand`, apart from the `wave` pose, which is Ink's own
-- the stillness in `src/renderer/src/components/motion`, and the tentacle ring, step list and ink hold there (`ring.tsx`, `loaders.tsx`), redrawn from the Ottopus loader family
-- the Claude and Codex marks in `src/renderer/src/assets/agents`, which came from [Simple Icons](https://simpleicons.org) (CC0). The marks stay the trademarks of their owners and are used only to show which agent a chat runs on
-
-The chain and token marks in `src/renderer/src/assets/crypto` are from [web3icons](https://web3icons.io) (MIT, by 0xa3k5); its README there lists each one.
-
-Copied from [BoardUI](https://github.com/BoardUI/boardui) 0.5.9 (MIT, Copyright (c) 2026 Mertcan Dundar Esmergul (BoardUI)):
-
-- Agent Thinking in `src/renderer/src/vendor/boardui`, with its licence
-- the keyframes and label shimmer in `src/renderer/src/styles/boardui-bridge.css`, which carries them over onto our tokens
-
-The README's hero uses the landing page's copies of the Claude, Codex and Grok marks and the NEAR, Base, Solana and USDC marks, and its Quicksand, Figtree and JetBrains Mono fonts (SIL Open Font License).
-
-Everything else here is new.
 
 ## Licence
 

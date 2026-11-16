@@ -128,10 +128,11 @@ h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.02em; }
 
 /* Hero */
 .hero__in { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 56px; }
-.hero__copy { flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
+.hero__copy { flex: 1.25 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
+.hero h1 { font-size: clamp(38px, 4vw, 52px); line-height: 1.06; }
 .built { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: var(--text-2); }
 .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding-top: 4px; }
-.hero__art { flex: 1 1 500px; min-width: 0; position: relative; }
+.hero__art { flex: 1 1 460px; min-width: 0; position: relative; }
 .hero__otto { position: absolute; right: 150px; top: -118px; width: 144px; height: 144px; }
 
 /* The app's window: a soft card, no navy edge. */

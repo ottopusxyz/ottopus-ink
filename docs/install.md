@@ -8,8 +8,10 @@ These builds are not signed with a developer certificate yet, so your system wil
 |---|---|
 | A Mac with Apple Silicon (M1 or later) | `ottopus-ink-<version>-mac-arm64.dmg` |
 | A Mac with an Intel chip | `ottopus-ink-<version>-mac-x64.dmg` |
-| Ubuntu, Debian or another Debian-based Linux | `ottopus-ink-<version>-linux-amd64.deb` |
-| Any other 64-bit Linux | `ottopus-ink-<version>-linux-x86_64.AppImage` |
+| Ubuntu, Debian or another Debian-based Linux, on an Intel or AMD processor | `ottopus-ink-<version>-linux-amd64.deb` |
+| Any other 64-bit Linux, on an Intel or AMD processor | `ottopus-ink-<version>-linux-x86_64.AppImage` |
+
+There are no Linux builds for ARM processors yet.
 
 ### macOS
 

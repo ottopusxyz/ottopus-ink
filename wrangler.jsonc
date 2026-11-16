@@ -1,0 +1,12 @@
+// The landing page at ink.ottopus.xyz: the static files in site/, served by Cloudflare Workers.
+// Cloudflare's build runs `npx wrangler deploy` for main and `npx wrangler preview` for a pull
+// request; both read this file, which Wrangler also finds from inside site/.
+{
+  "name": "ottopus-ink",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./site"
+  },
+  // A pull request's preview needs this block, even empty: it has no settings of its own.
+  "previews": {}
+}

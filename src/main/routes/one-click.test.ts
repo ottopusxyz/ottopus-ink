@@ -159,6 +159,10 @@ describe('following a swap', () => {
       depositTx: '0x4f2a000000000000000000000000000000000000000000000000000000091c0',
     })
     expect(calls[0]?.url).toBe(`https://1click.chaindefuser.com/v0/status?depositAddress=${'a'.repeat(64)}`)
+    // A shared address on a memo chain is found by its memo.
+    const stellar = respond(report('PENDING_DEPOSIT'))
+    await swapStatus('GDJ4JZXZELZD737NVFORH4PSSQDWFDZTKW3AIDKHYQG23ZXBPDGGQBJK', { ...stellar, memo: '245055336' })
+    expect(stellar.calls[0]?.url).toBe('https://1click.chaindefuser.com/v0/status?depositAddress=GDJ4JZXZELZD737NVFORH4PSSQDWFDZTKW3AIDKHYQG23ZXBPDGGQBJK&depositMemo=245055336')
     expect(await swapStatus('x', respond(report('REFUNDED', { refundedAmount: '5' })))).toMatchObject({ stage: 'REFUNDED', refunded: 5n, payoutTx: null, deposited: null, depositTx: null })
     // Not seen yet: nothing arrived, and an odd amount isn't passed on.
     expect(await swapStatus('x', respond(report('PENDING_DEPOSIT', { depositedAmountFormatted: null, amountInFormatted: '1e5' })))).toMatchObject({ deposited: null, depositTx: null })

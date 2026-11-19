@@ -281,9 +281,14 @@ export async function submitDeposit(
 }
 
 /** Where the swap behind a deposit address stands now. Null when 1Click can't be read. */
-export async function swapStatus(depositAddress: string, { fetch = globalThis.fetch, url = ONE_CLICK_URL }: { fetch?: typeof globalThis.fetch; url?: string } = {}): Promise<SwapReport | null> {
+export async function swapStatus(
+  depositAddress: string,
+  { fetch = globalThis.fetch, url = ONE_CLICK_URL, memo = null }: { fetch?: typeof globalThis.fetch; url?: string; memo?: string | null } = {},
+): Promise<SwapReport | null> {
   try {
-    const response = await fetch(`${url}/v0/status?depositAddress=${encodeURIComponent(depositAddress)}`, { signal: AbortSignal.timeout(15_000) })
+    // An address shared on a memo chain (Stellar) is told apart by its memo, and isn't found without it.
+    const query = `depositAddress=${encodeURIComponent(depositAddress)}${memo ? `&depositMemo=${encodeURIComponent(memo)}` : ''}`
+    const response = await fetch(`${url}/v0/status?${query}`, { signal: AbortSignal.timeout(15_000) })
     return response.ok ? reportOf(await response.json()) : null
   } catch {
     return null

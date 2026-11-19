@@ -56,11 +56,17 @@ describe('keeping a NEAR Intents deposit address', () => {
     expect(await get()).toBe(FIRST)
   })
 
-  it('keeps giving the address of a deposit under the minimum, since the rest goes there', async () => {
-    const { get, stages } = setup()
+  it('keeps giving the address of a deposit under the minimum, since the rest goes there, into its last day until hours are left', async () => {
+    const { get, at, stages } = setup()
     await get()
     stages.set(FIRST, 'INCOMPLETE_DEPOSIT')
     expect(await get()).toBe(FIRST)
+    at(3 * DAY - ADDRESS_MARGIN_MS)
+    expect(await get()).toBe(FIRST)
+    at(3 * DAY - ADDRESS_LAST_MS - 1)
+    expect(await get()).toBe(FIRST)
+    at(3 * DAY - ADDRESS_LAST_MS)
+    expect(await get()).toBe(SECOND)
   })
 
   it('gets a new one once less than a day is left', async () => {

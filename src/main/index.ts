@@ -421,7 +421,7 @@ async function listedDepositChains(): Promise<IntentsDepositChain[] | null> {
 
 /** Token icons fetched for the page's searches, kept for the session. */
 const icons = tokenIcons()
-/** NEAR Intents deposit addresses, each kept while it's open and nothing was sent to it. */
+/** NEAR Intents deposit addresses, each kept while it's open and nothing was sent to it, or a deposit there waits for the rest. */
 const depositAddressKeeper = createAddressKeeper({
   ask: async (account, token) => {
     const fresh = await depositAddress(account, token)

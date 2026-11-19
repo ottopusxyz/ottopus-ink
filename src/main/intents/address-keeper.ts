@@ -25,33 +25,38 @@ export interface AddressKeeperDeps {
  * shows and what the agent was told agree. 1Click is asked where the kept one stands each
  * time. Ink asks for a new one once less than a day is left, or once a deposit there is
  * under way or done: a second one sent there wouldn't be its own. A deposit under the
- * minimum keeps it, since the rest goes to the same address. When 1Click can't give a new
- * one, a kept one that's still open is shown while hours are left.
+ * minimum keeps it until hours before it closes, the last day too, since the rest goes to
+ * the same address. When 1Click can't give a new one, a kept one that's still open is
+ * shown while hours are left.
  */
 export function createAddressKeeper({ ask, status, now = Date.now }: AddressKeeperDeps) {
   const kept = new Map<string, DepositAddress>()
 
-  /** Whether the kept address can still be given out, asked of 1Click each time. Null when it can't say. */
-  const open = async (address: DepositAddress): Promise<boolean | null> => {
+  /** Where 1Click's deposit at the kept address stands, if it can still be given out: false when not, null when 1Click can't say. */
+  const stageOf = async (address: DepositAddress): Promise<SwapStage | false | null> => {
     const report = await status(address.address, address.memo).catch(() => null)
-    return report ? OPEN.has(report.stage) : null
+    if (!report) return null
+    return OPEN.has(report.stage) ? report.stage : false
   }
 
   return {
     async address(account: string, token: { id: string; decimals: number }): Promise<DepositAddress | null> {
       const id = `${account} ${token.id}`
       const entry = kept.get(id)
-      const free = entry ? await open(entry) : null
-      if (entry && free === false) kept.delete(id)
+      const stage = entry ? await stageOf(entry) : null
+      if (entry && stage === false) kept.delete(id)
+      const free = typeof stage === 'string'
       const left = entry ? entry.until - now() : 0
-      if (entry && free === true && left > ADDRESS_MARGIN_MS) return entry
+      if (entry && free && left > ADDRESS_MARGIN_MS) return entry
+      // A deposit under the minimum is topped up at its own address, not a new one, while hours are left.
+      if (entry && stage === 'INCOMPLETE_DEPOSIT' && left > ADDRESS_LAST_MS) return entry
       const fresh = await ask(account, token)
       if (fresh) {
         kept.set(id, fresh)
         return fresh
       }
       // 1Click gave none: the kept one still serves while it's open and hours are left.
-      return entry && free === true && left > ADDRESS_LAST_MS ? entry : null
+      return entry && free && left > ADDRESS_LAST_MS ? entry : null
     },
 
     /** Forgets an address, with its memo where it has one, once something was sent to it, so the next ask gets a new one. */

@@ -70,7 +70,8 @@ describe('a deposit address for one token', () => {
       address: '0xD4D627Fef4129b2A0acE03944a5E88856a289185',
       memo: null,
       min: '0.15',
-      until: Date.parse('2026-11-24T06:45:25.000Z'),
+      // The deadline Ink asked for: 1Click refunds what's unfinished then, though its own runs later.
+      until: Date.parse('2026-11-22T06:45:25.000Z'),
     })
     expect(asked).toEqual([
       {
@@ -90,6 +91,14 @@ describe('a deposit address for one token', () => {
     ])
   })
 
+  it('closes at 1Click’s deadline or cold time when it’s sooner than the deadline asked for, and refuses a quote with none', async () => {
+    const until = async (quote: Record<string, unknown>) => (await depositAddress(ACCOUNT, { id: USDC_BASE, decimals: 6 }, { ...oneClick({ quote: (sent) => quoted(sent, quote) }), now: () => NOW }))?.until ?? null
+    expect(await until({ deadline: '2026-11-21T00:00:00.000Z', timeWhenInactive: '2026-11-24T00:00:00.000Z' })).toBe(Date.parse('2026-11-21T00:00:00.000Z'))
+    expect(await until({ deadline: '2026-11-24T00:00:00.000Z', timeWhenInactive: '2026-11-20T00:00:00.000Z' })).toBe(Date.parse('2026-11-20T00:00:00.000Z'))
+    expect(await until({ deadline: undefined })).toBeNull()
+    expect(await until({ deadline: 'soon' })).toBeNull()
+  })
+
   it('gives no minimum when 1Click takes any amount', async () => {
     const { fetch } = oneClick({ quote: (sent) => quoted(sent, { minAmountIn: '0' }) })
     expect(await depositAddress(ACCOUNT, { id: USDC_BASE, decimals: 6 }, { fetch, now: () => NOW })).toMatchObject({ min: null })
@@ -106,11 +115,22 @@ describe('a deposit address for one token', () => {
     expect(asked.map((sent) => sent.depositMode ?? null)).toEqual([null, 'MEMO'])
   })
 
-  it('refuses an answer for another account or token, an address that isn’t one, one already closed, and 1Click down', async () => {
+  it('refuses a memo-form answer with no memo, or one answered in plain form', async () => {
+    const memoAsked = (answer: (sent: Record<string, unknown>) => { status: number; body: unknown }) =>
+      depositAddress(ACCOUNT, { id: XLM, decimals: 7 }, { ...oneClick({ quote: (sent) => (sent.depositMode === 'MEMO' ? answer(sent) : { status: 400, body: { message: 'Incorrect depositMode for originAsset from stellar chain' } }) }), now: () => NOW })
+    expect(await memoAsked((sent) => quoted(sent, { depositAddress: 'GDJ4JZXZELZD737NVFORH4PSSQDWFDZTKW3AIDKHYQG23ZXBPDGGQBJK' }))).toBeNull()
+    expect(await memoAsked((sent) => quoted({ ...sent, depositMode: 'SIMPLE' }, { depositAddress: 'GDJ4JZXZELZD737NVFORH4PSSQDWFDZTKW3AIDKHYQG23ZXBPDGGQBJK', depositMemo: '244814683' }))).toBeNull()
+  })
+
+  it('refuses an answer for another account, token, amount or form, a dry run, an address that isn’t one, one already closed, and 1Click down', async () => {
     const at = (quote: (sent: Record<string, unknown>) => { status: number; body: unknown }) => depositAddress(ACCOUNT, { id: USDC_BASE, decimals: 6 }, { ...oneClick({ quote }), now: () => NOW })
     expect(await at((sent) => quoted({ ...sent, recipient: 'b'.repeat(64) }))).toBeNull()
     expect(await at((sent) => quoted({ ...sent, recipientType: 'DESTINATION_CHAIN' }))).toBeNull()
     expect(await at((sent) => quoted({ ...sent, destinationAsset: 'nep141:wrap.near' }))).toBeNull()
+    // A dry run's address isn't live, an amount makes it a quote for that much, and memo form wasn't asked.
+    expect(await at((sent) => quoted({ ...sent, dry: true }))).toBeNull()
+    expect(await at((sent) => quoted({ ...sent, amount: '1000000' }))).toBeNull()
+    expect(await at((sent) => quoted({ ...sent, depositMode: 'MEMO' }, { depositMemo: '1' }))).toBeNull()
     expect(await at((sent) => quoted(sent, { depositAddress: 'send it to me' }))).toBeNull()
     expect(await at((sent) => quoted(sent, { timeWhenInactive: '2026-11-18T00:00:00.000Z' }))).toBeNull()
     expect(await at(() => ({ status: 400, body: { message: 'tokenIn is not valid' } }))).toBeNull()

@@ -77,7 +77,7 @@ export interface DepositAddress {
   memo: string | null
   /** The least 1Click credits, in whole tokens, or null when it takes any amount. */
   min: string | null
-  /** When 1Click stops watching the address, in ms since the epoch. Nothing should be sent after. */
+  /** When the address closes, in ms since the epoch: the deadline Ink asked for, or 1Click's own if earlier. Nothing should be sent after. */
   until: number
 }
 
@@ -119,20 +119,32 @@ export async function depositAddress(
     return { ok: response.ok, body: typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {} }
   }
   try {
+    let memoForm = false
     let answer = await ask(false)
     // 1Click says when a chain needs the memo form, and refuses the plain one.
-    if (!answer.ok && typeof answer.body.message === 'string' && /depositMode|memo/i.test(answer.body.message)) answer = await ask(true)
+    if (!answer.ok && typeof answer.body.message === 'string' && /depositMode|memo/i.test(answer.body.message)) {
+      memoForm = true
+      answer = await ask(true)
+    }
     if (!answer.ok) return null
     const echoed = answer.body.quoteRequest as Record<string, unknown> | undefined
     const quote = answer.body.quote as Record<string, unknown> | undefined
     if (!echoed || !quote) return null
-    const same = ['swapType', 'originAsset', 'destinationAsset', 'depositType', 'refundTo', 'refundType', 'recipient', 'recipientType'] as const
+    const same = ['dry', 'swapType', 'originAsset', 'destinationAsset', 'depositType', 'amount', 'refundTo', 'refundType', 'recipient', 'recipientType'] as const
     if (same.some((key) => echoed[key] !== sent[key])) return null
+    // Only the form asked for: a memo quote answered in plain form would drop the memo.
+    if ((echoed.depositMode ?? 'SIMPLE') !== (memoForm ? 'MEMO' : 'SIMPLE')) return null
     const { depositAddress: address, depositMemo: memo, minAmountIn: min } = quote
     if (typeof address !== 'string' || !/^[A-Za-z0-9._:-]{8,128}$/.test(address)) return null
     if (memo !== undefined && memo !== null && (typeof memo !== 'string' || !/^[0-9A-Za-z]{1,64}$/.test(memo))) return null
-    const until = Date.parse(String(quote.timeWhenInactive ?? quote.deadline))
-    if (!Number.isFinite(until) || until <= now()) return null
+    // In memo form a deposit without the memo isn't credited, so no memo, no address.
+    if (memoForm && typeof memo !== 'string') return null
+    // Closed at the first of: the deadline asked for, after which 1Click refunds what's
+    // unfinished, the quote's deadline, after which funds may be lost, and when it goes cold.
+    const times = [sent.deadline, quote.deadline, quote.timeWhenInactive].map((time) => (time === undefined ? Number.POSITIVE_INFINITY : Date.parse(String(time))))
+    if (quote.deadline === undefined || times.some((time) => Number.isNaN(time))) return null
+    const until = Math.min(...times)
+    if (until <= now()) return null
     const least = typeof min === 'string' && WHOLE.test(min) && min !== '0' ? formatUnits(BigInt(min), token.decimals) : null
     return { address, memo: typeof memo === 'string' ? memo : null, min: least, until }
   } catch {

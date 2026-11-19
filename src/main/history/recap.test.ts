@@ -49,7 +49,7 @@ describe('deposits in the recap', () => {
   it('says where Ink showed the person to send, and how it ended', () => {
     const text = recapOf(
       chat([
-        { type: 'deposit', deposit: { id: 'd1', kind: 'intents' as const, chain: 'base', chainName: 'Base', mark: 'base', asset: 'USDC', icon: null, amount: '25', address: '0x8f436D184823B77188DE973322278686c3780C2c', memo: null, min: '1', account: 'a'.repeat(64), why: null, progress: { stage: 'watching' as const, got: null, tx: null, link: null, until: 5 } } },
+        { type: 'deposit', deposit: { id: 'd1', kind: 'intents' as const, chain: 'base', chainName: 'Base', mark: 'base', asset: 'USDC', icon: null, amount: '25', address: '0x8f436D184823B77188DE973322278686c3780C2c', memo: null, min: '1', account: 'a'.repeat(64), closes: null, why: null, progress: { stage: 'watching' as const, got: null, tx: null, link: null, until: 5 } } },
         { type: 'deposit-note', id: 'd1', note: { tone: 'ok', title: '25 USDC arrived', lines: ['25 USDC sent on Base is in your Intents balance.'], links: [] } },
       ]),
     )

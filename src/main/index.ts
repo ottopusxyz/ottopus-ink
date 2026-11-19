@@ -483,7 +483,7 @@ const depositListeners = new Map<string, DepositListen>()
  * gone, what happens is kept in its history and sent to the page for the kept chat.
  */
 const depositWatcher = createDepositWatcher({
-  status: (address) => swapStatus(address),
+  status: (address, memo) => swapStatus(address, { memo }),
   balance: async (address, zerion, symbol) => {
     const access = zerionAccess()
     if (!access) return null
@@ -547,6 +547,7 @@ async function showDeposit(chatId: string, owner: string, ask: ReceiveAsk, answe
       memo: intents ? answer.memo : null,
       min: answer.min,
       account: intents ? answer.account : null,
+      closes: intents ? answer.until : null,
       // The agent's deposits are always Ink's pick, never a route the person chose on the Receive page.
       why: intents || answer.why === 'chosen' ? null : answer.why,
     },

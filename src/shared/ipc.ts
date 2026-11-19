@@ -238,7 +238,11 @@ export type ReceiveAnswer =
  * Ink can't watch at all, on a chain it reads no balances for.
  */
 export interface DepositProgress {
-  stage: 'watching' | 'seen' | 'credited' | 'failed' | 'stopped' | 'unwatched'
+  /**
+   * `short`: what arrived is under NEAR Intents' minimum, and it waits for the rest until
+   * the address closes. `refunded`: it went back, into the Intents balance.
+   */
+  stage: 'watching' | 'seen' | 'short' | 'credited' | 'refunded' | 'failed' | 'stopped' | 'unwatched'
   /** What arrived, once seen: "25 USDC". */
   got: string | null
   /** The deposit's transaction on its chain, once seen. */
@@ -274,6 +278,8 @@ export interface ChatDeposit {
   min: string | null
   /** The NEAR account NEAR Intents credits, for its address. */
   account: string | null
+  /** When NEAR Intents' address closes, in ms since the epoch: nothing should be sent after. Null for the wallet's own. */
+  closes: number | null
   /** Why it's the wallet's own address, for that kind. */
   why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable' | null
   progress: DepositProgress

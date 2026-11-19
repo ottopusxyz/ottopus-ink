@@ -40,8 +40,8 @@ export interface DepositJournal {
 }
 
 export interface DepositWatcherDeps {
-  /** Where 1Click's deposit at an address stands, or null when it can't be read. */
-  status: (depositAddress: string) => Promise<SwapReport | null>
+  /** Where 1Click's deposit at an address, with its memo where it has one, stands, or null when it can't be read. */
+  status: (depositAddress: string, memo: string | null) => Promise<SwapReport | null>
   /** An address's balance of a token on a Zerion chain; zero when it holds none, null when it can't be read. */
   balance: (address: string, zerion: string, symbol: string) => Promise<{ raw: bigint; decimals: number } | null>
   /** Told each time a deposit moves on, with where it stood before. */
@@ -51,7 +51,9 @@ export interface DepositWatcherDeps {
   wait?: (ms: number) => Promise<void>
 }
 
-const ACTIVE: ReadonlySet<DepositProgress['stage']> = new Set(['watching', 'seen'])
+const ACTIVE: ReadonlySet<DepositProgress['stage']> = new Set(['watching', 'seen', 'short'])
+/** Past an address's close, how long Ink waits for 1Click to say whether it refunded a deposit under the minimum. */
+export const REFUND_WAIT_MS = 2 * 60 * 60_000
 
 /** 1Click's word for a deposit, as the card says it. Nothing seen yet keeps the card watching. */
 const STAGES: Record<SwapStage, DepositProgress['stage'] | null> = {
@@ -59,9 +61,10 @@ const STAGES: Record<SwapStage, DepositProgress['stage'] | null> = {
   KNOWN_DEPOSIT_TX: 'seen',
   PROCESSING: 'seen',
   // Under the minimum: 1Click waits for the rest until the address closes, then refunds.
-  INCOMPLETE_DEPOSIT: 'seen',
+  INCOMPLETE_DEPOSIT: 'short',
   SUCCESS: 'credited',
-  REFUNDED: 'failed',
+  // Refunds go into the Intents balance, as the address was asked for.
+  REFUNDED: 'refunded',
   FAILED: 'failed',
 }
 
@@ -100,13 +103,15 @@ export function createDepositWatcher({ status, balance, onUpdate, journal, now =
   async function look(entry: WatchEntry): Promise<void> {
     const { deposit } = entry
     if (deposit.kind === 'intents') {
-      const report = await status(deposit.address).catch(() => null)
+      const report = await status(deposit.address, deposit.memo).catch(() => null)
       const stage = report ? STAGES[report.stage] : null
       if (!report || !stage) return
       const tx = report.depositTx ?? deposit.progress.tx
       const page = tx ? txPage(deposit.chain, tx) : null
-      // Seen, it's followed for another day, however long the wait before.
-      const until = deposit.progress.stage === 'watching' ? now() + WATCH_MS : deposit.progress.until
+      // Seen, it's followed for another day, however long the wait before. Short, until 1Click
+      // credits the rest or refunds it, which it does once the address closes.
+      const seenUntil = deposit.progress.stage === 'watching' ? now() + WATCH_MS : deposit.progress.until
+      const until = stage === 'short' && deposit.closes !== null ? Math.max(seenUntil, deposit.closes + REFUND_WAIT_MS) : seenUntil
       move(entry, { stage, got: report.deposited ? `${report.deposited} ${deposit.asset}` : deposit.progress.got, tx, link: page?.url ?? null, until })
       return
     }

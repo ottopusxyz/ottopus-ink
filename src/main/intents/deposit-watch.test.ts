@@ -52,7 +52,7 @@ function setup({ statuses = [] as (SwapReport | null)[], balances = [] as bigint
     wait: async (ms) => {
       clock += ms
       // Lets the test see each step, and bounds a loop that never settles.
-      if (clock - NOW > 3 * WATCH_MS) throw new Error('looped past three days')
+      if (clock - NOW > 4 * WATCH_MS) throw new Error('looped past four days')
     },
   })
   return { watcher, updates, looks: () => looks }
@@ -76,13 +76,15 @@ describe('watching NEAR Intents’ deposit address', () => {
   })
 
   it('says a deposit under the minimum waits for the rest, and follows it past the address’s close to its refund', async () => {
-    const statuses = [report('PENDING_DEPOSIT'), report('INCOMPLETE_DEPOSIT', '0.05', TX_NEW)]
-    const { watcher, updates } = setup({ statuses })
+    const { watcher, updates } = setup({ statuses: [report('PENDING_DEPOSIT'), report('INCOMPLETE_DEPOSIT', '0.05', TX_NEW)] })
     watcher.watch(INTENTS)
     await flush()
-    expect(updates.map(({ stage, got }) => [stage, got])).toEqual([['short', '0.05 USDC']])
-    // Still watched a day on, since 1Click only refunds once the address closes.
-    expect(watcher.get('d1')?.deposit.progress).toMatchObject({ stage: 'short', until: CLOSES + REFUND_WAIT_MS })
+    // Watched past the day, until a while after the address closes, since 1Click only refunds then.
+    expect(updates.map(({ stage, got }) => [stage, got])).toEqual([
+      ['short', '0.05 USDC'],
+      ['stopped', '0.05 USDC'],
+    ])
+    expect(watcher.get('d1')?.deposit.progress).toMatchObject({ stage: 'stopped', until: CLOSES + REFUND_WAIT_MS })
   })
 
   it('says a refund went into the Intents balance, apart from a deposit that failed', async () => {

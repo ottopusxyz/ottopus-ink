@@ -16,8 +16,10 @@ const LISTED: (Omit<IntentsDepositChain, 'tokens'> & { tokens: { symbol: string;
   { key: 'xrp:mainnet', name: 'XRP Ledger', mark: 'xrp', tokens: [{ symbol: 'XRP', min: '2' }] },
   { key: 'stellar:mainnet', name: 'Stellar', mark: null, tokens: [{ symbol: 'XLM', min: '0.1' }] },
 ]
-/** Each token with the bridge's id for it, as the bridge lists them. */
-const BRIDGE: IntentsDepositChain[] = LISTED.map((chain) => ({ ...chain, tokens: chain.tokens.map((token) => ({ ...token, ids: [`${chain.key}:${token.symbol.toLowerCase()}`] })) }))
+/** Each token with an id for it, as NEAR Intents' list gives them. */
+const BRIDGE: IntentsDepositChain[] = LISTED.map((chain) => ({ ...chain, tokens: chain.tokens.map((token) => ({ ...token, ids: [`${chain.key}:${token.symbol.toLowerCase()}`], decimals: 6 })) }))
+const UNTIL = Date.parse('2026-11-24T06:45:25.000Z')
+/** The address 1Click gives on each chain. Its minimum is the token's, as each address says. */
 const DEPOSITS: Record<string, { address: string; memo: string | null }> = {
   'eth:8453': { address: '0xbridgebase', memo: null },
   'btc:mainnet': { address: 'bc1qbridge', memo: null },
@@ -31,7 +33,13 @@ const deps = (overrides: Partial<Parameters<typeof pickReceive>[1]> = {}) => {
     deps: {
       bridge: BRIDGE,
       accounts: ACCOUNTS,
-      depositAddress: async (account: string, key: string) => (asked.push(`${account} ${key}`), DEPOSITS[key] ?? null),
+      depositAddress: async (account: string, token: { id: string; decimals: number }) => {
+        asked.push(`${account} ${token.id}`)
+        const key = token.id.split(':').slice(0, 2).join(':')
+        const listed = LISTED.find((chain) => chain.key === key)?.tokens.find((each) => `${key}:${each.symbol.toLowerCase()}` === token.id)
+        const deposit = DEPOSITS[key]
+        return deposit && listed ? { ...deposit, min: listed.min, until: UNTIL } : null
+      },
       ...overrides,
     },
   }
@@ -50,7 +58,7 @@ describe('the chains to receive on', () => {
     expect(chains.find((chain) => chain.id === 'dogecoin')).toBeUndefined()
   })
 
-  it('still offers the wallet’s own chains when the bridge can’t be read', () => {
+  it('still offers the wallet’s own chains when 1Click can’t be read', () => {
     expect(receiveChains(null).every((chain) => chain.own !== null && !chain.intents)).toBe(true)
   })
 })
@@ -75,10 +83,16 @@ describe('searching a chain’s tokens', () => {
 describe('where to receive, NEAR Intents first', () => {
   it('gives NEAR Intents’ deposit address when it takes the token, credited to the wallet’s NEAR account', async () => {
     const { deps: options, asked } = deps()
-    expect(await pickReceive({ chain: 'base', asset: 'usdc', amount: null }, options)).toEqual({ ok: true, kind: 'intents', chain: 'base', chainName: 'Base', asset: 'USDC', address: '0xbridgebase', memo: null, min: '1', account: NEAR, routes: { own: true, intents: true } })
-    expect(asked).toEqual([`${NEAR} eth:8453`])
+    expect(await pickReceive({ chain: 'base', asset: 'usdc', amount: null }, options)).toEqual({ ok: true, kind: 'intents', chain: 'base', chainName: 'Base', asset: 'USDC', address: '0xbridgebase', memo: null, min: '1', account: NEAR, until: UNTIL, routes: { own: true, intents: true } })
+    expect(asked).toEqual([`${NEAR} eth:8453:usdc`])
     expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: '25' }, options)).toMatchObject({ kind: 'intents' })
     expect(await pickReceive({ chain: 'stellar', asset: 'XLM', amount: null }, options)).toMatchObject({ kind: 'intents', memo: '177237517' })
+  })
+
+  it('takes the minimum from the address when NEAR Intents’ list has none', async () => {
+    const unknown = BRIDGE.map((chain) => ({ ...chain, tokens: chain.tokens.map((token) => ({ ...token, min: null })) }))
+    expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: null }, deps({ bridge: unknown }).deps)).toMatchObject({ kind: 'intents', min: '1' })
+    expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: '0.5' }, deps({ bridge: unknown }).deps)).toMatchObject({ kind: 'own', why: 'below-minimum', min: '1' })
   })
 
   it('gives the wallet’s own address when the amount is under NEAR Intents’ minimum', async () => {
@@ -86,11 +100,11 @@ describe('where to receive, NEAR Intents first', () => {
     expect(await pickReceive({ chain: 'bitcoin', asset: 'BTC', amount: '0.00001' }, deps().deps)).toMatchObject({ kind: 'own', address: 'bc1qown', why: 'below-minimum' })
   })
 
-  it('gives the wallet’s own address for a token NEAR Intents doesn’t take there, or when the bridge won’t answer', async () => {
+  it('gives the wallet’s own address for a token NEAR Intents doesn’t take there, or when 1Click won’t answer', async () => {
     expect(await pickReceive({ chain: 'base', asset: 'DEGEN', amount: null }, deps().deps)).toMatchObject({ kind: 'own', address: EVM, why: 'not-in-intents', min: null })
     expect(await pickReceive({ chain: 'ethereum', asset: 'ETH', amount: null }, deps().deps)).toMatchObject({ kind: 'own', address: EVM, why: 'not-in-intents' })
     expect(await pickReceive({ chain: 'base', asset: 'USDC', amount: null }, deps({ depositAddress: async () => null }).deps)).toMatchObject({ kind: 'own', why: 'intents-unavailable' })
-    // Without the bridge's list Ink can't tell what NEAR Intents takes, so it says it couldn't reach it.
+    // Without 1Click's list Ink can't tell what NEAR Intents takes, so it says it couldn't reach it.
     expect(await pickReceive({ chain: 'solana', asset: 'USDC', amount: null }, deps({ bridge: null, accounts: [...ACCOUNTS, { chain: 'solana', path: "m/44'/501'/0'/0'", address: 'SoLown' }] }).deps)).toMatchObject({ kind: 'own', why: 'intents-unavailable', address: 'SoLown' })
     expect(await pickReceive({ chain: 'xrp', asset: 'XRP', amount: null }, deps({ bridge: null }).deps)).toMatchObject({ ok: false, reason: 'unavailable', min: null })
   })

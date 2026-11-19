@@ -70,6 +70,7 @@ export const IPC = {
   searchReceiveTokens: 'wallet:search-receive-tokens',
   receiveAddress: 'wallet:receive-address',
   copyReceive: 'wallet:copy-receive',
+  copyDeposit: 'wallet:copy-deposit',
   watchDepositAgain: 'wallet:watch-deposit-again',
   deleteSavedChat: 'chat:delete-saved',
   clearChatHistory: 'chat:clear-history',
@@ -155,14 +156,17 @@ export interface InkNote {
 
 /** A chain the NEAR Intents bridge takes deposits on, with each token and the least of it the bridge credits. */
 export interface IntentsDepositChain {
-  /** The bridge's name for it: `eth:8453`. */
+  /** Ink's name for it: `eth:8453`. */
   key: string
   /** As people know it: "Base". */
   name: string
   /** Ink's mark for it, when it has one: `base`. */
   mark: string | null
-  /** `ids`: the bridge's ids for the token, `eth:8453:0x8335…`, which its deposits name. */
-  tokens: { symbol: string; min: string; ids: string[] }[]
+  /**
+   * `ids`: 1Click's ids for the token there, the first one used for deposits. `min`: the
+   * least NEAR Intents credits, once an address for it has said, or null.
+   */
+  tokens: { symbol: string; min: string | null; ids: string[]; decimals: number }[]
 }
 
 /** A token to receive on a chain: whether NEAR Intents takes it there, and the least it credits. */
@@ -211,7 +215,21 @@ export interface ReceiveRoutes {
 }
 
 export type ReceiveAnswer =
-  | { ok: true; kind: 'intents'; chain: string; chainName: string; asset: string; address: string; memo: string | null; min: string; account: string; routes?: ReceiveRoutes }
+  | {
+      ok: true
+      kind: 'intents'
+      chain: string
+      chainName: string
+      asset: string
+      address: string
+      memo: string | null
+      /** The least NEAR Intents credits, or null when it takes any amount. */
+      min: string | null
+      account: string
+      /** When the address closes, in ms since the epoch: it's 1Click's, open for a few days, and nothing should be sent after. */
+      until: number
+      routes?: ReceiveRoutes
+    }
   | { ok: true; kind: 'own'; chain: string; chainName: string; asset: string; address: string; path: string; why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable' | 'chosen'; min: string | null; routes?: ReceiveRoutes }
   | { ok: false; reason: 'locked' | 'unavailable' | 'unknown-chain' | 'bad-amount' | 'below-minimum' | 'not-supported'; min?: string | null; routes?: ReceiveRoutes }
 
@@ -221,7 +239,11 @@ export type ReceiveAnswer =
  * Ink can't watch at all, on a chain it reads no balances for.
  */
 export interface DepositProgress {
-  stage: 'watching' | 'seen' | 'credited' | 'failed' | 'stopped' | 'unwatched'
+  /**
+   * `short`: what arrived is under NEAR Intents' minimum, and it waits for the rest until
+   * the address closes. `refunded`: it went back, into the Intents balance.
+   */
+  stage: 'watching' | 'seen' | 'short' | 'credited' | 'refunded' | 'failed' | 'stopped' | 'unwatched'
   /** What arrived, once seen: "25 USDC". */
   got: string | null
   /** The deposit's transaction on its chain, once seen. */
@@ -257,6 +279,8 @@ export interface ChatDeposit {
   min: string | null
   /** The NEAR account NEAR Intents credits, for its address. */
   account: string | null
+  /** When NEAR Intents' address closes, in ms since the epoch: nothing should be sent after. Null for the wallet's own. */
+  closes: number | null
   /** Why it's the wallet's own address, for that kind. */
   why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable' | null
   progress: DepositProgress
@@ -445,8 +469,13 @@ export interface InkBridge {
   searchReceiveTokens(chain: string, query: string): Promise<ReceiveToken[]>
   /** Where to receive a token, NEAR Intents first. Only while Ink is unlocked. */
   receiveAddress(ask: { chain: string; asset: string; amount: string | null; route?: ReceiveRoute }): Promise<ReceiveAnswer>
-  /** Copies that address or its memo, as main worked it out, never text from the page. */
-  copyReceive(ask: { chain: string; asset: string; amount: string | null; route?: ReceiveRoute }, part: 'address' | 'memo'): Promise<{ ok: boolean }>
+  /**
+   * Copies that address or its memo, as main worked it out, never text from the page. Not
+   * when main's address or memo is no longer the one shown: `changed` says to ask again.
+   */
+  copyReceive(ask: { chain: string; asset: string; amount: string | null; route?: ReceiveRoute }, part: 'address' | 'memo', shown: { address: string; memo: string | null }): Promise<{ ok: boolean; changed: boolean }>
+  /** Copies a deposit card's own address or memo, as main kept it. Not once NEAR Intents' address has closed. */
+  copyDeposit(id: string, part: 'address' | 'memo'): Promise<{ ok: boolean }>
   /** Watches a deposit card's address for another day, once Ink stopped. */
   watchDepositAgain(id: string): Promise<{ ok: boolean }>
   /** Chats Ink kept from before, newest first. Empty while Ink is locked. */

@@ -17,7 +17,8 @@ import { solanaTransferOfStep } from '../shared/solana/transaction'
 import { createEvmRpc, type EvmRpc } from './evm/rpc'
 import { depositEnding } from './intents/deposit-note'
 import { createDepositWatcher, type DepositJournal } from './intents/deposit-watch'
-import { depositAddress, depositChains, recentDeposits } from './intents/deposits'
+import { createAddressKeeper } from './intents/address-keeper'
+import { depositAddress, depositChains } from './intents/deposits'
 import { pickReceive, receiveChainOf, receiveChains, searchTokens, type ReceiveAsk } from './intents/receive'
 import { lastGood } from './last-good'
 import { CHAT_ID, type SavedChat } from '../shared/history'
@@ -404,22 +405,32 @@ function getChatHistory(): ChatHistory {
 }
 
 /**
- * The bridge's chains and tokens change rarely, so Receive reuses them for a while, and
- * keeps the last good copy when the bridge is slow or down.
+ * The chains and tokens NEAR Intents takes change rarely, so Receive reuses them for a
+ * while, and keeps the last good copy when 1Click is slow or down.
  */
-const listedDepositChains: () => Promise<IntentsDepositChain[] | null> = lastGood(() => depositChains(), { maxAgeMs: 10 * 60_000 })
+const fetchedDepositChains: () => Promise<IntentsDepositChain[] | null> = lastGood(() => depositChains(), { maxAgeMs: 10 * 60_000 })
+
+/** The least NEAR Intents credits of each token, by 1Click id, as its deposit addresses said. */
+const depositMinimums = new Map<string, string | null>()
+
+/** NEAR Intents' chains and tokens, with each minimum an address has told Ink so far. 1Click's list has none. */
+async function listedDepositChains(): Promise<IntentsDepositChain[] | null> {
+  const chains = await fetchedDepositChains()
+  return chains?.map((chain) => ({ ...chain, tokens: chain.tokens.map((token) => (token.ids[0] && depositMinimums.has(token.ids[0]) ? { ...token, min: depositMinimums.get(token.ids[0]) ?? null } : token)) })) ?? null
+}
 
 /** Token icons fetched for the page's searches, kept for the session. */
 const icons = tokenIcons()
-/** Deposit addresses are fixed for an account, so each is asked for once a run. */
-const depositAddresses = new Map<string, { address: string; memo: string | null }>()
-
-async function keptDepositAddress(account: string, key: string): Promise<{ address: string; memo: string | null } | null> {
-  const id = `${account} ${key}`
-  const kept = depositAddresses.get(id) ?? (await depositAddress(account, key))
-  if (kept) depositAddresses.set(id, kept)
-  return kept
-}
+/** NEAR Intents deposit addresses, each kept while it's open and nothing was sent to it, or a deposit there waits for the rest. */
+const depositAddressKeeper = createAddressKeeper({
+  ask: async (account, token) => {
+    const fresh = await depositAddress(account, token)
+    if (fresh) depositMinimums.set(token.id, fresh.min)
+    return fresh
+  },
+  status: (address, memo) => swapStatus(address, { memo }),
+})
+const keptDepositAddress = (account: string, token: { id: string; decimals: number }) => depositAddressKeeper.address(account, token)
 
 /** A receive the page or the agent asked about, checked: a chain, a token, and an amount or none. */
 function receiveAskOf(value: unknown): ReceiveAsk | null {
@@ -464,7 +475,7 @@ const depositListeners = new Map<string, DepositListen>()
  * gone, what happens is kept in its history and sent to the page for the kept chat.
  */
 const depositWatcher = createDepositWatcher({
-  recent: (account, bridge) => recentDeposits(account, bridge),
+  status: (address, memo) => swapStatus(address, { memo }),
   balance: async (address, zerion, symbol) => {
     const access = zerionAccess()
     if (!access) return null
@@ -473,6 +484,9 @@ const depositWatcher = createDepositWatcher({
   },
   onUpdate: (entry, before) => {
     const { id, progress } = entry.deposit
+    // A deposit there is under way or done, so Receive and the agent get a new address next
+    // time. Not one under the minimum: the rest goes to the same address.
+    if (entry.deposit.kind === 'intents' && progress.stage !== 'watching' && progress.stage !== 'stopped' && progress.stage !== 'short') depositAddressKeeper.forget(entry.deposit.address, entry.deposit.memo)
     const ending = depositEnding(entry.deposit)
     // Once, as it reaches its end, not again if a detail changes after.
     if (ending && before !== progress.stage) notifyEnding(ending.note)
@@ -528,6 +542,7 @@ async function showDeposit(chatId: string, owner: string, ask: ReceiveAsk, answe
       memo: intents ? answer.memo : null,
       min: answer.min,
       account: intents ? answer.account : null,
+      closes: intents ? answer.until : null,
       // The agent's deposits are always Ink's pick, never a route the person chose on the Receive page.
       why: intents || answer.why === 'chosen' ? null : answer.why,
     },
@@ -994,14 +1009,31 @@ function registerIpc(): void {
     return ownReceive(ask)
   })
 
-  ipcMain.handle(IPC.copyReceive, async (event, ask: unknown, part: unknown) => {
+  ipcMain.handle(IPC.copyReceive, async (event, ask: unknown, part: unknown, shown: unknown) => {
     assertAppFrame(event)
     // Only for the window in front, and only what main worked out itself.
     const focused = () => BrowserWindow.fromWebContents(event.sender)?.isFocused() === true
-    if (!focused() || (part !== 'address' && part !== 'memo')) return { ok: false }
+    const seen = typeof shown === 'object' && shown !== null ? (shown as Record<string, unknown>) : null
+    if (!focused() || (part !== 'address' && part !== 'memo') || !seen) return { ok: false, changed: false }
     const found = await ownReceive(ask)
+    // A NEAR Intents address can be replaced at any time, and Stellar's is shared and told
+    // apart by its memo, so nothing is copied but the address and memo on screen.
+    if (found.ok && (found.address !== seen.address || (found.kind === 'intents' ? found.memo : null) !== (seen.memo ?? null))) return { ok: false, changed: true }
     const text = !found.ok ? null : part === 'memo' ? (found.kind === 'intents' ? found.memo : null) : found.address
-    if (!text || !focused()) return { ok: false }
+    if (!text || !focused()) return { ok: false, changed: false }
+    clipboard.writeText(text)
+    return { ok: true, changed: false }
+  })
+
+  ipcMain.handle(IPC.copyDeposit, (event, id: unknown, part: unknown) => {
+    assertAppFrame(event)
+    // The card's own address, as main kept it: never a newer one Receive would give, nor text from the page.
+    const focused = BrowserWindow.fromWebContents(event.sender)?.isFocused() === true
+    if (!focused || vault?.isUnlocked() !== true || typeof id !== 'string' || id.length > 64 || (part !== 'address' && part !== 'memo')) return { ok: false }
+    const deposit = depositWatcher.get(id)?.deposit
+    if (!deposit || (deposit.kind === 'intents' && deposit.closes !== null && Date.now() >= deposit.closes)) return { ok: false }
+    const text = part === 'memo' ? deposit.memo : deposit.address
+    if (!text) return { ok: false }
     clipboard.writeText(text)
     return { ok: true }
   })

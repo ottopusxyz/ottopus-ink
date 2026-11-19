@@ -103,7 +103,7 @@ describe('picking swaps up after a restart', () => {
     const tracker = createSwapTracker({
       journal,
       submit: async () => null,
-      status: async (address) => (asked.push(address), { stage: 'SUCCESS', amountOut: 7_000_000n, payoutTx: null, refunded: null }),
+      status: async (address) => (asked.push(address), { stage: 'SUCCESS', amountOut: 7_000_000n, payoutTx: null, refunded: null, deposited: null, depositTx: null }),
       onUpdate: () => {},
       now: () => NOW,
       wait: async () => {},

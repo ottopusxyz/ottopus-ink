@@ -7,6 +7,7 @@ import { Sea } from '@/components/motion/sea'
 import { CheckIcon, CloseIcon, CopyIcon, SearchIcon } from '@/components/shell/icons'
 import { ChainLogo, Callout, Input, TokenLogo, Tooltip } from '@/components/ui'
 import { cn } from '@/lib/cn'
+import { closesAt } from '@/lib/deposit-card'
 import { isTokenSymbol } from '@/lib/logos'
 import { receiveCacheOfApp } from '@/lib/receive-cache'
 import { addressParts } from '@/lib/wallet'
@@ -21,6 +22,16 @@ const SHOWN_CHAINS = 6
 const START: Record<AccountChain, string> = { near: 'near', evm: 'ethereum', solana: 'solana', bitcoin: 'bitcoin', tron: 'tron', sui: 'sui', aptos: 'aptos' }
 
 type Chains = { kind: 'loading' } | { kind: 'ready'; chains: ReceiveChain[] } | { kind: 'failed' }
+
+/** The clock, a minute at a time, so an address shown past its close is put away. */
+function useMinute(): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  return now
+}
 
 /** A minimum worth showing: one too small to matter, such as wNEAR's one yoctoNEAR, reads as none. */
 function minOf(min: string | null): string | null {
@@ -471,7 +482,7 @@ function RouteSwitch({ chain, routes, value, onChange }: { chain: ReceiveChain; 
 /** The address main picked, with whose it is, its QR code, any memo, and what to send. */
 function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asset: string; icon: string | null; amount: string | null }) {
   const [state, setState] = useState<Answer>({ kind: 'loading' })
-  const [copied, setCopied] = useState<'none' | 'address' | 'memo' | 'failed'>('none')
+  const [copied, setCopied] = useState<'none' | 'address' | 'memo' | 'failed' | 'changed'>('none')
   const timer = useRef<number | undefined>(undefined)
   // Ink picks until the person switches; a new chain or token goes back to Ink's pick.
   const [route, setRoute] = useState<ReceiveRoute>('auto')
@@ -483,6 +494,9 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
   }
   const ask = useMemo(() => ({ chain: chain.id, asset, amount, route }), [chain.id, asset, amount, route])
   const key = `${ask.chain} ${ask.asset} ${ask.amount ?? ''} ${ask.route}`
+  // Bumped to ask main again: when the address shown closed, or main has a newer one.
+  const [asked, setAsked] = useState(0)
+  const now = useMinute()
 
   useEffect(() => {
     let live = true
@@ -497,19 +511,31 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
       live = false
       window.clearTimeout(wait)
     }
-  }, [ask, key, chain])
+  }, [ask, key, chain, asked])
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
-  const copy = async (part: 'address' | 'memo') => {
-    const result = await window.ink.copyReceive(ask, part).catch(() => ({ ok: false }))
-    setCopied(result.ok ? part : 'failed')
+  // A NEAR Intents address shown past its close is put away, and a new one asked for.
+  const shownUntil = state.kind === 'ready' && state.answer.ok && state.answer.kind === 'intents' ? state.answer.until : null
+  const closed = shownUntil !== null && now >= shownUntil
+  const [closedAsked, setClosedAsked] = useState<number | null>(null)
+  if (closed && closedAsked !== shownUntil) {
+    setClosedAsked(shownUntil)
+    setAsked((count) => count + 1)
+  }
+
+  const copy = async (part: 'address' | 'memo', shown: { address: string; memo: string | null }) => {
+    const result = await window.ink.copyReceive(ask, part, shown).catch(() => ({ ok: false, changed: false }))
+    setCopied(result.ok ? part : result.changed ? 'changed' : 'failed')
+    if (result.changed) setAsked((count) => count + 1)
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setCopied('none'), 2000)
+    timer.current = window.setTimeout(() => setCopied('none'), result.changed ? 4000 : 2000)
   }
 
   if (state.kind === 'loading') return <CardSkeleton />
   const { answer } = state
-  // The last answer stays up, dimmed, until the one for what's picked now arrives, so the card doesn't jump.
+  // The last answer stays up, dimmed, until the one for what's picked now arrives, so the card
+  // doesn't jump. A closed address is never left up: it waits behind the skeleton for its new one.
+  if (closed) return <CardSkeleton />
   const stale = state.for !== key
   const updating = stale ? (
     <span className="ink-address-card__updating">
@@ -582,13 +608,20 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
       </div>
       {switcher}
       <div className={cn('flex flex-col gap-[14px] transition-opacity', stale && 'opacity-50')}>
-        <div className="ink-qr-frame">
-          <QrCode value={answer.address} label={`QR code for the address to receive ${answer.asset} on ${answer.chainName}`} size={216} />
-          <span className="ink-qr-frame__mark">
-            {/* The chain the shown address is on, which may not be the one just picked. */}
-            <ChainMark chain={state.chain} size="lg" />
-          </span>
-        </div>
+        {/* A QR code carries the address alone, and a deposit sent without its memo isn't credited. */}
+        {answer.kind === 'intents' && answer.memo ? (
+          <Callout severity="caution" title="No QR code for this one" compact>
+            A QR code would leave out the memo, and a deposit without it isn’t credited. Copy the address and the memo below, and send both.
+          </Callout>
+        ) : (
+          <div className="ink-qr-frame">
+            <QrCode value={answer.address} label={`QR code for the address to receive ${answer.asset} on ${answer.chainName}`} size={216} />
+            <span className="ink-qr-frame__mark">
+              {/* The chain the shown address is on, which may not be the one just picked. */}
+              <ChainMark chain={state.chain} size="lg" />
+            </span>
+          </div>
+        )}
 
         <div className="flex flex-col gap-1.5">
           <span className="ink-eyebrow">{intents ? 'NEAR Intents deposit address' : `Your ${answer.chainName} address`}</span>
@@ -612,15 +645,21 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
           <strong>
             Send only {answer.asset} on {answer.chainName} here{answer.kind === 'intents' && minOf(answer.min) ? `, at least ${answer.min}` : ''}
           </strong>
-          {answer.kind === 'intents' ? <span>{minOf(answer.min) ? 'Less isn’t credited. ' : ''}The address isn’t from your recovery phrase; what arrives shows under In Intents in Portfolio.</span> : ownNote ? <span>{ownNote}</span> : null}
+          {answer.kind === 'intents' ? (
+            <span>
+              {minOf(answer.min) ? 'Less isn’t credited. ' : ''}Open until {closesAt(answer.until)}: send nothing after that, and come back here for a new address. It isn’t from your recovery phrase; what arrives shows under In Intents in Portfolio.
+            </span>
+          ) : ownNote ? (
+            <span>{ownNote}</span>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="ink-copy flex-1" disabled={stale} onClick={() => void copy('address')} aria-label={`Copy the address to receive ${answer.asset} on ${answer.chainName}`}>
+          <button type="button" className="ink-copy flex-1" disabled={stale} onClick={() => void copy('address', { address: answer.address, memo: answer.kind === 'intents' ? answer.memo : null })} aria-label={`Copy the address to receive ${answer.asset} on ${answer.chainName}`}>
             {copied === 'address' ? <CheckIcon /> : <CopyIcon />}
-            {copied === 'address' ? 'Copied' : copied === 'failed' ? 'Couldn’t copy' : 'Copy address'}
+            {copied === 'address' ? 'Copied' : copied === 'changed' ? 'New address: check it, then copy' : copied === 'failed' ? 'Couldn’t copy' : 'Copy address'}
           </button>
           {answer.kind === 'intents' && answer.memo ? (
-            <button type="button" className="ink-copy" disabled={stale} onClick={() => void copy('memo')} aria-label="Copy the memo">
+            <button type="button" className="ink-copy" disabled={stale} onClick={() => void copy('memo', { address: answer.address, memo: answer.memo })} aria-label="Copy the memo">
               {copied === 'memo' ? <CheckIcon /> : <CopyIcon />}
               {copied === 'memo' ? 'Copied' : 'Copy memo'}
             </button>

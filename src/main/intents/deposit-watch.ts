@@ -1,11 +1,11 @@
 import type { ChatDeposit, DepositProgress } from '../../shared/ipc'
 import { formatUnits } from '../../shared/token-text'
-import type { BridgeDeposit } from './deposits'
+import type { SwapReport, SwapStage } from '../routes/one-click'
 import { txPage } from './explorers'
 
 /** How long Ink watches an address for a deposit, from when it's shown or seen. */
 export const WATCH_MS = 24 * 60 * 60_000
-/** The bridge is asked this often: deposits take from seconds to an hour. */
+/** 1Click is asked this often: deposits take from seconds to an hour. */
 export const BRIDGE_POLL_MS = 15_000
 /** A balance is read less often, since each read is a Zerion call. */
 export const BALANCE_POLL_MS = 60_000
@@ -17,13 +17,16 @@ export interface WatchEntry {
   owner: string
   /** The chat's kept history, so what happens after a restart is still recorded there. */
   historyId: string | null
-  /** The bridge's name for the chain, for NEAR Intents' address. */
+  /** Ink's name for the chain in NEAR Intents' deposit list, for its address. */
   bridge: string | null
-  /** The bridge's ids for the token there. */
+  /** 1Click's ids for the token there. */
   assetIds: string[]
   /** Zerion's name for the chain, for the wallet's own address. Null where Ink reads no balances. */
   zerion: string | null
-  /** The deposits the bridge listed before the card, by transaction. Null until first read. */
+  /**
+   * The deposits the old bridge listed before the card, by transaction. Unused since each
+   * card's NEAR Intents address is its own; kept so saved watches still read.
+   */
   before: string[] | null
   /** The address's balance of the token before the card, in its smallest unit. Null until first read. */
   baseline: string | null
@@ -37,8 +40,8 @@ export interface DepositJournal {
 }
 
 export interface DepositWatcherDeps {
-  /** The bridge's recent deposits to an account's address on a chain. */
-  recent: (account: string, bridge: string) => Promise<BridgeDeposit[] | null>
+  /** Where 1Click's deposit at an address, with its memo where it has one, stands, or null when it can't be read. */
+  status: (depositAddress: string, memo: string | null) => Promise<SwapReport | null>
   /** An address's balance of a token on a Zerion chain; zero when it holds none, null when it can't be read. */
   balance: (address: string, zerion: string, symbol: string) => Promise<{ raw: bigint; decimals: number } | null>
   /** Told each time a deposit moves on, with where it stood before. */
@@ -48,21 +51,33 @@ export interface DepositWatcherDeps {
   wait?: (ms: number) => Promise<void>
 }
 
-const ACTIVE: ReadonlySet<DepositProgress['stage']> = new Set(['watching', 'seen'])
+const ACTIVE: ReadonlySet<DepositProgress['stage']> = new Set(['watching', 'seen', 'short'])
+/** Past an address's close, how long Ink waits for 1Click to say whether it refunded a deposit under the minimum. */
+export const REFUND_WAIT_MS = 2 * 60 * 60_000
 
-const STAGES: Record<BridgeDeposit['status'], DepositProgress['stage']> = { PENDING: 'seen', CREDITED: 'credited', COMPLETED: 'credited', FAILED: 'failed' }
+/** 1Click's word for a deposit, as the card says it. Nothing seen yet keeps the card watching. */
+const STAGES: Record<SwapStage, DepositProgress['stage'] | null> = {
+  PENDING_DEPOSIT: null,
+  KNOWN_DEPOSIT_TX: 'seen',
+  PROCESSING: 'seen',
+  // Under the minimum: 1Click waits for the rest until the address closes, then refunds.
+  INCOMPLETE_DEPOSIT: 'short',
+  SUCCESS: 'credited',
+  // Refunds go into the Intents balance, as the address was asked for.
+  REFUNDED: 'refunded',
+  FAILED: 'failed',
+}
 
 /** What to watch for, from what main worked out for the card. */
 export type WatchAsk = Omit<WatchEntry, 'before' | 'baseline' | 'startedAt' | 'deposit'> & { deposit: Omit<ChatDeposit, 'progress'> }
 
 /**
  * Watches the addresses deposit cards show, until something arrives or a day passes.
- * NEAR Intents' address: the bridge's recent deposits, ignoring the ones it listed
- * before the card, and following the first new one for the token until it's credited
- * or not. The wallet's own address: its balance of the token, until it goes up. With
+ * NEAR Intents' address: 1Click's status for it, since the address is the card's own,
+ * until what arrives is credited or not. The wallet's own address: its balance of the token, until it goes up. With
  * a journal, each is kept across restarts and picked up again by `resume`.
  */
-export function createDepositWatcher({ recent, balance, onUpdate, journal, now = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: DepositWatcherDeps) {
+export function createDepositWatcher({ status, balance, onUpdate, journal, now = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }: DepositWatcherDeps) {
   const entries = new Map<string, WatchEntry>()
   const running = new Set<string>()
 
@@ -84,26 +99,20 @@ export function createDepositWatcher({ recent, balance, onUpdate, journal, now =
     onUpdate(entry, was.stage)
   }
 
-  /** One look at the bridge or the balance. */
+  /** One look at 1Click or the balance. */
   async function look(entry: WatchEntry): Promise<void> {
     const { deposit } = entry
-    if (deposit.kind === 'intents' && deposit.account && entry.bridge) {
-      const listed = await recent(deposit.account, entry.bridge).catch(() => null)
-      if (!listed) return
-      const mine = listed.filter((each) => entry.assetIds.includes(each.assetId))
-      if (entry.before === null) {
-        entry.before = mine.map((each) => each.tx)
-        keep(entry)
-        return
-      }
-      const followed = deposit.progress.tx
-      const found = followed ? mine.find((each) => each.tx === followed) : mine.find((each) => !entry.before?.includes(each.tx))
-      if (!found) return
-      const stage = STAGES[found.status]
-      const page = txPage(deposit.chain, found.tx)
-      // Seen, it's followed for another day, however long the wait before.
-      const until = deposit.progress.stage === 'watching' ? now() + WATCH_MS : deposit.progress.until
-      move(entry, { stage, got: `${formatUnits(found.amount, found.decimals)} ${deposit.asset}`, tx: found.tx, link: page?.url ?? null, until })
+    if (deposit.kind === 'intents') {
+      const report = await status(deposit.address, deposit.memo).catch(() => null)
+      const stage = report ? STAGES[report.stage] : null
+      if (!report || !stage) return
+      const tx = report.depositTx ?? deposit.progress.tx
+      const page = tx ? txPage(deposit.chain, tx) : null
+      // Seen, it's followed for another day, however long the wait before. Short, until 1Click
+      // credits the rest or refunds it, which it does once the address closes.
+      const seenUntil = deposit.progress.stage === 'watching' ? now() + WATCH_MS : deposit.progress.until
+      const until = stage === 'short' && deposit.closes !== null ? Math.max(seenUntil, deposit.closes + REFUND_WAIT_MS) : seenUntil
+      move(entry, { stage, got: report.deposited ? `${report.deposited} ${deposit.asset}` : deposit.progress.got, tx, link: page?.url ?? null, until })
       return
     }
     if (deposit.kind === 'own' && entry.zerion) {
@@ -141,7 +150,7 @@ export function createDepositWatcher({ recent, balance, onUpdate, journal, now =
     }
   }
 
-  const watchable = (ask: WatchAsk) => (ask.deposit.kind === 'intents' ? Boolean(ask.deposit.account && ask.bridge && ask.assetIds.length > 0) : Boolean(ask.zerion))
+  const watchable = (ask: WatchAsk) => (ask.deposit.kind === 'intents' ? Boolean(ask.deposit.address) : Boolean(ask.zerion))
 
   return {
     /**

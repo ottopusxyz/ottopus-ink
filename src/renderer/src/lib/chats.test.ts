@@ -516,6 +516,7 @@ describe('a deposit card in a chat', () => {
     memo: null,
     min: '1',
     account: 'a'.repeat(64),
+    closes: null,
     why: null,
     progress: { stage: 'watching', got: null, tx: null, link: null, until: 1 },
   }

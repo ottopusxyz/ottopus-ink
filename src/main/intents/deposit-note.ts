@@ -2,7 +2,7 @@ import type { ChatDeposit, InkNote } from '../../shared/ipc'
 import { txPage } from './explorers'
 
 /**
- * What Ink says when a deposit it watched lands or isn't credited: a note for the person
+ * What Ink says when a deposit it watched lands, is refunded or isn't credited: a note for the person
  * and the same facts for the agent, every value from what the bridge or the chain said,
  * never from the agent. Null for any other stage, which needs no word.
  */
@@ -21,6 +21,13 @@ export function depositEnding(deposit: ChatDeposit): { note: InkNote; forAgent: 
     return {
       note: { tone: 'ok', title: `${got} arrived`, lines: [`Your ${chainName} balance went up by ${got}.`], links },
       forAgent: `Ink: the deposit landed. The wallet’s own ${chainName} address, ${deposit.address}, now holds ${got} more.`,
+    }
+  }
+  if (progress.stage === 'refunded') {
+    const why = deposit.min ? ` It was likely under its ${deposit.min} ${deposit.asset} minimum.` : ''
+    return {
+      note: { tone: 'info', title: `${got} came back`, lines: [`NEAR Intents didn’t take ${got} sent on ${chainName} and refunded it into your Intents balance.${why}`], links },
+      forAgent: `Ink: NEAR Intents refunded the deposit of ${got} on ${chainName}${progress.tx ? ` (transaction ${progress.tx})` : ''} into the wallet’s NEAR Intents balance${deposit.account ? ` (account ${deposit.account})` : ''}.${why} It can be sent or swapped from there.`,
     }
   }
   if (progress.stage === 'failed') {

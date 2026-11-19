@@ -41,15 +41,17 @@ The phrase gives one account on each chain, at the path most wallets use, so res
 | Sui | `m/44'/784'/0'/0'/0'` | `0x…` | Not yet |
 | Aptos | `m/44'/637'/0'/0'/0'` | `0x…`, until you rotate its key | Not yet |
 
-Addresses are worked out in the signer and are only available while unlocked. Other chains NEAR Intents supports, such as TON and XRP, get no local key: funds for them go to a NEAR Intents deposit address tied to your NEAR account.
+Addresses are worked out in the signer and are only available while unlocked. Other chains NEAR Intents supports, such as TON and XRP, get no local key: funds for them go to a NEAR Intents deposit address that credits your NEAR account.
 
 ## Receiving
 
-Receive asks which chain and which asset, NEAR Intents first. When NEAR Intents takes that token on that chain, Ink shows its deposit address, so what arrives lands in your NEAR Intents balance, ready to pay or swap from anywhere. Otherwise, or when the amount is under its minimum, it shows the wallet's own address on that chain. The page shows that one address with its QR code and a warning to send only that asset on that network.
+Receive asks which chain and which asset, NEAR Intents first. When NEAR Intents takes that token on that chain, Ink shows a deposit address from 1Click, so what arrives lands in your NEAR Intents balance, ready to pay or swap from anywhere. Otherwise, or when the amount is under its minimum, it shows the wallet's own address on that chain. The page shows that one address with its QR code and a warning to send only that asset on that network. An address that needs a memo (Stellar) gets no QR code, since one would carry the address alone.
+
+A NEAR Intents deposit address is 1Click's, for one token, and open for a few days: Ink asks 1Click for any amount of that token on its chain into the same token in your NEAR Intents balance (a `FLEX_INPUT` quote), and anything refunded goes back into that balance. Its minimum comes with the address. It closes at the deadline Ink asks for, three days on, after which 1Click refunds what's unfinished, or at 1Click's own deadline if that's sooner. Ink keeps showing the same address, so the screen and the agent agree, while 1Click shows nothing sent to it. It asks for a new one once less than a day is left or once a deposit there is under way or done. A deposit under the minimum keeps its address until six hours before it closes, the last day too, since the rest tops it up there. Copy copies only the address and memo on screen, and Receive puts an address away once it closes. The screen and the agent say until when it's open. NEAR Intents closed the bridge API Ink used before, which gave one fixed address an account, on 11 November 2026.
 
 Its Copy button has main copy the address the signer gave rather than text from the page, and only while Ink's window is in front. The page still draws the address and its QR code, so compare the first and last characters after you paste.
 
-The agent asks for the same thing with `get_deposit_address`, and the chat shows a deposit card. Ink watches a deposit address until what was sent arrives, and says so in the chat and in a notification when Ink is in the background.
+The agent asks for the same thing with `get_deposit_address`, and the chat shows a deposit card. Ink follows 1Click's status for a deposit address until what was sent arrives or is refunded into the NEAR Intents balance, and says so in the chat and in a notification when Ink is in the background. A deposit under the minimum waits for the rest until the address closes, and the card says so.
 
 ## Chats
 
@@ -104,7 +106,7 @@ The only place a plan is approved. It's a separate, always-on-top window with it
 
 ## Routes and NEAR Intents
 
-Ink picks the route for each plan: a direct transfer when one wallet already holds the token on the right chain, or [NEAR Intents](https://near.org/intents) when the token or chain changes. It talks to NEAR Intents through 1Click (`1click.chaindefuser.com`) for quotes and swaps, and its bridge (`bridge.chaindefuser.com`) for deposit addresses and the tokens it takes. Every answer is checked against what was asked before it's used.
+Ink picks the route for each plan: a direct transfer when one wallet already holds the token on the right chain, or [NEAR Intents](https://near.org/intents) when the token or chain changes. It talks to NEAR Intents through 1Click (`1click.chaindefuser.com`) for the tokens it takes, quotes, swaps and deposit addresses. Every answer is checked against what was asked before it's used.
 
 - **Swaps and bridges:** a swap can be paid from the wallet on NEAR, on an EVM chain or on Solana, or from the NEAR Intents balance. Ink asks 1Click for a binding quote, and the quote's terms and deadline go into the plan's hash. After the deposit lands, Ink follows the swap until it pays out or refunds, across restarts.
 - **Paying an exact amount:** `pay` delivers exactly the amount asked, on the recipient's chain, with one approval. Ink counts what the NEAR Intents balance already holds first, then takes the rest from the largest other balances of that token (or, for a dollar stablecoin, any dollar stablecoin) at the wallet's EVM and Solana addresses, in up to three parts. Each part is an exact-output swap into the NEAR Intents balance. Once they've all landed, Ink pays the recipient in one transfer. A payout waiting on its parts is kept sealed across restarts.

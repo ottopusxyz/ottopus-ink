@@ -8,7 +8,7 @@ import type { DepositJournal, WatchEntry } from './deposit-watch'
 export const DEPOSITS_KEEP = 30
 export const DEPOSITS_MAX_AGE_MS = 7 * 24 * 60 * 60_000
 
-const STAGES = new Set<DepositProgress['stage']>(['watching', 'seen', 'credited', 'failed', 'stopped', 'unwatched'])
+const STAGES = new Set<DepositProgress['stage']>(['watching', 'seen', 'short', 'credited', 'refunded', 'failed', 'stopped', 'unwatched'])
 const WHYS = new Set(['not-in-intents', 'below-minimum', 'intents-unavailable'])
 
 const record = (value: unknown): Record<string, unknown> | null => (typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null)
@@ -28,12 +28,15 @@ export function isProgress(value: unknown): value is DepositProgress {
   )
 }
 
-/** A deposit card, only in the shape main writes. */
+/** A deposit card, only in the shape main writes, or wrote before cards had a close time (given none). */
 export function isDeposit(value: unknown): value is ChatDeposit {
   const deposit = record(value)
   if (!deposit || !isText(deposit.id, 64) || (deposit.kind !== 'intents' && deposit.kind !== 'own')) return false
   if (!['chain', 'chainName', 'asset', 'address'].every((field) => isText(deposit[field]))) return false
   if (!['mark', 'amount', 'memo', 'min', 'account'].every((field) => orNull(deposit[field]))) return false
+  // Kept before cards had a close time: the old bridge's addresses never closed.
+  if (deposit.closes === undefined) deposit.closes = null
+  if (!(deposit.closes === null || (typeof deposit.closes === 'number' && Number.isFinite(deposit.closes)))) return false
   // An icon is a data: URL main made, up to the icon size limit.
   if (!(deposit.icon === null || (typeof deposit.icon === 'string' && deposit.icon.startsWith('data:image/') && deposit.icon.length <= 100_000))) return false
   return (deposit.why === null || WHYS.has(deposit.why as string)) && isProgress(deposit.progress)

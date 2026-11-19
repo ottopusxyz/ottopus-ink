@@ -17,7 +17,8 @@ import { solanaTransferOfStep } from '../shared/solana/transaction'
 import { createEvmRpc, type EvmRpc } from './evm/rpc'
 import { depositEnding } from './intents/deposit-note'
 import { createDepositWatcher, type DepositJournal } from './intents/deposit-watch'
-import { depositAddress, depositChains, type DepositAddress } from './intents/deposits'
+import { createAddressKeeper } from './intents/address-keeper'
+import { depositAddress, depositChains } from './intents/deposits'
 import { pickReceive, receiveChainOf, receiveChains, searchTokens, type ReceiveAsk } from './intents/receive'
 import { lastGood } from './last-good'
 import { CHAT_ID, type SavedChat } from '../shared/history'
@@ -420,25 +421,16 @@ async function listedDepositChains(): Promise<IntentsDepositChain[] | null> {
 
 /** Token icons fetched for the page's searches, kept for the session. */
 const icons = tokenIcons()
-/**
- * Each NEAR Intents deposit address is 1Click's, for one token, and open for a few days.
- * Ink keeps showing the same one, so what Receive shows, what Copy copies and what the
- * agent was told agree, and asks for a new one once less than a day is left.
- */
-const depositAddresses = new Map<string, DepositAddress>()
-const ADDRESS_MARGIN_MS = 24 * 60 * 60_000
-
-async function keptDepositAddress(account: string, token: { id: string; decimals: number }): Promise<DepositAddress | null> {
-  const id = `${account} ${token.id}`
-  const kept = depositAddresses.get(id)
-  if (kept && kept.until - Date.now() > ADDRESS_MARGIN_MS) return kept
-  const fresh = await depositAddress(account, token)
-  if (fresh) {
-    depositAddresses.set(id, fresh)
-    depositMinimums.set(token.id, fresh.min)
-  }
-  return fresh
-}
+/** NEAR Intents deposit addresses, each kept while it's open and nothing was sent to it. */
+const depositAddressKeeper = createAddressKeeper({
+  ask: async (account, token) => {
+    const fresh = await depositAddress(account, token)
+    if (fresh) depositMinimums.set(token.id, fresh.min)
+    return fresh
+  },
+  status: (address, memo) => swapStatus(address, { memo }),
+})
+const keptDepositAddress = (account: string, token: { id: string; decimals: number }) => depositAddressKeeper.address(account, token)
 
 /** A receive the page or the agent asked about, checked: a chain, a token, and an amount or none. */
 function receiveAskOf(value: unknown): ReceiveAsk | null {
@@ -492,6 +484,8 @@ const depositWatcher = createDepositWatcher({
   },
   onUpdate: (entry, before) => {
     const { id, progress } = entry.deposit
+    // Something was sent there, so Receive and the agent get a new address next time.
+    if (entry.deposit.kind === 'intents' && progress.stage !== 'watching' && progress.stage !== 'stopped') depositAddressKeeper.forget(entry.deposit.address, entry.deposit.memo)
     const ending = depositEnding(entry.deposit)
     // Once, as it reaches its end, not again if a detail changes after.
     if (ending && before !== progress.stage) notifyEnding(ending.note)

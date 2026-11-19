@@ -223,6 +223,10 @@ export interface SwapReport {
   payoutTx: { hash: string; explorerUrl: string | null } | null
   /** What was refunded, in the origin token's smallest unit, once known. */
   refunded: bigint | null
+  /** What arrived at the deposit address, in whole tokens as 1Click writes them ("25.5"), once seen. */
+  deposited: string | null
+  /** The deposit's own transaction on its chain, once 1Click has seen it. */
+  depositTx: string | null
 }
 
 /** An explorer link 1Click gives, only when it's plain https. */
@@ -243,11 +247,15 @@ function reportOf(body: unknown): SwapReport | null {
   const payouts = Array.isArray(details.destinationChainTxHashes) ? details.destinationChainTxHashes : []
   const first = payouts[0] as { hash?: unknown; explorerUrl?: unknown } | undefined
   const hash = textOf(first?.hash, /^[A-Za-z0-9:_-]{1,128}$/)
+  const deposits = Array.isArray(details.originChainTxHashes) ? details.originChainTxHashes : []
+  const deposit = deposits[0] as { hash?: unknown } | undefined
   return {
     stage: status as SwapStage,
     amountOut: bigOf(details.amountOut),
     payoutTx: hash ? { hash, explorerUrl: explorerOf(first?.explorerUrl) } : null,
     refunded: bigOf(details.refundedAmount),
+    deposited: textOf(details.depositedAmountFormatted, /^[0-9]{1,40}(\.[0-9]{1,40})?$/) ?? textOf(details.amountInFormatted, /^[0-9]{1,40}(\.[0-9]{1,40})?$/),
+    depositTx: textOf(deposit?.hash, /^[A-Za-z0-9:_-]{8,128}$/),
   }
 }
 

@@ -23,7 +23,7 @@ const SWAP: PlanSwap = {
   feeBps: '20',
   seconds: '22',
 }
-const report = (stage: SwapStage, extra: Partial<SwapReport> = {}): SwapReport => ({ stage, amountOut: null, payoutTx: null, refunded: null, ...extra })
+const report = (stage: SwapStage, extra: Partial<SwapReport> = {}): SwapReport => ({ stage, amountOut: null, payoutTx: null, refunded: null, deposited: null, depositTx: null, ...extra })
 
 function tracker(reports: (SwapReport | null)[], { submitted = report('KNOWN_DEPOSIT_TX') as SwapReport | null, start = DEADLINE - 60_000 } = {}) {
   let time = start

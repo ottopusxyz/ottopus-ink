@@ -142,10 +142,26 @@ describe('following a swap', () => {
   const report = (status: string, details: Record<string, unknown> = {}) => ({ correlationId: 'c', status, updatedAt: '2026-11-13T12:00:00Z', quoteResponse: {}, swapDetails: details })
 
   it('reads where it stands, the payout and any refund', async () => {
-    const { fetch, calls } = respond(report('SUCCESS', { amountOut: '17400531', destinationChainTxHashes: [{ hash: '0xabc', explorerUrl: 'https://basescan.org/tx/0xabc' }] }))
-    expect(await swapStatus('a'.repeat(64), { fetch })).toEqual({ stage: 'SUCCESS', amountOut: 17_400_531n, payoutTx: { hash: '0xabc', explorerUrl: 'https://basescan.org/tx/0xabc' }, refunded: null })
+    const { fetch, calls } = respond(
+      report('SUCCESS', {
+        amountOut: '17400531',
+        depositedAmountFormatted: '17.5',
+        originChainTxHashes: [{ hash: '0x4f2a000000000000000000000000000000000000000000000000000000091c0', explorerUrl: '' }],
+        destinationChainTxHashes: [{ hash: '0xabc', explorerUrl: 'https://basescan.org/tx/0xabc' }],
+      }),
+    )
+    expect(await swapStatus('a'.repeat(64), { fetch })).toEqual({
+      stage: 'SUCCESS',
+      amountOut: 17_400_531n,
+      payoutTx: { hash: '0xabc', explorerUrl: 'https://basescan.org/tx/0xabc' },
+      refunded: null,
+      deposited: '17.5',
+      depositTx: '0x4f2a000000000000000000000000000000000000000000000000000000091c0',
+    })
     expect(calls[0]?.url).toBe(`https://1click.chaindefuser.com/v0/status?depositAddress=${'a'.repeat(64)}`)
-    expect(await swapStatus('x', respond(report('REFUNDED', { refundedAmount: '5' })))).toMatchObject({ stage: 'REFUNDED', refunded: 5n, payoutTx: null })
+    expect(await swapStatus('x', respond(report('REFUNDED', { refundedAmount: '5' })))).toMatchObject({ stage: 'REFUNDED', refunded: 5n, payoutTx: null, deposited: null, depositTx: null })
+    // Not seen yet: nothing arrived, and an odd amount isn't passed on.
+    expect(await swapStatus('x', respond(report('PENDING_DEPOSIT', { depositedAmountFormatted: null, amountInFormatted: '1e5' })))).toMatchObject({ deposited: null, depositTx: null })
   })
 
   it('drops an explorer link that isn’t plain https, and stages it doesn’t know', async () => {

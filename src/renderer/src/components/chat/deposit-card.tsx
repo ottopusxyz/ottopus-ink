@@ -49,7 +49,7 @@ export function DepositCard({ deposit, onOpenReceive }: { deposit: ChatDeposit; 
   const { start, middle, end } = addressParts(deposit.address)
 
   const copy = async (part: 'address' | 'memo') => {
-    const result = await window.ink.copyReceive({ chain: deposit.chain, asset: deposit.asset, amount: deposit.amount }, part).catch(() => ({ ok: false }))
+    const result = await window.ink.copyDeposit(deposit.id, part).catch(() => ({ ok: false }))
     setCopied(result.ok ? part : 'failed')
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => setCopied('none'), 2000)

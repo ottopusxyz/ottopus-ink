@@ -70,6 +70,7 @@ export const IPC = {
   searchReceiveTokens: 'wallet:search-receive-tokens',
   receiveAddress: 'wallet:receive-address',
   copyReceive: 'wallet:copy-receive',
+  copyDeposit: 'wallet:copy-deposit',
   watchDepositAgain: 'wallet:watch-deposit-again',
   deleteSavedChat: 'chat:delete-saved',
   clearChatHistory: 'chat:clear-history',
@@ -468,8 +469,13 @@ export interface InkBridge {
   searchReceiveTokens(chain: string, query: string): Promise<ReceiveToken[]>
   /** Where to receive a token, NEAR Intents first. Only while Ink is unlocked. */
   receiveAddress(ask: { chain: string; asset: string; amount: string | null; route?: ReceiveRoute }): Promise<ReceiveAnswer>
-  /** Copies that address or its memo, as main worked it out, never text from the page. */
-  copyReceive(ask: { chain: string; asset: string; amount: string | null; route?: ReceiveRoute }, part: 'address' | 'memo'): Promise<{ ok: boolean }>
+  /**
+   * Copies that address or its memo, as main worked it out, never text from the page. Not
+   * when main's address or memo is no longer the one shown: `changed` says to ask again.
+   */
+  copyReceive(ask: { chain: string; asset: string; amount: string | null; route?: ReceiveRoute }, part: 'address' | 'memo', shown: { address: string; memo: string | null }): Promise<{ ok: boolean; changed: boolean }>
+  /** Copies a deposit card's own address or memo, as main kept it. Not once NEAR Intents' address has closed. */
+  copyDeposit(id: string, part: 'address' | 'memo'): Promise<{ ok: boolean }>
   /** Watches a deposit card's address for another day, once Ink stopped. */
   watchDepositAgain(id: string): Promise<{ ok: boolean }>
   /** Chats Ink kept from before, newest first. Empty while Ink is locked. */

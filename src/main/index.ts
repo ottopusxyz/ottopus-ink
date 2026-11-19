@@ -1009,14 +1009,31 @@ function registerIpc(): void {
     return ownReceive(ask)
   })
 
-  ipcMain.handle(IPC.copyReceive, async (event, ask: unknown, part: unknown) => {
+  ipcMain.handle(IPC.copyReceive, async (event, ask: unknown, part: unknown, shown: unknown) => {
     assertAppFrame(event)
     // Only for the window in front, and only what main worked out itself.
     const focused = () => BrowserWindow.fromWebContents(event.sender)?.isFocused() === true
-    if (!focused() || (part !== 'address' && part !== 'memo')) return { ok: false }
+    const seen = typeof shown === 'object' && shown !== null ? (shown as Record<string, unknown>) : null
+    if (!focused() || (part !== 'address' && part !== 'memo') || !seen) return { ok: false, changed: false }
     const found = await ownReceive(ask)
+    // A NEAR Intents address can be replaced at any time, and Stellar's is shared and told
+    // apart by its memo, so nothing is copied but the address and memo on screen.
+    if (found.ok && (found.address !== seen.address || (found.kind === 'intents' ? found.memo : null) !== (seen.memo ?? null))) return { ok: false, changed: true }
     const text = !found.ok ? null : part === 'memo' ? (found.kind === 'intents' ? found.memo : null) : found.address
-    if (!text || !focused()) return { ok: false }
+    if (!text || !focused()) return { ok: false, changed: false }
+    clipboard.writeText(text)
+    return { ok: true, changed: false }
+  })
+
+  ipcMain.handle(IPC.copyDeposit, (event, id: unknown, part: unknown) => {
+    assertAppFrame(event)
+    // The card's own address, as main kept it: never a newer one Receive would give, nor text from the page.
+    const focused = BrowserWindow.fromWebContents(event.sender)?.isFocused() === true
+    if (!focused || vault?.isUnlocked() !== true || typeof id !== 'string' || id.length > 64 || (part !== 'address' && part !== 'memo')) return { ok: false }
+    const deposit = depositWatcher.get(id)?.deposit
+    if (!deposit || (deposit.kind === 'intents' && deposit.closes !== null && Date.now() >= deposit.closes)) return { ok: false }
+    const text = part === 'memo' ? deposit.memo : deposit.address
+    if (!text) return { ok: false }
     clipboard.writeText(text)
     return { ok: true }
   })

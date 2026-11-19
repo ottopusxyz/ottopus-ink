@@ -27,6 +27,11 @@ function minOf(min: string | null): string | null {
   return min && !/^0\.0{8}/.test(min) ? min : null
 }
 
+/** When a NEAR Intents deposit address closes, in the person's own words for a date: "Mon 24 Nov, 12:15". */
+function closesAt(until: number): string {
+  return new Date(until).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
 /**
  * Icons for the tiles Ink has no mark of its own for, found by searching each symbol on
  * the chain. Searches are cached, so a chain's tiles are looked up once a while.
@@ -612,7 +617,13 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
           <strong>
             Send only {answer.asset} on {answer.chainName} here{answer.kind === 'intents' && minOf(answer.min) ? `, at least ${answer.min}` : ''}
           </strong>
-          {answer.kind === 'intents' ? <span>{minOf(answer.min) ? 'Less isn’t credited. ' : ''}The address isn’t from your recovery phrase; what arrives shows under In Intents in Portfolio.</span> : ownNote ? <span>{ownNote}</span> : null}
+          {answer.kind === 'intents' ? (
+            <span>
+              {minOf(answer.min) ? 'Less isn’t credited. ' : ''}Open until {closesAt(answer.until)}: send nothing after that, and come back here for a new address. It isn’t from your recovery phrase; what arrives shows under In Intents in Portfolio.
+            </span>
+          ) : ownNote ? (
+            <span>{ownNote}</span>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="ink-copy flex-1" disabled={stale} onClick={() => void copy('address')} aria-label={`Copy the address to receive ${answer.asset} on ${answer.chainName}`}>

@@ -155,14 +155,17 @@ export interface InkNote {
 
 /** A chain the NEAR Intents bridge takes deposits on, with each token and the least of it the bridge credits. */
 export interface IntentsDepositChain {
-  /** The bridge's name for it: `eth:8453`. */
+  /** Ink's name for it: `eth:8453`. */
   key: string
   /** As people know it: "Base". */
   name: string
   /** Ink's mark for it, when it has one: `base`. */
   mark: string | null
-  /** `ids`: the bridge's ids for the token, `eth:8453:0x8335…`, which its deposits name. */
-  tokens: { symbol: string; min: string; ids: string[] }[]
+  /**
+   * `ids`: 1Click's ids for the token there, the first one used for deposits. `min`: the
+   * least NEAR Intents credits, once an address for it has said, or null.
+   */
+  tokens: { symbol: string; min: string | null; ids: string[]; decimals: number }[]
 }
 
 /** A token to receive on a chain: whether NEAR Intents takes it there, and the least it credits. */
@@ -211,7 +214,21 @@ export interface ReceiveRoutes {
 }
 
 export type ReceiveAnswer =
-  | { ok: true; kind: 'intents'; chain: string; chainName: string; asset: string; address: string; memo: string | null; min: string; account: string; routes?: ReceiveRoutes }
+  | {
+      ok: true
+      kind: 'intents'
+      chain: string
+      chainName: string
+      asset: string
+      address: string
+      memo: string | null
+      /** The least NEAR Intents credits, or null when it takes any amount. */
+      min: string | null
+      account: string
+      /** When the address closes, in ms since the epoch: it's 1Click's, open for a few days, and nothing should be sent after. */
+      until: number
+      routes?: ReceiveRoutes
+    }
   | { ok: true; kind: 'own'; chain: string; chainName: string; asset: string; address: string; path: string; why: 'not-in-intents' | 'below-minimum' | 'intents-unavailable' | 'chosen'; min: string | null; routes?: ReceiveRoutes }
   | { ok: false; reason: 'locked' | 'unavailable' | 'unknown-chain' | 'bad-amount' | 'below-minimum' | 'not-supported'; min?: string | null; routes?: ReceiveRoutes }
 

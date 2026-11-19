@@ -261,16 +261,17 @@ describe('handleMcpMessage', () => {
       ])
     })
 
-    it('gives NEAR Intents’ deposit address as the bridge’s, with its memo, minimum and where the money lands', async () => {
+    it('gives NEAR Intents’ deposit address with its memo, minimum, when it closes and where the money lands', async () => {
       const { text, isError } = await call(
-        async () => ({ ok: true, kind: 'intents', chain: 'stellar', chainName: 'Stellar', asset: 'XLM', address: 'GBRIDGE', memo: '177237517', min: '0.1', account: 'a'.repeat(64) }),
+        async () => ({ ok: true, kind: 'intents', chain: 'stellar', chainName: 'Stellar', asset: 'XLM', address: 'GBRIDGE', memo: '177237517', min: '0.1', account: 'a'.repeat(64), until: Date.parse('2026-11-24T06:45:25.000Z') }),
         { chain: 'stellar', asset: 'XLM' },
       )
       expect(isError).toBe(false)
       expect(text.split('\n')).toEqual([
         'Send XLM on Stellar to: GBRIDGE',
         'Memo, required: 177237517. Without it the deposit isn’t credited.',
-        `This is the NEAR Intents bridge’s deposit address for this wallet, not one of the wallet’s own addresses. What arrives lands in the wallet’s NEAR Intents balance (account ${'a'.repeat(64)}).`,
+        `This is a NEAR Intents deposit address for this wallet, not one of the wallet’s own addresses. What arrives lands in the wallet’s NEAR Intents balance (account ${'a'.repeat(64)}).`,
+        'It’s open until 2026-11-24T06:45:25.000Z: nothing should be sent to it after that. Ask again for a new one then.',
         'Send at least 0.1 XLM: less isn’t credited. Only XLM on Stellar.',
         'Ink shows the person this address and its QR code in the chat, watches for the deposit, and tells you when it lands.',
       ])
@@ -280,7 +281,7 @@ describe('handleMcpMessage', () => {
       const shown: unknown[] = []
       const ask = (receive: McpHandlers['receive'], args: unknown) =>
         handleMcpMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_deposit_address', arguments: args } }, '1', { receive, onReceive: (asked, answer) => shown.push([asked, answer.address]) })
-      await ask(async () => ({ ok: true, kind: 'intents', chain: 'base', chainName: 'Base', asset: 'USDC', address: '0xbridge', memo: null, min: '1', account: 'a'.repeat(64) }), { chain: 'base', asset: 'USDC', amount: '25' })
+      await ask(async () => ({ ok: true, kind: 'intents', chain: 'base', chainName: 'Base', asset: 'USDC', address: '0xbridge', memo: null, min: '1', account: 'a'.repeat(64), until: 0 }), { chain: 'base', asset: 'USDC', amount: '25' })
       await ask(async () => ({ ok: false, reason: 'locked' }), { chain: 'base', asset: 'USDC' })
       expect(shown).toEqual([[{ chain: 'base', asset: 'USDC', amount: '25' }, '0xbridge']])
     })

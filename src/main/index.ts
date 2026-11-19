@@ -17,7 +17,7 @@ import { solanaTransferOfStep } from '../shared/solana/transaction'
 import { createEvmRpc, type EvmRpc } from './evm/rpc'
 import { depositEnding } from './intents/deposit-note'
 import { createDepositWatcher, type DepositJournal } from './intents/deposit-watch'
-import { depositAddress, depositChains, recentDeposits } from './intents/deposits'
+import { depositAddress, depositChains, type DepositAddress } from './intents/deposits'
 import { pickReceive, receiveChainOf, receiveChains, searchTokens, type ReceiveAsk } from './intents/receive'
 import { lastGood } from './last-good'
 import { CHAT_ID, type SavedChat } from '../shared/history'
@@ -404,21 +404,40 @@ function getChatHistory(): ChatHistory {
 }
 
 /**
- * The bridge's chains and tokens change rarely, so Receive reuses them for a while, and
- * keeps the last good copy when the bridge is slow or down.
+ * The chains and tokens NEAR Intents takes change rarely, so Receive reuses them for a
+ * while, and keeps the last good copy when 1Click is slow or down.
  */
-const listedDepositChains: () => Promise<IntentsDepositChain[] | null> = lastGood(() => depositChains(), { maxAgeMs: 10 * 60_000 })
+const fetchedDepositChains: () => Promise<IntentsDepositChain[] | null> = lastGood(() => depositChains(), { maxAgeMs: 10 * 60_000 })
+
+/** The least NEAR Intents credits of each token, by 1Click id, as its deposit addresses said. */
+const depositMinimums = new Map<string, string | null>()
+
+/** NEAR Intents' chains and tokens, with each minimum an address has told Ink so far. 1Click's list has none. */
+async function listedDepositChains(): Promise<IntentsDepositChain[] | null> {
+  const chains = await fetchedDepositChains()
+  return chains?.map((chain) => ({ ...chain, tokens: chain.tokens.map((token) => (token.ids[0] && depositMinimums.has(token.ids[0]) ? { ...token, min: depositMinimums.get(token.ids[0]) ?? null } : token)) })) ?? null
+}
 
 /** Token icons fetched for the page's searches, kept for the session. */
 const icons = tokenIcons()
-/** Deposit addresses are fixed for an account, so each is asked for once a run. */
-const depositAddresses = new Map<string, { address: string; memo: string | null }>()
+/**
+ * Each NEAR Intents deposit address is 1Click's, for one token, and open for a few days.
+ * Ink keeps showing the same one, so what Receive shows, what Copy copies and what the
+ * agent was told agree, and asks for a new one once less than a day is left.
+ */
+const depositAddresses = new Map<string, DepositAddress>()
+const ADDRESS_MARGIN_MS = 24 * 60 * 60_000
 
-async function keptDepositAddress(account: string, key: string): Promise<{ address: string; memo: string | null } | null> {
-  const id = `${account} ${key}`
-  const kept = depositAddresses.get(id) ?? (await depositAddress(account, key))
-  if (kept) depositAddresses.set(id, kept)
-  return kept
+async function keptDepositAddress(account: string, token: { id: string; decimals: number }): Promise<DepositAddress | null> {
+  const id = `${account} ${token.id}`
+  const kept = depositAddresses.get(id)
+  if (kept && kept.until - Date.now() > ADDRESS_MARGIN_MS) return kept
+  const fresh = await depositAddress(account, token)
+  if (fresh) {
+    depositAddresses.set(id, fresh)
+    depositMinimums.set(token.id, fresh.min)
+  }
+  return fresh
 }
 
 /** A receive the page or the agent asked about, checked: a chain, a token, and an amount or none. */
@@ -464,7 +483,7 @@ const depositListeners = new Map<string, DepositListen>()
  * gone, what happens is kept in its history and sent to the page for the kept chat.
  */
 const depositWatcher = createDepositWatcher({
-  recent: (account, bridge) => recentDeposits(account, bridge),
+  status: (address) => swapStatus(address),
   balance: async (address, zerion, symbol) => {
     const access = zerionAccess()
     if (!access) return null

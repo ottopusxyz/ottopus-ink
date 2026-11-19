@@ -492,8 +492,9 @@ async function receiveAnswer(receive: McpHandlers['receive'], args: unknown, onR
       [
         `Send ${answer.asset} on ${answer.chainName} to: ${answer.address}`,
         ...(answer.memo ? [`Memo, required: ${answer.memo}. Without it the deposit isn’t credited.`] : []),
-        `This is the NEAR Intents bridge’s deposit address for this wallet, not one of the wallet’s own addresses. What arrives lands in the wallet’s NEAR Intents balance (account ${answer.account}).`,
-        `Send at least ${answer.min} ${answer.asset}: less isn’t credited. Only ${answer.asset} on ${answer.chainName}.`,
+        `This is a NEAR Intents deposit address for this wallet, not one of the wallet’s own addresses. What arrives lands in the wallet’s NEAR Intents balance (account ${answer.account}).`,
+        `It’s open until ${new Date(answer.until).toISOString()}: nothing should be sent to it after that. Ask again for a new one then.`,
+        answer.min ? `Send at least ${answer.min} ${answer.asset}: less isn’t credited. Only ${answer.asset} on ${answer.chainName}.` : `Only ${answer.asset} on ${answer.chainName}.`,
         shown,
       ].join('\n'),
     )

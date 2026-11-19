@@ -7,10 +7,10 @@ import type { SecretBox } from '../external/sign-ins'
 import { createDepositJournal } from './deposit-journal'
 import { depositEnding } from './deposit-note'
 import { BRIDGE_POLL_MS, createDepositWatcher, WATCH_MS, type WatchAsk, type WatchEntry } from './deposit-watch'
-import type { BridgeDeposit } from './deposits'
+import type { SwapReport, SwapStage } from '../routes/one-click'
 
 const NEAR = 'a'.repeat(64)
-const USDC_ID = 'eth:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+const USDC_ID = 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near'
 const TX_OLD = '0x1000000000000000000000000000000000000000000000000000000000000001'
 const TX_NEW = '0x4f2a000000000000000000000000000000000000000000000000000000091c0'
 const NOW = Date.parse('2026-11-13T12:00:00Z')
@@ -30,16 +30,17 @@ const OWN: WatchAsk = {
   deposit: { ...INTENTS.deposit, id: 'd2', kind: 'own', asset: 'DEGEN', address: '0x1111111111111111111111111111111111111111', min: null, account: null, why: 'not-in-intents' },
 }
 
-const deposit = (tx: string, status: BridgeDeposit['status'], amount = 25_000_000n): BridgeDeposit => ({ tx, assetId: USDC_ID, decimals: 6, amount, status })
+/** 1Click's status for the card's address. */
+const report = (stage: SwapStage, deposited: string | null = null, depositTx: string | null = null): SwapReport => ({ stage, amountOut: null, payoutTx: null, refunded: null, deposited, depositTx })
 
-/** A watcher whose bridge answers each look from a script, one answer a look, the last repeated. */
-function setup({ bridge = [] as BridgeDeposit[][], balances = [] as bigint[] } = {}) {
+/** A watcher whose 1Click answers each look from a script, one answer a look, the last repeated. */
+function setup({ statuses = [] as (SwapReport | null)[], balances = [] as bigint[] } = {}) {
   let clock = NOW
   let looks = 0
   let reads = 0
   const updates: { id: string; stage: DepositProgress['stage']; got: string | null; before: DepositProgress['stage'] }[] = []
   const watcher = createDepositWatcher({
-    recent: async () => bridge[Math.min(looks++, bridge.length - 1)] ?? null,
+    status: async () => statuses[Math.min(looks++, statuses.length - 1)] ?? null,
     balance: async () => {
       const raw = balances[Math.min(reads++, balances.length - 1)]
       return raw === undefined ? null : { raw, decimals: 18 }
@@ -58,9 +59,9 @@ function setup({ bridge = [] as BridgeDeposit[][], balances = [] as bigint[] } =
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('watching NEAR Intents’ deposit address', () => {
-  it('ignores what was there before, then follows the new deposit until it’s credited', async () => {
+  it('follows 1Click’s status for the card’s address until the deposit is credited', async () => {
     const { watcher, updates } = setup({
-      bridge: [[deposit(TX_OLD, 'COMPLETED')], [deposit(TX_OLD, 'COMPLETED')], [deposit(TX_NEW, 'PENDING'), deposit(TX_OLD, 'COMPLETED')], [deposit(TX_NEW, 'CREDITED'), deposit(TX_OLD, 'COMPLETED')]],
+      statuses: [report('PENDING_DEPOSIT'), null, report('KNOWN_DEPOSIT_TX', '25', TX_NEW), report('PROCESSING', '25', TX_NEW), report('SUCCESS', '25', TX_NEW)],
     })
     const entry = watcher.watch(INTENTS)
     expect(entry.deposit.progress).toMatchObject({ stage: 'watching', until: NOW + WATCH_MS })
@@ -70,19 +71,20 @@ describe('watching NEAR Intents’ deposit address', () => {
       ['credited', '25 USDC', 'seen'],
     ])
     expect(watcher.get('d1')?.deposit.progress).toMatchObject({ stage: 'credited', tx: TX_NEW, link: `https://basescan.org/tx/${TX_NEW}` })
-    expect(watcher.get('d1')?.before).toEqual([TX_OLD])
   })
 
-  it('says when NEAR Intents didn’t credit it, and ignores other tokens', async () => {
-    const other: BridgeDeposit = { ...deposit('0x9999999999999999999999999999999999999999999999999999999999999999', 'COMPLETED'), assetId: 'eth:8453:native' }
-    const { watcher, updates } = setup({ bridge: [[], [other], [deposit(TX_NEW, 'FAILED', 500_000n), other]] })
+  it('says when NEAR Intents didn’t credit it', async () => {
+    const { watcher, updates } = setup({ statuses: [report('PENDING_DEPOSIT'), report('INCOMPLETE_DEPOSIT', '0.05', TX_NEW), report('REFUNDED', '0.05', TX_NEW)] })
     watcher.watch(INTENTS)
     await flush()
-    expect(updates.map(({ stage, got }) => [stage, got])).toEqual([['failed', '0.5 USDC']])
+    expect(updates.map(({ stage, got }) => [stage, got])).toEqual([
+      ['seen', '0.05 USDC'],
+      ['failed', '0.05 USDC'],
+    ])
   })
 
   it('stops after a day with nothing, can watch again, and gives one card to a chat asking twice', async () => {
-    const { watcher, updates, looks } = setup({ bridge: [[]] })
+    const { watcher, updates, looks } = setup({ statuses: [report('PENDING_DEPOSIT')] })
     const first = watcher.watch(INTENTS)
     expect(watcher.watch({ ...INTENTS, deposit: { ...INTENTS.deposit, id: 'd9' } })).toBe(first)
     await flush()
@@ -142,6 +144,7 @@ describe('keeping watches across restarts', () => {
   const entry = (id: string, stage: DepositProgress['stage'] = 'watching'): WatchEntry => ({
     ...INTENTS,
     deposit: { ...INTENTS.deposit, id, progress: { stage, got: null, tx: null, link: null, until: NOW + WATCH_MS } },
+    // A watch saved before Ink moved to 1Click still reads.
     before: [TX_OLD],
     baseline: null,
     startedAt: NOW,
@@ -166,7 +169,7 @@ describe('keeping watches across restarts', () => {
     createDepositJournal({ file, box, now: () => NOW }).put(entry('d1'))
     const updates: string[] = []
     const watcher = createDepositWatcher({
-      recent: async () => [deposit(TX_NEW, 'COMPLETED'), deposit(TX_OLD, 'COMPLETED')],
+      status: async () => report('SUCCESS', '25', TX_NEW),
       balance: async () => null,
       onUpdate: (kept) => updates.push(`${kept.deposit.id} ${kept.deposit.progress.stage}`),
       journal: createDepositJournal({ file, box, now: () => NOW }),

@@ -83,7 +83,10 @@ export function depositLine(deposit: Pick<ChatDeposit, 'kind' | 'chainName' | 'a
     case 'failed':
       return `NEAR Intents didn’t credit it${deposit.min ? `, likely under its ${deposit.min} ${deposit.asset} minimum` : ''}. Ink can’t move it back: contact NEAR Intents with the transaction.`
     case 'stopped':
-      if (progress.tx) return 'Ink stopped checking. NEAR Intents still credits it on its own; it shows in Portfolio once it has.'
+      if (progress.tx)
+        return kind === 'intents' && deposit.min
+          ? `Ink stopped checking. NEAR Intents still credits it on its own, or refunds it into your Intents balance if it was under the ${deposit.min} ${deposit.asset} minimum. It shows in Portfolio either way.`
+          : 'Ink stopped checking. NEAR Intents still credits it on its own; it shows in Portfolio once it has.'
       if (kind !== 'intents') return 'Nothing arrived in a day. The address still works: anything sent later lands in your wallet and shows in Portfolio.'
       if (closes === null) return 'Nothing arrived in a day. Ask your agent for a new address before sending more.'
       return closed

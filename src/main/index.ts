@@ -484,8 +484,9 @@ const depositWatcher = createDepositWatcher({
   },
   onUpdate: (entry, before) => {
     const { id, progress } = entry.deposit
-    // Something was sent there, so Receive and the agent get a new address next time.
-    if (entry.deposit.kind === 'intents' && progress.stage !== 'watching' && progress.stage !== 'stopped') depositAddressKeeper.forget(entry.deposit.address, entry.deposit.memo)
+    // A deposit there is under way or done, so Receive and the agent get a new address next
+    // time. Not one under the minimum: the rest goes to the same address.
+    if (entry.deposit.kind === 'intents' && progress.stage !== 'watching' && progress.stage !== 'stopped' && progress.stage !== 'short') depositAddressKeeper.forget(entry.deposit.address, entry.deposit.memo)
     const ending = depositEnding(entry.deposit)
     // Once, as it reaches its end, not again if a detail changes after.
     if (ending && before !== progress.stage) notifyEnding(ending.note)

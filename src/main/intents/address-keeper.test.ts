@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SwapReport, SwapStage } from '../routes/one-click'
-import { ADDRESS_LAST_MS, ADDRESS_MARGIN_MS, createAddressKeeper, STATUS_HOLD_MS } from './address-keeper'
+import { ADDRESS_LAST_MS, ADDRESS_MARGIN_MS, createAddressKeeper } from './address-keeper'
 import type { DepositAddress } from './deposits'
 
 const ACCOUNT = 'a'.repeat(64)
@@ -46,15 +46,20 @@ const FIRST = `0x${'1'.padStart(40, '0')}`
 const SECOND = `0x${'2'.padStart(40, '0')}`
 
 describe('keeping a NEAR Intents deposit address', () => {
-  it('gives the same address while nothing was sent to it and more than a day is left, checking 1Click at most every few seconds', async () => {
+  it('gives the same address while nothing was sent to it and more than a day is left, asking 1Click each time', async () => {
     const { get, at, statusAsked } = setup()
     expect(await get()).toBe(FIRST)
-    expect(await get()).toBe(FIRST)
     expect(statusAsked).toEqual([])
-    at(STATUS_HOLD_MS)
     expect(await get()).toBe(FIRST)
     expect(statusAsked).toEqual([FIRST])
     at(3 * DAY - ADDRESS_MARGIN_MS - 1)
+    expect(await get()).toBe(FIRST)
+  })
+
+  it('keeps giving the address of a deposit under the minimum, since the rest goes there', async () => {
+    const { get, stages } = setup()
+    await get()
+    stages.set(FIRST, 'INCOMPLETE_DEPOSIT')
     expect(await get()).toBe(FIRST)
   })
 
@@ -65,12 +70,11 @@ describe('keeping a NEAR Intents deposit address', () => {
     expect(await get()).toBe(SECOND)
   })
 
-  it('gets a new one once anything was sent to the kept one, however it went', async () => {
-    for (const stage of ['KNOWN_DEPOSIT_TX', 'PROCESSING', 'INCOMPLETE_DEPOSIT', 'SUCCESS', 'REFUNDED', 'FAILED'] as const) {
-      const { get, at, stages } = setup()
+  it('gets a new one once a deposit at the kept one is under way or done, however it went', async () => {
+    for (const stage of ['KNOWN_DEPOSIT_TX', 'PROCESSING', 'SUCCESS', 'REFUNDED', 'FAILED'] as const) {
+      const { get, stages } = setup()
       await get()
       stages.set(FIRST, stage)
-      at(STATUS_HOLD_MS)
       expect(await get()).toBe(SECOND)
     }
   })
@@ -94,7 +98,7 @@ describe('keeping a NEAR Intents deposit address', () => {
 
   it('asks where a memo address stands with its memo, and forgets it only with that memo', async () => {
     const asked: [string, string | null][] = []
-    let clock = NOW
+    const clock = NOW
     const keeper = createAddressKeeper({
       ask: async () => ({ address: 'GDJ4JZXZELZD737NVFORH4PSSQDWFDZTKW3AIDKHYQG23ZXBPDGGQBJK', memo: '245055336', min: null, until: NOW + 3 * DAY }),
       status: async (address, memo) => {
@@ -105,17 +109,15 @@ describe('keeping a NEAR Intents deposit address', () => {
     })
     await keeper.address(ACCOUNT, USDC)
     keeper.forget('GDJ4JZXZELZD737NVFORH4PSSQDWFDZTKW3AIDKHYQG23ZXBPDGGQBJK', '1')
-    clock += STATUS_HOLD_MS
     expect(await keeper.address(ACCOUNT, USDC)).toMatchObject({ memo: '245055336' })
     expect(asked).toEqual([['GDJ4JZXZELZD737NVFORH4PSSQDWFDZTKW3AIDKHYQG23ZXBPDGGQBJK', '245055336']])
   })
 
   it('shows none when 1Click can say neither where the kept one stands nor give a new one', async () => {
-    const { get, at, down, stages } = setup()
+    const { get, down, stages } = setup()
     await get()
     stages.set(FIRST, null)
     down()
-    at(STATUS_HOLD_MS)
     expect(await get()).toBeNull()
   })
 })

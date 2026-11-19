@@ -7,6 +7,7 @@ import { Sea } from '@/components/motion/sea'
 import { CheckIcon, CloseIcon, CopyIcon, SearchIcon } from '@/components/shell/icons'
 import { ChainLogo, Callout, Input, TokenLogo, Tooltip } from '@/components/ui'
 import { cn } from '@/lib/cn'
+import { closesAt } from '@/lib/deposit-card'
 import { isTokenSymbol } from '@/lib/logos'
 import { receiveCacheOfApp } from '@/lib/receive-cache'
 import { addressParts } from '@/lib/wallet'
@@ -25,11 +26,6 @@ type Chains = { kind: 'loading' } | { kind: 'ready'; chains: ReceiveChain[] } | 
 /** A minimum worth showing: one too small to matter, such as wNEAR's one yoctoNEAR, reads as none. */
 function minOf(min: string | null): string | null {
   return min && !/^0\.0{8}/.test(min) ? min : null
-}
-
-/** When a NEAR Intents deposit address closes, in the person's own words for a date: "Mon 24 Nov, 12:15". */
-function closesAt(until: number): string {
-  return new Date(until).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
 /**
@@ -587,13 +583,20 @@ function ReceiveCard({ chain, asset, icon, amount }: { chain: ReceiveChain; asse
       </div>
       {switcher}
       <div className={cn('flex flex-col gap-[14px] transition-opacity', stale && 'opacity-50')}>
-        <div className="ink-qr-frame">
-          <QrCode value={answer.address} label={`QR code for the address to receive ${answer.asset} on ${answer.chainName}`} size={216} />
-          <span className="ink-qr-frame__mark">
-            {/* The chain the shown address is on, which may not be the one just picked. */}
-            <ChainMark chain={state.chain} size="lg" />
-          </span>
-        </div>
+        {/* A QR code carries the address alone, and a deposit sent without its memo isn't credited. */}
+        {answer.kind === 'intents' && answer.memo ? (
+          <Callout severity="caution" title="No QR code for this one" compact>
+            A QR code would leave out the memo, and a deposit without it isn’t credited. Copy the address and the memo below, and send both.
+          </Callout>
+        ) : (
+          <div className="ink-qr-frame">
+            <QrCode value={answer.address} label={`QR code for the address to receive ${answer.asset} on ${answer.chainName}`} size={216} />
+            <span className="ink-qr-frame__mark">
+              {/* The chain the shown address is on, which may not be the one just picked. */}
+              <ChainMark chain={state.chain} size="lg" />
+            </span>
+          </div>
+        )}
 
         <div className="flex flex-col gap-1.5">
           <span className="ink-eyebrow">{intents ? 'NEAR Intents deposit address' : `Your ${answer.chainName} address`}</span>

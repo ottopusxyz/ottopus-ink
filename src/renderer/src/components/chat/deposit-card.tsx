@@ -7,7 +7,7 @@ import { Badge, Button, TokenLogo } from '@/components/ui'
 import { ChainMark } from '@/components/wallet/chain-mark'
 import { QrCode } from '@/components/wallet/qr-code'
 import { cn } from '@/lib/cn'
-import { DEPOSIT_POSE, depositAmount, depositChip, depositLine, depositWhere, timeLeft } from '@/lib/deposit-card'
+import { addressClosed, closesAt, DEPOSIT_POSE, depositAmount, depositChip, depositLine, depositWhere, timeLeft } from '@/lib/deposit-card'
 import { addressParts } from '@/lib/wallet'
 
 /** Wide enough that a phone scans it from the screen, small enough for a chat. */
@@ -39,10 +39,13 @@ export function DepositCard({ deposit, onOpenReceive }: { deposit: ChatDeposit; 
 
   const chip = depositChip(deposit)
   const pose = DEPOSIT_POSE[progress.stage]
-  const line = depositLine(deposit)
+  const line = depositLine(deposit, now)
   const amount = depositAmount(deposit)
-  // The address stays up until something is seen there, and after Ink stops watching it.
-  const showAddress = progress.stage === 'watching' || progress.stage === 'unwatched' || (progress.stage === 'stopped' && !progress.tx)
+  const closed = addressClosed(deposit, now)
+  // The address stays up until something is seen there, after Ink stops watching it, and
+  // while a deposit under the minimum waits for the rest: never once NEAR Intents' has closed.
+  const wantsAddress = progress.stage === 'watching' || progress.stage === 'unwatched' || progress.stage === 'short' || (progress.stage === 'stopped' && !progress.tx)
+  const showAddress = wantsAddress && !closed
   const { start, middle, end } = addressParts(deposit.address)
 
   const copy = async (part: 'address' | 'memo') => {
@@ -83,12 +86,15 @@ export function DepositCard({ deposit, onOpenReceive }: { deposit: ChatDeposit; 
       <div className="ink-ticket__foot">
         {showAddress ? (
           <div className="flex flex-wrap items-start gap-4">
-            <div className="ink-deposit-qr">
-              <QrCode value={deposit.address} label={`QR code for the address to send ${deposit.asset} on ${deposit.chainName}`} size={QR_SIZE} />
-              <span className="ink-deposit-qr__mark">
-                <ChainMark chain={{ mark: deposit.mark, name: deposit.chainName }} size="sm" />
-              </span>
-            </div>
+            {/* A QR code carries the address alone, and a deposit sent without its memo isn't credited. */}
+            {deposit.memo ? null : (
+              <div className="ink-deposit-qr">
+                <QrCode value={deposit.address} label={`QR code for the address to send ${deposit.asset} on ${deposit.chainName}`} size={QR_SIZE} />
+                <span className="ink-deposit-qr__mark">
+                  <ChainMark chain={{ mark: deposit.mark, name: deposit.chainName }} size="sm" />
+                </span>
+              </div>
+            )}
             <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-2">
               <span className="ink-eyebrow">{deposit.kind === 'intents' ? 'NEAR Intents deposit address' : `Your ${deposit.chainName} address`}</span>
               <p className="ink-address selectable m-0 text-[13px]" data-address>
@@ -124,10 +130,18 @@ export function DepositCard({ deposit, onOpenReceive }: { deposit: ChatDeposit; 
                   Only {deposit.asset} on {deposit.chainName}
                   {deposit.kind === 'intents' && deposit.min ? `, at least ${deposit.min}` : ''}.
                 </strong>{' '}
-                {deposit.kind === 'intents' ? `${deposit.min ? 'Less isn’t credited. ' : ''}This address isn’t from your recovery phrase.` : 'From your one recovery phrase.'}
+                {deposit.kind === 'intents'
+                  ? `${deposit.min ? 'Less isn’t credited. ' : ''}${deposit.closes !== null ? `Open until ${closesAt(deposit.closes)}: send nothing after that. ` : ''}${deposit.memo ? 'Send the memo with it; there’s no QR code, since one would leave the memo out. ' : ''}This address isn’t from your recovery phrase.`
+                  : 'From your one recovery phrase.'}
               </p>
             </div>
           </div>
+        ) : null}
+
+        {progress.stage === 'watching' && closed && deposit.closes !== null ? (
+          <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--ot-block-text)]">
+            This address closed {closesAt(deposit.closes)}: send nothing to it. Ask your agent for a new one.
+          </p>
         ) : null}
 
         {progress.stage === 'seen' ? (
